@@ -1,0 +1,27 @@
+[project]
+name = "ibkr-connection"
+version = "0.1.0"
+description = "IBKR connection detection and API integration"
+authors = [
+    {name = "Your Name",email = "your.email@example.com"}
+]
+readme = "README.md"
+requires-python = "^3.11"
+dependencies = [
+    "ibapi (>=9.81.1.post1,<10.0.0)",
+    "psutil (>=7.0.0,<8.0.0)",
+    "python-dotenv (>=1.1.1,<2.0.0)",
+    "fastapi (>=0.116.1,<0.117.0)",
+    "uvicorn (>=0.35.0,<0.36.0)",
+    "sqlalchemy (>=2.0.42,<3.0.0)",
+    "numpy (>=2.3.2,<3.0.0)",
+    "requests (>=2.32.4,<3.0.0)"
+]
+
+
+[build-system]
+requires = ["poetry-core>=2.0.0,<3.0.0"]
+build-backend = "poetry.core.masonry.api"
+
+[tool.poetry]
+package-mode = false
