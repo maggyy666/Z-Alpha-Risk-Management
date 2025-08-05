@@ -31,18 +31,48 @@ def init_portfolio():
     
     try:
         print("Initializing portfolio tickers...")
-        tickers = data_service.initialize_tickers(db, PORTFOLIO_SYMBOLS)
-        print(f"Initialized {len(tickers)} tickers: {[t.symbol for t in tickers]}")
         
-        # Fetch historical data for each ticker
-        print("\nFetching historical data from IBKR...")
+        # Create admin user
+        from database.models.user import User
+        from database.models.portfolio import Portfolio
+        
+        # Check if admin user exists
+        admin_user = db.query(User).filter(User.username == "admin").first()
+        if not admin_user:
+            admin_user = User(username="admin", password="admin", email="admin@example.com")
+            db.add(admin_user)
+            db.commit()
+            print("✅ Created admin user")
+        
+        # Add tickers to admin's portfolio
         for symbol in PORTFOLIO_SYMBOLS:
-            print(f"Fetching data for {symbol}...")
-            success = data_service.fetch_and_store_historical_data(db, symbol)
+            # Check if portfolio item already exists
+            existing = db.query(Portfolio).filter(
+                Portfolio.user_id == admin_user.id,
+                Portfolio.ticker_symbol == symbol
+            ).first()
+            
+            if not existing:
+                portfolio_item = Portfolio(
+                    user_id=admin_user.id,
+                    ticker_symbol=symbol,
+                    shares=1000
+                )
+                db.add(portfolio_item)
+                print(f"✅ Added {symbol} to admin portfolio")
+        
+        db.commit()
+        print(f"✅ Initialized {len(PORTFOLIO_SYMBOLS)} tickers in admin portfolio")
+        
+        # Generate sample data for each ticker
+        print("\nGenerating sample historical data...")
+        for symbol in PORTFOLIO_SYMBOLS:
+            print(f"Generating data for {symbol}...")
+            success = data_service.inject_sample_data(db, symbol)
             if success:
-                print(f"✅ Successfully fetched data for {symbol}")
+                print(f"✅ Successfully generated data for {symbol}")
             else:
-                print(f"❌ Failed to fetch data for {symbol}")
+                print(f"❌ Failed to generate data for {symbol}")
         
         print("\nPortfolio initialization completed!")
         
@@ -58,10 +88,10 @@ def show_portfolio_data():
     
     try:
         print("\nCurrent portfolio volatility data:")
-        portfolio_data = data_service.get_portfolio_volatility_data(db, PORTFOLIO_SYMBOLS)
+        portfolio_data = data_service.get_portfolio_volatility_data(db, "admin")
         
         for item in portfolio_data:
-            print(f"{item['symbol']}: Volatility={item['forecast_volatility']:.2f}%, "
+            print(f"{item['symbol']}: Volatility={item['forecast_volatility_pct']:.2f}%, "
                   f"Price=${item['last_price']:.2f}, Sharpe={item['sharpe_ratio']:.2f}")
         
     except Exception as e:

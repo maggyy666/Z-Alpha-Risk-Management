@@ -76,6 +76,7 @@ def fetch_historical_data(symbol: str, db: Session = Depends(get_db)):
 def get_volatility_data(
     forecast_model: str = 'EWMA (5D)',
     vol_floor_annual_pct: float = 8.0,
+    risk_free_annual: float = 0.0,
     username: str = "admin",
     db: Session = Depends(get_db)
 ):
@@ -83,7 +84,7 @@ def get_volatility_data(
     try:
         # Use database data directly (IBKR Client Portal not available)
         portfolio_data = data_service.get_portfolio_volatility_data(
-            db, username, forecast_model, vol_floor_annual_pct
+            db, username, forecast_model, vol_floor_annual_pct, risk_free_annual
         )
         return {"portfolio_data": portfolio_data, "source": "database"}
 
@@ -91,25 +92,12 @@ def get_volatility_data(
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.get("/factor-exposure-data")
-def get_factor_exposure_data(db: Session = Depends(get_db)):
+def get_factor_exposure_data(username: str = "admin", db: Session = Depends(get_db)):
     """Get factor exposure data for portfolio analysis"""
     try:
-        # For now, return sample data - this will need IBKR integration
-        sample_data = {
-            "factor_exposures": [
-                {"date": "2024-01-01", "ticker": "PORTFOLIO", "factor": "MARKET", "beta": 1.2},
-                {"date": "2024-01-01", "ticker": "BULL", "factor": "MARKET", "beta": 1.8},
-                {"date": "2024-01-01", "ticker": "PORTFOLIO", "factor": "MOMENTUM", "beta": 0.3},
-                {"date": "2024-01-01", "ticker": "BULL", "factor": "MOMENTUM", "beta": 0.7},
-            ],
-            "r2_data": [
-                {"date": "2024-01-01", "ticker": "PORTFOLIO", "r2": 0.75},
-                {"date": "2024-01-01", "ticker": "BULL", "r2": 0.45},
-            ],
-            "available_factors": ["MARKET", "MOMENTUM", "SIZE", "VALUE", "QUALITY"],
-            "available_tickers": ["PORTFOLIO", "BULL", "BEAR", "SPY", "QQQ"]
-        }
-        return sample_data
+        # Get factor exposure data from database
+        factor_data = data_service.get_factor_exposure_data(db, username)
+        return factor_data
 
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))

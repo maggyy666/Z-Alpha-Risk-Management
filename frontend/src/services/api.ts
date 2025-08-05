@@ -43,10 +43,10 @@ export interface FactorExposureResponse {
 }
 
 class ApiService {
-  async getVolatilityData(forecastModel: string = 'EWMA (5D)'): Promise<VolatilityData> {
+  async getVolatilityData(forecastModel: string = 'EWMA (5D)', username: string = "admin"): Promise<VolatilityData> {
     try {
       const response = await api.get('/volatility-data', {
-        params: { forecast_model: forecastModel }
+        params: { forecast_model: forecastModel, username }
       });
       return response.data;
     } catch (error) {
@@ -55,9 +55,11 @@ class ApiService {
     }
   }
 
-  async getFactorExposureData(): Promise<FactorExposureResponse> {
+  async getFactorExposureData(username: string = "admin"): Promise<FactorExposureResponse> {
     try {
-      const response = await api.get('/factor-exposure-data');
+      const response = await api.get('/factor-exposure-data', {
+        params: { username }
+      });
       return response.data;
     } catch (error) {
       console.error('Error fetching factor exposure data:', error);

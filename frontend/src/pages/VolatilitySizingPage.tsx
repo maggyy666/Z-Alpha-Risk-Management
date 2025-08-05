@@ -17,7 +17,7 @@ const VolatilitySizingPage: React.FC = () => {
   const fetchVolatilityData = async () => {
     try {
       setLoading(true);
-      const data = await apiService.getVolatilityData(selectedModel);
+      const data = await apiService.getVolatilityData(selectedModel, "admin"); // Można zmienić na dynamiczne
       setPortfolioData(data.portfolio_data);
       setDataSource(data.source || 'unknown');
       setError(null);

@@ -1,0 +1,66 @@
+.date-range-selector {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 20px;
+}
+
+.date-range-label {
+  font-size: 14px;
+  font-weight: 500;
+  color: #ffffff;
+  white-space: nowrap;
+}
+
+.range-buttons {
+  display: flex;
+  gap: 8px;
+}
+
+.range-button {
+  padding: 6px 12px;
+  background-color: #1a1a1a;
+  border: 1px solid #333;
+  border-radius: 6px;
+  color: #cccccc;
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  outline: none;
+}
+
+.range-button:hover {
+  background-color: #333;
+  color: #ffffff;
+  border-color: #555;
+}
+
+.range-button.active {
+  background-color: #FF6B6B;
+  border-color: #FF6B6B;
+  color: #ffffff;
+}
+
+.range-button.active:hover {
+  background-color: #FF5252;
+  border-color: #FF5252;
+}
+
+/* Responsive design */
+@media (max-width: 768px) {
+  .date-range-selector {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 8px;
+  }
+  
+  .range-buttons {
+    flex-wrap: wrap;
+  }
+  
+  .range-button {
+    padding: 4px 8px;
+    font-size: 11px;
+  }
+} 

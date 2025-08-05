@@ -3,40 +3,41 @@
   padding: 20px;
   max-width: 100%;
   min-height: 100vh;
+  background-color: #0a0a0a;
 }
 
 .section {
-  margin-bottom: 30px;
+  margin-bottom: 40px;
   background-color: #1a1a1a;
   border-radius: 8px;
   padding: 20px;
   border: 1px solid #333;
-  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
 }
 
 .section-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: flex-start;
   margin-bottom: 20px;
-  flex-wrap: wrap;
-  gap: 20px;
 }
 
 .section-header h2 {
-  margin: 0;
+  margin: 0 0 15px 0;
+  font-size: 18px;
+  font-weight: 600;
   color: #ffffff;
-  font-size: 1.5rem;
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 1px;
 }
 
 .controls {
   display: flex;
-  flex-direction: column;
-  gap: 15px;
-  min-width: 300px;
+  justify-content: space-between;
+  align-items: flex-start;
+  margin-bottom: 20px;
+  gap: 20px;
+  width: 100%;
+}
+
+/* Usuwam specjalne style dla pierwszej sekcji - teraz wszystkie będą w jednej linii */
+.selectable-tags {
+  flex: 1;
+  min-width: 0; /* Usuwam min-width żeby pola się rozciągały */
 }
 
 .control-group {
@@ -104,9 +105,12 @@
   padding: 20px;
   border: 1px solid #333;
   min-height: 400px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
+  position: relative;
+}
+
+/* Uproszczone style dla wykresów */
+.chart-container canvas {
+  max-height: 350px !important;
 }
 
 .chart-placeholder {
@@ -137,33 +141,18 @@
   border: 1px solid #333;
 }
 
-/* Responsive styles */
+/* Responsive design */
 @media (max-width: 768px) {
-  .factor-exposure-page {
-    padding: 10px;
-  }
-  
-  .section {
-    padding: 15px;
-    margin-bottom: 20px;
-  }
-  
-  .section-header {
+  .controls {
     flex-direction: column;
-    align-items: flex-start;
     gap: 15px;
   }
   
-  .controls {
-    min-width: 100%;
+  .section:first-child .controls {
+    flex-direction: column;
   }
   
-  .filter-tags {
-    gap: 6px;
-  }
-  
-  .filter-tag {
-    padding: 5px 10px;
-    font-size: 0.8rem;
+  .section:first-child .controls .selectable-tags {
+    min-width: auto;
   }
 } 
