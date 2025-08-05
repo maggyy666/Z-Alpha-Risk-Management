@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { Line } from 'react-chartjs-2';
 import {
   Chart as ChartJS,
@@ -59,9 +59,7 @@ const FactorExposurePage: React.FC = () => {
   // Date range state
   const [selectedDateRange, setSelectedDateRange] = useState<DateRange>('1Y');
 
-  useEffect(() => {
-    fetchFactorExposureData();
-  }, []); // Added fetchFactorExposureData to dependency array to resolve warning
+
 
   const getDateRangeFilter = (range: DateRange) => {
     const now = new Date();
@@ -94,7 +92,7 @@ const FactorExposurePage: React.FC = () => {
     return data.filter(item => filterFn(item.date));
   };
 
-  const fetchFactorExposureData = async () => {
+  const fetchFactorExposureData = useCallback(async () => {
     try {
       setLoading(true);
       console.log('Fetching factor exposure data...');
@@ -135,7 +133,11 @@ const FactorExposurePage: React.FC = () => {
     } finally {
       setLoading(false);
     }
-  };
+  }, [selectedTickers.length, selectedFactors.length]);
+
+  useEffect(() => {
+    fetchFactorExposureData();
+  }, [fetchFactorExposureData]);
 
   // Generate sample data for charts (until backend is ready)
   const generateSampleData = () => {
