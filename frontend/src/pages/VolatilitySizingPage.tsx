@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import apiService, { PortfolioData } from '../services/api';
 import VolatilityDonutChart from '../components/VolatilityDonutChart';
 import './VolatilitySizingPage.css';
@@ -7,19 +7,14 @@ const VolatilitySizingPage: React.FC = () => {
   const [portfolioData, setPortfolioData] = useState<PortfolioData[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [dataSource, setDataSource] = useState<string>('');
+
   const [selectedModel, setSelectedModel] = useState<string>('EWMA (5D)');
 
-  useEffect(() => {
-    fetchVolatilityData();
-  }, [selectedModel]);
-
-  const fetchVolatilityData = async () => {
+  const fetchVolatilityData = useCallback(async () => {
     try {
       setLoading(true);
       const data = await apiService.getVolatilityData(selectedModel, "admin"); // Można zmienić na dynamiczne
       setPortfolioData(data.portfolio_data);
-      setDataSource(data.source || 'unknown');
       setError(null);
     } catch (err) {
       setError('Failed to fetch volatility data');
@@ -27,7 +22,13 @@ const VolatilitySizingPage: React.FC = () => {
     } finally {
       setLoading(false);
     }
-  };
+  }, [selectedModel]);
+
+  useEffect(() => {
+    fetchVolatilityData();
+  }, [fetchVolatilityData]);
+
+
 
   const initializePortfolio = async () => {
     try {
