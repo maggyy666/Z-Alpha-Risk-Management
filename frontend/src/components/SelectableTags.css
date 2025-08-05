@@ -5,21 +5,21 @@
 }
 
 .selectable-tags-label {
-  font-size: 14px;
+  font-size: clamp(12px, 1.8vw, 14px);
   font-weight: 500;
   color: #ffffff;
-  margin-bottom: 4px;
+  margin-bottom: clamp(2px, 0.5vw, 4px);
 }
 
 .input-field-container {
   display: flex;
   align-items: center;
-  gap: 8px;
-  min-height: 36px;
-  padding: 8px 12px;
+  gap: clamp(6px, 1vw, 8px);
+  min-height: clamp(32px, 5vw, 36px);
+  padding: clamp(6px, 1.2vw, 8px) clamp(10px, 1.5vw, 12px);
   background-color: #1a1a1a;
   border: 1px solid #333;
-  border-radius: 6px;
+  border-radius: clamp(4px, 1vw, 6px);
   transition: border-color 0.2s ease;
   width: 100%; /* Rozciągnięte na całą szerokość */
   min-width: 0; /* Pozwala na shrink */
@@ -39,11 +39,11 @@
 
 .selected-item {
   display: inline-block;
-  padding: 4px 8px;
+  padding: clamp(3px, 0.8vw, 4px) clamp(6px, 1.2vw, 8px);
   background-color: #FF6B6B;
   color: #ffffff;
-  border-radius: 12px;
-  font-size: 12px;
+  border-radius: clamp(8px, 2vw, 12px);
+  font-size: clamp(10px, 1.5vw, 12px);
   font-weight: 500;
   cursor: pointer;
   transition: all 0.2s ease;
@@ -137,19 +137,40 @@
 }
 
 /* Responsive styles */
+@media (max-width: 1024px) {
+  .input-field-container {
+    min-height: clamp(30px, 4vw, 34px);
+  }
+}
+
 @media (max-width: 768px) {
   .input-field-container {
-    padding: 6px 10px;
-    min-height: 32px;
+    min-height: clamp(28px, 4vw, 32px);
   }
   
   .selected-item {
-    padding: 3px 6px;
-    font-size: 11px;
+    font-size: clamp(9px, 1.3vw, 11px);
   }
   
   .dropdown-toggle {
-    padding: 3px 6px;
-    font-size: 11px;
+    padding: clamp(2px, 0.8vw, 3px) clamp(4px, 1vw, 6px);
+    font-size: clamp(9px, 1.3vw, 11px);
+  }
+}
+
+@media (max-width: 480px) {
+  .input-field-container {
+    min-height: clamp(26px, 4vw, 30px);
+    padding: clamp(4px, 1vw, 6px) clamp(8px, 1.2vw, 10px);
+  }
+  
+  .selected-item {
+    padding: clamp(2px, 0.6vw, 3px) clamp(4px, 1vw, 6px);
+    font-size: clamp(8px, 1.2vw, 10px);
+  }
+  
+  .dropdown-toggle {
+    padding: clamp(2px, 0.6vw, 3px) clamp(3px, 0.8vw, 4px);
+    font-size: clamp(8px, 1.2vw, 10px);
   }
 } 
