@@ -1,12 +1,12 @@
 .date-range-selector {
   display: flex;
   align-items: center;
-  gap: 12px;
-  margin-bottom: 20px;
+  gap: clamp(8px, 1.5vw, 12px);
+  margin-bottom: clamp(15px, 3vw, 20px);
 }
 
 .date-range-label {
-  font-size: 14px;
+  font-size: clamp(12px, 1.8vw, 14px);
   font-weight: 500;
   color: #ffffff;
   white-space: nowrap;
@@ -14,16 +14,17 @@
 
 .range-buttons {
   display: flex;
-  gap: 8px;
+  gap: clamp(6px, 1vw, 8px);
+  flex-wrap: wrap;
 }
 
 .range-button {
-  padding: 6px 12px;
+  padding: clamp(4px, 1vw, 6px) clamp(8px, 1.5vw, 12px);
   background-color: #1a1a1a;
   border: 1px solid #333;
-  border-radius: 6px;
+  border-radius: clamp(4px, 1vw, 6px);
   color: #cccccc;
-  font-size: 12px;
+  font-size: clamp(10px, 1.5vw, 12px);
   font-weight: 500;
   cursor: pointer;
   transition: all 0.2s ease;
@@ -48,19 +49,44 @@
 }
 
 /* Responsive design */
+@media (max-width: 1024px) {
+  .date-range-selector {
+    gap: clamp(6px, 1.2vw, 10px);
+  }
+  
+  .range-buttons {
+    gap: clamp(4px, 0.8vw, 6px);
+  }
+}
+
 @media (max-width: 768px) {
   .date-range-selector {
     flex-direction: column;
     align-items: flex-start;
-    gap: 8px;
+    gap: clamp(6px, 1.2vw, 8px);
   }
   
   .range-buttons {
-    flex-wrap: wrap;
+    gap: clamp(4px, 0.8vw, 6px);
   }
   
   .range-button {
-    padding: 4px 8px;
-    font-size: 11px;
+    padding: clamp(3px, 0.8vw, 4px) clamp(6px, 1.2vw, 8px);
+    font-size: clamp(9px, 1.3vw, 11px);
+  }
+}
+
+@media (max-width: 480px) {
+  .date-range-selector {
+    gap: clamp(4px, 1vw, 6px);
+  }
+  
+  .range-buttons {
+    gap: clamp(3px, 0.6vw, 4px);
+  }
+  
+  .range-button {
+    padding: clamp(2px, 0.6vw, 3px) clamp(4px, 1vw, 6px);
+    font-size: clamp(8px, 1.2vw, 10px);
   }
 } 
