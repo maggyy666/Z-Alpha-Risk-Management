@@ -1,5 +1,6 @@
 import React from 'react';
 import { Link, useLocation } from 'react-router-dom';
+import Footer from './Footer';
 import './DashboardLayout.css';
 
 interface DashboardLayoutProps {
@@ -16,7 +17,18 @@ const DashboardLayout: React.FC<DashboardLayoutProps> = ({ children }) => {
   return (
     <div className="dashboard-layout">
       <header className="header">
-        <h1 className="logo">Daisy Risk Engine Dashboard</h1>
+        {/* Top navbar - Logo and User Info */}
+        <div className="top-navbar">
+          <div className="logo-container">
+            <h1 className="logo">Z-Alpha Securities</h1>
+          </div>
+          <div className="user-info">
+            <span className="logged-in-label">Logged in:</span>
+            <span className="username">admin</span>
+          </div>
+        </div>
+        
+        {/* Bottom navbar - Navigation Tabs */}
         <div className="nav-tabs">
           <Link to="/portfolio-summary" className={`nav-tab ${isActive('/portfolio-summary') ? 'active' : ''}`}>
             Portfolio Summary
@@ -53,6 +65,7 @@ const DashboardLayout: React.FC<DashboardLayoutProps> = ({ children }) => {
       <main className="main-content">
         {children}
       </main>
+      <Footer />
     </div>
   );
 };
