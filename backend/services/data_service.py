@@ -7,11 +7,49 @@ from database.models.ticker_data import TickerData
 from services.ibkr_service import IBKRService
 from datetime import datetime, timedelta
 
+# Risk Scoring Configuration
+NORMALIZATION = {
+    "HHI_LOW": 0.05, 
+    "HHI_HIGH": 0.30,
+    "VOL_MAX": 0.40, 
+    "BETA_ABS_MAX": 1.5,
+    "FACTOR_L1_MAX": 3.0,
+    "STRESS_5PCT_FULLSCORE": 0.10,
+}
+
+# Stress Testing Configuration
+from datetime import date
+
+STRESS_SCENARIOS = [
+    {"name": "2018 Q4 Volatility", "start": date(2018,10,1), "end": date(2018,12,24)},
+    {"name": "2020 COVID Crash",   "start": date(2020,2,20), "end": date(2020,3,23)},
+    {"name": "2020 Recovery",      "start": date(2020,3,24), "end": date(2020,8,31)},
+    {"name": "2022 Inflation Shock","start": date(2022,1,3), "end": date(2022,10,14)},
+    {"name": "2015 China Deval",   "start": date(2015,8,10), "end": date(2015,9,1)},
+]
+STRESS_LIMITS = {
+    "lookback_regime_days": 60,
+    "momentum_window_days": 20,
+    "scenario_min_days": 10,
+    "scenario_min_weight_coverage": 0.70,  # min. 70% MV musi być objęte danymi
+    "clamp_return_abs": 0.40,              # ±40% guard na dzienne zwroty
+}
+
+# Market Regime Thresholds
+REGIME_THRESH = {
+    "crisis_vol": 0.30,
+    "cautious_vol": 0.20, 
+    "cautious_corr": 0.45,
+    "bull_mom": 0.05,
+    "bull_vol": 0.18,
+    "bull_corr": 0.25
+}
+
 class DataService:
     def __init__(self):
         self.ibkr_service = IBKRService()
         # Stałe tickery które zawsze będą pobierane z IBKR
-        self.STATIC_TICKERS = ['SPY']
+        self.STATIC_TICKERS = ['SPY', 'MTUM', 'IWM', 'VLUE', 'QUAL']
         
     def get_all_tickers(self, db: Session, username: str = "admin") -> List[str]:
         """Get all tickers: user portfolio + static tickers"""
@@ -164,8 +202,9 @@ class DataService:
             last_price = float(historical_data[-1].close_price)
             
             metrics = {
-                'volatility': forecast_vol,
-                'mean_return': mean_annual,
+                'volatility_pct': forecast_vol,   # %
+                'mean_return_annual': mean_annual,  # ułamek/rok
+                'mean_return_pct': mean_annual * 100,  # %
                 'sharpe_ratio': sharpe_ratio,
                 'last_price': last_price
             }
@@ -284,7 +323,7 @@ class DataService:
                 shares = shares_map.get(symbol, 1000) if symbol in shares_map else 1000
                 portfolio_data.append({
                     'symbol': symbol,
-                    'forecast_volatility_pct': float(m.get('volatility', 0.0)),
+                    'forecast_volatility_pct': float(m.get('volatility_pct', 0.0)),
                     'last_price': float(m.get('last_price', 0.0)),
                     'sharpe_ratio': float(m.get('sharpe_ratio', 0.0)),
                     'shares': shares,
@@ -446,12 +485,32 @@ class DataService:
             
             print(f"📊 Found {len(dates)} dates from {min(dates)} to {max(dates)}")
             
-            # Wczytaj serię SPY z bazy (MARKET proxy)
-            print("📊 Loading SPY data for MARKET factor...")
+            # Wczytaj serie ETF z bazy (real factor proxies)
+            print("📊 Loading ETF data for factor proxies...")
+            
+            # MARKET proxy
             spy_dates, spy_closes = self._get_close_series(db, "SPY")
             spy_ret_dates, spy_rets = self._log_returns_from_series(spy_dates, spy_closes)
             spy_ret_map = dict(zip(spy_ret_dates, spy_rets))  # date -> r_SPY
-            print(f"📊 SPY data: {len(spy_ret_dates)} return dates from {min(spy_ret_dates)} to {max(spy_ret_dates)}")
+            
+            # Style factors (market-neutral)
+            mtum_dates, mtum_closes = self._get_close_series(db, "MTUM")
+            mtum_ret_dates, mtum_rets = self._log_returns_from_series(mtum_dates, mtum_closes)
+            mtum_ret_map = dict(zip(mtum_ret_dates, mtum_rets))
+            
+            iwm_dates, iwm_closes = self._get_close_series(db, "IWM")
+            iwm_ret_dates, iwm_rets = self._log_returns_from_series(iwm_dates, iwm_closes)
+            iwm_ret_map = dict(zip(iwm_ret_dates, iwm_rets))
+            
+            vlue_dates, vlue_closes = self._get_close_series(db, "VLUE")
+            vlue_ret_dates, vlue_rets = self._log_returns_from_series(vlue_dates, vlue_closes)
+            vlue_ret_map = dict(zip(vlue_ret_dates, vlue_rets))
+            
+            qual_dates, qual_closes = self._get_close_series(db, "QUAL")
+            qual_ret_dates, qual_rets = self._log_returns_from_series(qual_dates, qual_closes)
+            qual_ret_map = dict(zip(qual_ret_dates, qual_rets))
+            
+            print(f"📊 ETF data loaded: SPY({len(spy_ret_dates)}), MTUM({len(mtum_ret_dates)}), IWM({len(iwm_ret_dates)}), VLUE({len(vlue_ret_dates)}), QUAL({len(qual_ret_dates)})")
             
             # Calculate factor exposures for each ticker and factor
             for ticker in all_tickers:
@@ -476,7 +535,6 @@ class DataService:
                 for factor in available_factors:
                     if factor == "MARKET":
                         # Use real SPY data for MARKET factor
-                        # Find common dates between asset and SPY
                         common = [d for d in asset_ret_dates if d in spy_ret_map]
                         if len(common) < 60:
                             print(f"❌ Not enough common dates for {ticker} vs SPY ({len(common)} records)")
@@ -518,12 +576,181 @@ class DataService:
                             except Exception as e:
                                 print(f"❌ Error calculating MARKET beta for {ticker}: {e}")
                                 continue
+                    
+                    elif factor == "MOMENTUM":
+                        # Use real MTUM data (market-neutral)
+                        common = [d for d in asset_ret_dates if d in mtum_ret_map and d in spy_ret_map]
+                        if len(common) < 60:
+                            print(f"❌ Not enough common dates for {ticker} vs MTUM ({len(common)} records)")
+                            continue
                         
-                        # Already calculated MARKET - go to next factor
-                        continue
+                        common.sort()
+                        a = np.array([asset_rets[asset_ret_dates.index(d)] for d in common])
+                        f = np.array([mtum_ret_map[d] - spy_ret_map[d] for d in common])  # Market-neutral
+                        
+                        window_size = 60
+                        for idx in range(window_size, len(common)):
+                            y = a[idx-window_size:idx]
+                            x = f[idx-window_size:idx]
+                            X = np.column_stack([np.ones(len(x)), x])
+                            
+                            try:
+                                coef = np.linalg.lstsq(X, y, rcond=None)[0]
+                                beta = float(coef[1])
+                                
+                                # R² from this regression
+                                y_hat = X @ coef
+                                ssr = float(((y - y_hat)**2).sum())
+                                sst = float(((y - y.mean())**2).sum())
+                                r2 = 1.0 - ssr/sst if sst > 0 else 0.0
+                                
+                                date = common[idx]
+                                factor_exposures.append({
+                                    "date": date.isoformat(),
+                                    "ticker": ticker,
+                                    "factor": factor,
+                                    "beta": round(beta, 3)
+                                })
+                                r2_data.append({
+                                    "date": date.isoformat(),
+                                    "ticker": ticker,
+                                    "r2": round(max(0.0, min(1.0, r2)), 3)
+                                })
+                            except Exception as e:
+                                print(f"❌ Error calculating MOMENTUM beta for {ticker}: {e}")
+                                continue
+                    
+                    elif factor == "SIZE":
+                        # Use real IWM data (market-neutral)
+                        common = [d for d in asset_ret_dates if d in iwm_ret_map and d in spy_ret_map]
+                        if len(common) < 60:
+                            print(f"❌ Not enough common dates for {ticker} vs IWM ({len(common)} records)")
+                            continue
+                        
+                        common.sort()
+                        a = np.array([asset_rets[asset_ret_dates.index(d)] for d in common])
+                        f = np.array([iwm_ret_map[d] - spy_ret_map[d] for d in common])  # Market-neutral
+                        
+                        window_size = 60
+                        for idx in range(window_size, len(common)):
+                            y = a[idx-window_size:idx]
+                            x = f[idx-window_size:idx]
+                            X = np.column_stack([np.ones(len(x)), x])
+                            
+                            try:
+                                coef = np.linalg.lstsq(X, y, rcond=None)[0]
+                                beta = float(coef[1])
+                                
+                                # R² from this regression
+                                y_hat = X @ coef
+                                ssr = float(((y - y_hat)**2).sum())
+                                sst = float(((y - y.mean())**2).sum())
+                                r2 = 1.0 - ssr/sst if sst > 0 else 0.0
+                                
+                                date = common[idx]
+                                factor_exposures.append({
+                                    "date": date.isoformat(),
+                                    "ticker": ticker,
+                                    "factor": factor,
+                                    "beta": round(beta, 3)
+                                })
+                                r2_data.append({
+                                    "date": date.isoformat(),
+                                    "ticker": ticker,
+                                    "r2": round(max(0.0, min(1.0, r2)), 3)
+                                })
+                            except Exception as e:
+                                print(f"❌ Error calculating SIZE beta for {ticker}: {e}")
+                                continue
+                    
+                    elif factor == "VALUE":
+                        # Use real VLUE data (market-neutral)
+                        common = [d for d in asset_ret_dates if d in vlue_ret_map and d in spy_ret_map]
+                        if len(common) < 60:
+                            print(f"❌ Not enough common dates for {ticker} vs VLUE ({len(common)} records)")
+                            continue
+                        
+                        common.sort()
+                        a = np.array([asset_rets[asset_ret_dates.index(d)] for d in common])
+                        f = np.array([vlue_ret_map[d] - spy_ret_map[d] for d in common])  # Market-neutral
+                        
+                        window_size = 60
+                        for idx in range(window_size, len(common)):
+                            y = a[idx-window_size:idx]
+                            x = f[idx-window_size:idx]
+                            X = np.column_stack([np.ones(len(x)), x])
+                            
+                            try:
+                                coef = np.linalg.lstsq(X, y, rcond=None)[0]
+                                beta = float(coef[1])
+                                
+                                # R² from this regression
+                                y_hat = X @ coef
+                                ssr = float(((y - y_hat)**2).sum())
+                                sst = float(((y - y.mean())**2).sum())
+                                r2 = 1.0 - ssr/sst if sst > 0 else 0.0
+                                
+                                date = common[idx]
+                                factor_exposures.append({
+                                    "date": date.isoformat(),
+                                    "ticker": ticker,
+                                    "factor": factor,
+                                    "beta": round(beta, 3)
+                                })
+                                r2_data.append({
+                                    "date": date.isoformat(),
+                                    "ticker": ticker,
+                                    "r2": round(max(0.0, min(1.0, r2)), 3)
+                                })
+                            except Exception as e:
+                                print(f"❌ Error calculating VALUE beta for {ticker}: {e}")
+                                continue
+                    
+                    elif factor == "QUALITY":
+                        # Use real QUAL data (market-neutral)
+                        common = [d for d in asset_ret_dates if d in qual_ret_map and d in spy_ret_map]
+                        if len(common) < 60:
+                            print(f"❌ Not enough common dates for {ticker} vs QUAL ({len(common)} records)")
+                            continue
+                        
+                        common.sort()
+                        a = np.array([asset_rets[asset_ret_dates.index(d)] for d in common])
+                        f = np.array([qual_ret_map[d] - spy_ret_map[d] for d in common])  # Market-neutral
+                        
+                        window_size = 60
+                        for idx in range(window_size, len(common)):
+                            y = a[idx-window_size:idx]
+                            x = f[idx-window_size:idx]
+                            X = np.column_stack([np.ones(len(x)), x])
+                            
+                            try:
+                                coef = np.linalg.lstsq(X, y, rcond=None)[0]
+                                beta = float(coef[1])
+                                
+                                # R² from this regression
+                                y_hat = X @ coef
+                                ssr = float(((y - y_hat)**2).sum())
+                                sst = float(((y - y.mean())**2).sum())
+                                r2 = 1.0 - ssr/sst if sst > 0 else 0.0
+                                
+                                date = common[idx]
+                                factor_exposures.append({
+                                    "date": date.isoformat(),
+                                    "ticker": ticker,
+                                    "factor": factor,
+                                    "beta": round(beta, 3)
+                                })
+                                r2_data.append({
+                                    "date": date.isoformat(),
+                                    "ticker": ticker,
+                                    "r2": round(max(0.0, min(1.0, r2)), 3)
+                                })
+                            except Exception as e:
+                                print(f"❌ Error calculating QUALITY beta for {ticker}: {e}")
+                                continue
                     
                     else:
-                        # Mock data for other factors (MOMENTUM, SIZE, VALUE, QUALITY)
+                        # Fallback to mock data for unknown factors
                         for i, date in enumerate(dates):
                             if i < 30:  # Need at least 30 days for rolling calculation
                                 continue
@@ -590,3 +817,550 @@ class DataService:
         except Exception as e:
             print(f"Error getting factor exposure data: {e}")
             return {"factor_exposures": [], "r2_data": [], "available_factors": [], "available_tickers": []} 
+
+    def get_concentration_risk_data(self, db: Session, username: str = "admin") -> Dict[str, Any]:
+        """Get concentration risk data for portfolio analysis"""
+        try:
+            print(f"🔍 Getting concentration risk data for user: {username}")
+            
+            # Get user's portfolio with shares
+            user = db.query(User).filter(User.username == username).first()
+            if not user:
+                return {"error": "User not found"}
+            
+            portfolio_items = db.query(Portfolio).filter(Portfolio.user_id == user.id).all()
+            if not portfolio_items:
+                return {"error": "No portfolio found"}
+            
+            # Get current prices and calculate market values
+            portfolio_data = []
+            total_mv = 0.0
+            
+            for item in portfolio_items:
+                ticker = item.ticker_symbol
+                shares = item.shares
+                
+                # Get latest price
+                latest_data = (db.query(TickerData)
+                                 .filter(TickerData.ticker_symbol == ticker)
+                                 .order_by(TickerData.date.desc())
+                                 .first())
+                
+                if latest_data:
+                    price = float(latest_data.close_price)
+                    market_value = price * shares
+                    total_mv += market_value
+                    
+                    portfolio_data.append({
+                        'ticker': ticker,
+                        'shares': shares,
+                        'price': price,
+                        'market_value': market_value,
+                        'weight': 0.0  # Will calculate after total
+                    })
+            
+            if total_mv == 0:
+                return {"error": "No market value data"}
+            
+            # 1) Wagi (frakcje i %)
+            for item in portfolio_data:
+                w = item['market_value'] / total_mv
+                item['weight_frac'] = w
+                item['weight'] = w * 100.0  # do UI
+            
+            # 2) Sort malejąco po wadze %
+            portfolio_data.sort(key=lambda x: x['weight'], reverse=True)
+            
+            # 3) KPI koncentracji
+            w_frac = [it['weight_frac'] for it in portfolio_data]
+            largest_position = portfolio_data[0]['weight'] if portfolio_data else 0.0
+            top_3_concentration = sum(it['weight'] for it in portfolio_data[:3])
+            top_5_concentration = sum(it['weight'] for it in portfolio_data[:5])
+            top_10_concentration = sum(it['weight'] for it in portfolio_data[:10])
+            hhi = sum(w*w for w in w_frac)                         # ✅ na ułamkach (0-1)
+            effective_positions = 1.0/hhi if hhi > 0 else 0.0      # ✅
+            
+            # Mock sector and market cap data (in real implementation, get from instrument_meta table)
+            sector_data = {
+                'ULTY': {'sector': 'Communication Services', 'market_cap': 27.70},
+                'RDDT': {'sector': 'Communication Services', 'market_cap': 2349.31},
+                'GOOGL': {'sector': 'Communication Services', 'market_cap': 1802.65},
+                'META': {'sector': 'Communication Services', 'market_cap': 270.52},
+                'AMD': {'sector': 'Technology', 'market_cap': 7.83},
+                'BULL': {'sector': 'Technology', 'market_cap': 73.40},
+                'SNOW': {'sector': 'Technology', 'market_cap': 123.27},
+                'APP': {'sector': 'Communication Services', 'market_cap': 32.09},
+                'SMCI': {'sector': 'Technology', 'market_cap': 1021.50},
+                'TSLA': {'sector': 'Consumer Cyclical', 'market_cap': 1021.50},
+                'BRK-B': {'sector': 'Financial Services', 'market_cap': 850.00},
+                'DOMO': {'sector': 'Technology', 'market_cap': 15.00},
+                'QQQM': {'sector': 'Technology', 'market_cap': 50.00},
+                'SGOV': {'sector': 'Financial Services', 'market_cap': 25.00}
+            }
+            
+            # Add sector and market cap to portfolio data
+            for item in portfolio_data:
+                ticker = item['ticker']
+                if ticker in sector_data:
+                    item['sector'] = sector_data[ticker]['sector']
+                    item['market_cap'] = sector_data[ticker]['market_cap']
+                else:
+                    item['sector'] = 'Unknown'
+                    item['market_cap'] = 0.0
+            
+            # 4) Sektor (agregacja po frakcjach!)
+            from collections import defaultdict
+            sector_w = defaultdict(float)
+            for it in portfolio_data:
+                s = it.get('sector', 'Unknown')
+                sector_w[s] += it['weight_frac']
+            
+            sector_concentration = {
+                'sectors': list(sector_w.keys()),
+                'weights': [v*100.0 for v in sector_w.values()],   # %
+            }
+            hhi_sec = sum(v*v for v in sector_w.values())          # ✅ na ułamkach
+            sector_concentration['hhi'] = hhi_sec
+            sector_concentration['effective_sectors'] = 1.0/hhi_sec if hhi_sec>0 else 0.0
+            
+            print(f"✅ Calculated concentration metrics for {len(portfolio_data)} positions")
+            
+            return {
+                "portfolio_data": portfolio_data,  # zawiera 'weight' (%) i 'weight_frac'
+                "concentration_metrics": {
+                    "largest_position": round(largest_position, 1),
+                    "top_3_concentration": round(top_3_concentration, 1),
+                    "top_5_concentration": round(top_5_concentration, 1),
+                    "top_10_concentration": round(top_10_concentration, 1),
+                    "herfindahl_index": round(hhi, 4),              # 0-1
+                    "effective_positions": round(effective_positions, 1)
+                },
+                "sector_concentration": sector_concentration,
+                "total_market_value": total_mv
+            }
+            
+        except Exception as e:
+            print(f"❌ Error calculating concentration risk: {e}")
+            return {"error": str(e)}
+
+    def _get_return_series_map(self, db: Session, symbols: List[str], lookback_days: int = 120):
+        """Zwraca dict: symbol -> (dates, returns) z ostatnich ~lookback dni. Prosto i szybko."""
+        ret_map = {}
+        for s in symbols:
+            dates, closes = self._get_close_series(db, s)
+            if len(closes) < 2:
+                ret_map[s] = ([], np.array([]))
+                continue
+            # przytnij końcówkę (ostatnie ~lookback dni)
+            dates = dates[-(lookback_days+2):]
+            closes = closes[-(lookback_days+2):]
+            rd, r = self._log_returns_from_series(dates, closes)
+            ret_map[s] = (rd, r)
+        return ret_map
+
+    def _intersect_and_stack(self, ret_map: Dict[str, Any], symbols: List[str]):
+        """Wspólne daty i macierz R [T x N] w kolejności symbols."""
+        if not symbols: 
+            return [], np.empty((0,0)), []
+        
+        # znajdź aktywne symbole (z danymi)
+        active = [s for s in symbols if s in ret_map and len(ret_map[s][0]) > 0]
+        if not active:
+            return [], np.empty((0,0)), []
+        
+        # zbierz zbiory dat
+        sets = [set(ret_map[s][0]) for s in active]
+        if not sets:
+            return [], np.empty((0,0)), []
+        common = sorted(list(set.intersection(*sets)))
+        if not common:
+            return [], np.empty((0,0)), []
+        
+        # zmapuj data->idx dla każdego symbolu
+        mats = []
+        for s in active:
+            dts, rets = ret_map[s]
+            idx = {d:i for i,d in enumerate(dts)}
+            mats.append(np.array([rets[idx[d]] for d in common], dtype=float))
+        R = np.column_stack(mats)  # T x N
+        return common, R, active
+
+    def get_risk_scoring(self, db: Session, username: str = "admin") -> Dict[str, Any]:
+        """MVP risk scoring: szybko i bez spiny."""
+        # 1) wagi i lista tickerów usera
+        conc = self.get_concentration_risk_data(db, username)
+        if "error" in conc: 
+            return {"error": conc["error"]}
+        positions = conc["portfolio_data"]
+        if not positions:
+            return {"error":"No positions"}
+        tickers = [p['ticker'] for p in positions]
+        w = np.array([p['weight_frac'] for p in positions], dtype=float)  # sum ~1
+
+        # 2) serie zwrotów: tickery + SPY + ETFy faktorowe
+        factor_proxies = {"MOMENTUM":"MTUM","SIZE":"IWM","VALUE":"VLUE","QUALITY":"QUAL"}
+        needed = list(set(tickers + ["SPY"] + list(factor_proxies.values())))
+        ret_map = self._get_return_series_map(db, needed, lookback_days=180)
+
+        # 3) macierz zwrotów pozycji, wspólne daty (ostatnie ~60)
+        dates, R, active = self._intersect_and_stack(ret_map, tickers)
+        if R.size == 0 or len(dates) < 40:
+            return {"error":"Insufficient overlapping history"}
+        
+        # przeskaluj wagi tylko na aktywne tickery
+        w_map = {p["ticker"]: p["weight_frac"] for p in positions}
+        w = np.array([w_map[s] for s in active], dtype=float)
+        w = w / w.sum()  # renormalizuj
+        
+        # portfelowe zwroty przy stałych wagach (snapshot) 
+        R = self._clamp(R, STRESS_LIMITS["clamp_return_abs"])  # spójność z regime/scenariuszami
+        rp = (R @ w)  # T x 1
+        T = len(rp)
+        # przytnij do 60dni
+        window = min(60, T)
+        dates_win = dates[-window:]
+
+        # Build index maps
+        idx_port = {d:i for i,d in enumerate(dates)}
+
+        # SPY alignment
+        d_spy, r_spy_full = ret_map.get("SPY", ([], np.array([])))
+        spy_idx = {d:i for i,d in enumerate(d_spy)}
+        dates_mkt = [d for d in dates_win if d in spy_idx]
+        if len(dates_mkt) < 30:
+            # degrade gracefully
+            dates_mkt = dates_win  # fallback
+            r_spy = np.zeros(len(dates_mkt))
+        else:
+            r_spy = np.array([r_spy_full[spy_idx[d]] for d in dates_mkt], dtype=float)
+        rp_win = np.array([rp[idx_port[d]] for d in dates_mkt], dtype=float)
+
+        # helper OLS beta
+        def beta_ols(y, x):
+            X = np.column_stack([np.ones(len(x)), x])
+            try:
+                b = np.linalg.lstsq(X, y, rcond=None)[0]
+                return float(b[1])
+            except:
+                return 0.0
+
+        # 4) metryki surowe
+        # vol ann
+        sigma_ann = float(np.std(rp_win, ddof=1) * np.sqrt(252))
+        # market beta
+        beta_mkt = beta_ols(rp_win, r_spy)
+
+        # factors alignment
+        betas = {}
+        for fac, etf in factor_proxies.items():
+            d_f, r_f_full = ret_map.get(etf, ([], np.array([])))
+            f_idx = {d:i for i,d in enumerate(d_f)}
+            dates_fac = [d for d in dates_mkt if d in f_idx]
+            if len(dates_fac) < 30:
+                betas[fac] = 0.0
+                continue
+            rf = np.array([r_f_full[f_idx[d]] for d in dates_fac], dtype=float)
+            rs = np.array([r_spy[dates_mkt.index(d)] for d in dates_fac], dtype=float)
+            rp_fac = np.array([rp_win[dates_mkt.index(d)] for d in dates_fac], dtype=float)
+            f_mn = rf - rs
+            betas[fac] = beta_ols(rp_fac, f_mn)
+
+        # correlations (NaN-safe, drop zero-variance columns)
+        R_sub = R[-window:, :]
+        var_mask = np.var(R_sub, axis=0) > 1e-12
+        R_sub = R_sub[:, var_mask]
+        avg_corr = 0.0; high_pairs = 0; pairs = 0
+        if R_sub.shape[1] >= 2:
+            C = np.corrcoef(R_sub, rowvar=False)
+            C = np.where(np.isfinite(C), C, 0.0)
+            N = C.shape[0]
+            vals = []
+            for i in range(N):
+                for j in range(i+1, N):
+                    c = C[i,j]
+                    vals.append(c)
+                    if c > 0.7: high_pairs += 1
+            if vals:
+                avg_corr = float(np.mean(vals))
+                pairs = len(vals)
+
+        # max drawdown on rp_win
+        cum = np.exp(np.cumsum(rp_win))  # log -> poziom indeksu
+        peak = np.maximum.accumulate(cum)
+        dd = cum/peak - 1.0
+        max_dd = float(dd.min()) if dd.size else 0.0  # ujemne
+
+        # 5) concentration (HHI i Neff)
+        hhi = float(conc["concentration_metrics"]["herfindahl_index"])  # już w [0..1]
+        neff = float(conc["concentration_metrics"]["effective_positions"])
+
+        # 6) skoring (0..1)
+        def clip01(x): 
+            return float(max(0.0, min(1.0, x)))
+        concentration_score = clip01((hhi - NORMALIZATION["HHI_LOW"]) / (NORMALIZATION["HHI_HIGH"] - NORMALIZATION["HHI_LOW"]))
+        volatility_score    = clip01(sigma_ann / NORMALIZATION["VOL_MAX"])
+        market_score        = clip01(abs(beta_mkt) / NORMALIZATION["BETA_ABS_MAX"])
+        factor_score        = clip01(sum(abs(betas[k]) for k in betas) / NORMALIZATION["FACTOR_L1_MAX"])
+        correlation_score   = clip01(avg_corr)  # 0..1
+        stress_score        = clip01(abs(beta_mkt) * 0.05 / NORMALIZATION["STRESS_5PCT_FULLSCORE"])
+
+        WEIGHTS = {
+            "CONCENTRATION": 0.30,
+            "VOLATILITY":    0.25,
+            "FACTOR":        0.20,
+            "CORRELATION":   0.15,
+            "MARKET":        0.10,
+            "STRESS":        0.00,
+        }
+
+        scores = {
+            "concentration": concentration_score,
+            "volatility":    volatility_score,
+            "market":        market_score,
+            "factor":        factor_score,
+            "correlation":   correlation_score,
+            "stress":        stress_score,
+        }
+        weights = {
+            "concentration": WEIGHTS["CONCENTRATION"],
+            "volatility":    WEIGHTS["VOLATILITY"],
+            "market":        WEIGHTS["MARKET"],
+            "factor":        WEIGHTS["FACTOR"],
+            "correlation":   WEIGHTS["CORRELATION"],
+            "stress":        WEIGHTS["STRESS"],
+        }
+        mix = {k: weights[k]*scores[k] for k in scores}
+        s = sum(mix.values()) or 1.0
+        contrib_pct = {k: 100.0*mix[k]/s for k in mix}
+
+        # 7) alerty „jak na screenie"
+        alerts = []
+        # Drawdown
+        if max_dd < -0.2:
+            sev = "HIGH"
+        elif max_dd < -0.1:
+            sev = "MEDIUM"
+        else:
+            sev = None
+        if sev:
+            alerts.append({"severity": sev, "text": f"Drawdown Risk: Maximum drawdown ({max_dd*100:.1f}%) is significant"})
+        # Market
+        if abs(beta_mkt) > 0.8:
+            alerts.append({"severity":"MEDIUM","text": f"Factor Exposure: High exposure to MARKET factor (beta: {beta_mkt:.2f})"})
+        # Others
+        for fac in ["SIZE","VALUE","MOMENTUM","QUALITY"]:
+            b = betas.get(fac, 0.0)
+            if abs(b) > 0.5:
+                alerts.append({"severity":"MEDIUM","text": f"Factor Exposure: High exposure to {fac} factor (beta: {b:.2f})"})
+        if high_pairs >= 2:
+            alerts.append({"severity":"MEDIUM","text": f"Correlation Risk: {high_pairs} pairs with correlation > 0.7"})
+
+        # 8) rekomendacje (proste)
+        recs = []
+        top_comp = max(contrib_pct, key=contrib_pct.get)
+        if top_comp == "concentration" and neff < 8:
+            recs.append("Reduce concentration: increase number of effective positions (>8).")
+        if abs(beta_mkt) > 0.8:
+            recs.append("Trim market beta towards 0.6–0.8 (hedge or rotate).")
+        if avg_corr > 0.5:
+            recs.append("Add diversifiers to lower average pairwise correlation (<0.4).")
+
+        return {
+            "score_weights": weights,
+            "component_scores": scores,                 # 0..1
+            "risk_contribution_pct": contrib_pct,       # do pie chart
+            "alerts": alerts,
+            "recommendations": recs,
+            "raw_metrics": {
+                "hhi": hhi, "n_eff": neff,
+                "vol_ann_pct": sigma_ann*100.0,
+                "beta_market": beta_mkt,
+                "avg_pair_corr": avg_corr,
+                "pairs_total": pairs,
+                "pairs_high_corr": high_pairs,
+                "max_drawdown_pct": max_dd*100.0
+            }
+        }
+
+    def _get_returns_between_dates(self, db: Session, symbol: str, start_d: date, end_d: date):
+        """Zwraca (dates, log_returns) w [start_d, end_d] dla symbolu. Może zwrócić [] gdy brak danych."""
+        rows = (db.query(TickerData)
+                  .filter(TickerData.ticker_symbol == symbol,
+                          TickerData.date >= start_d,
+                          TickerData.date <= end_d)
+                  .order_by(TickerData.date)
+                  .all())
+        if len(rows) < 2:
+            return [], np.array([])
+        dts = [r.date for r in rows]
+        closes = np.array([float(r.close_price) for r in rows], dtype=float)
+        rd, rets = self._log_returns_from_series(dts, closes)
+        return rd, rets
+
+    def _clamp(self, arr: np.ndarray, lim: float):
+        if arr.size == 0: 
+            return arr
+        return np.clip(arr, -abs(lim), abs(lim))
+
+    def _portfolio_snapshot(self, db: Session, username: str = "admin"):
+        """Zwraca listę pozycji (ticker, weight_frac)."""
+        conc = self.get_concentration_risk_data(db, username)
+        if "error" in conc: 
+            return [], 0.0
+        positions = conc["portfolio_data"]
+        w_sum = sum(p.get("weight_frac", 0.0) for p in positions)
+        if w_sum <= 0:
+            return [], 0.0
+        # normalizacja dla pewności
+        for p in positions:
+            p["weight_frac"] = float(p["weight_frac"]) / w_sum
+        return positions, 1.0
+
+    def get_market_regime(self, db: Session, username: str = "admin") -> Dict[str, Any]:
+        """Regime = vol/corr/mom na ostatnich ~60d + etykieta."""
+        positions, ok = self._portfolio_snapshot(db, username)
+        if not ok or not positions:
+            return {"error":"No positions"}
+
+        tickers = [p["ticker"] for p in positions]
+        w = np.array([p["weight_frac"] for p in positions], dtype=float)
+
+        # zwroty z ostatnich dni
+        lookback = STRESS_LIMITS["lookback_regime_days"] + 2
+        ret_map = self._get_return_series_map(db, tickers, lookback_days=lookback)
+        dates, R, active = self._intersect_and_stack(ret_map, tickers)
+        if R.size == 0 or len(dates) < 40:
+            return {"error":"Insufficient data for regime"}
+
+        # przeskaluj wagi tylko na aktywne tickery
+        w_map = {p["ticker"]: p["weight_frac"] for p in positions}
+        w = np.array([w_map[s] for s in active], dtype=float)
+        w = w / w.sum()  # renormalizuj
+
+        R = self._clamp(R, STRESS_LIMITS["clamp_return_abs"])
+        rp = R @ w
+        window = min(STRESS_LIMITS["lookback_regime_days"], len(rp))
+        rp = rp[-window:]
+
+        # vol
+        vol_ann = float(np.std(rp, ddof=1) * np.sqrt(252))
+        # momentum (20d)
+        mwin = min(STRESS_LIMITS["momentum_window_days"], len(rp))
+        mom = float(np.exp(np.sum(rp[-mwin:])) - 1.0)
+        # correlation
+        R_sub = R[-window:, :]
+        var_mask = np.var(R_sub, axis=0) > 1e-12
+        R_sub = R_sub[:, var_mask]
+        avg_corr = 0.0
+        if R_sub.shape[1] >= 2:
+            C = np.corrcoef(R_sub, rowvar=False)
+            C = np.where(np.isfinite(C), C, 0.0)
+            vals = [C[i,j] for i in range(C.shape[0]) for j in range(i+1, C.shape[0])]
+            if vals:
+                avg_corr = float(np.mean(vals))
+
+        # proste etykiety reżimu (strojenie do gustu)
+        if vol_ann > REGIME_THRESH["crisis_vol"] and avg_corr > 0.6 and mom < 0:
+            label = "Crisis"
+        elif vol_ann > REGIME_THRESH["cautious_vol"] or avg_corr > REGIME_THRESH["cautious_corr"]:
+            label = "Cautious"
+        elif mom > REGIME_THRESH["bull_mom"] and avg_corr < REGIME_THRESH["bull_corr"] and vol_ann < REGIME_THRESH["bull_vol"]:
+            label = "Bullish"
+        else:
+            label = "Normal"
+
+        # radar – znormalizuj do 0..1 „żeby ładnie wyglądało"
+        def clip01(x): return float(max(0.0, min(1.0, x)))
+        radar = {
+            "volatility":  clip01(vol_ann / 0.40),
+            "correlation": clip01(avg_corr),            # corr naturalnie [−1,1], tu przycinamy do [0,1]
+            "momentum":    clip01((mom + 0.10) / 0.20)  # −10% .. +10% mapowane na 0..1
+        }
+
+        return {
+            "label": label,
+            "volatility_pct": vol_ann * 100.0,
+            "correlation": avg_corr,
+            "momentum_pct": mom * 100.0,
+            "radar": radar
+        }
+
+    def get_historical_scenarios(self, db: Session, username: str = "admin",
+                                 scenarios: Optional[List[Dict[str, Any]]] = None) -> Dict[str, Any]:
+        """Wylicza PnL i DD dla historycznych scenariuszy. Pomija scenariusze z niskim pokryciem wag lub zbyt krótkie."""
+        positions, ok = self._portfolio_snapshot(db, username)
+        if not ok or not positions:
+            return {"error":"No positions"}
+
+        tickers = [p["ticker"] for p in positions]
+        w_map = {p["ticker"]: p["weight_frac"] for p in positions}
+
+        scenarios = scenarios or STRESS_SCENARIOS
+        analyzed, excluded = [], []
+
+        for sc in scenarios:
+            name, start_d, end_d = sc["name"], sc["start"], sc["end"]
+
+            # pobierz zwroty w oknie
+            ret_map = {}
+            included, w_cov = [], 0.0
+            for t in tickers:
+                dts, r = self._get_returns_between_dates(db, t, start_d, end_d)
+                if len(r) >= 2:  # minimalnie
+                    ret_map[t] = (dts, r)
+                    included.append(t)
+                    w_cov += w_map.get(t, 0.0)
+
+            if w_cov < STRESS_LIMITS["scenario_min_weight_coverage"]:
+                excluded.append({"name": name, "reason": f"Low weight coverage ({w_cov*100:.0f}%)"})
+                continue
+
+            if not included:
+                excluded.append({"name": name, "reason": "No overlapping data"})
+                continue
+
+            # wspólne daty i macierz
+            dates, R, active = self._intersect_and_stack(ret_map, included)
+            if len(dates) < STRESS_LIMITS["scenario_min_days"]:
+                excluded.append({"name": name, "reason": f"Too few common dates ({len(dates)})"})
+                continue
+
+            # przeskaluj wagi tylko na aktywne tickery
+            w = np.array([w_map[t] for t in active], dtype=float)
+            w = w / w.sum()
+
+            R = self._clamp(R, STRESS_LIMITS["clamp_return_abs"])
+            rp = R @ w
+
+            # wynik i DD
+            pnl = float(np.exp(np.sum(rp)) - 1.0)
+            cum = np.exp(np.cumsum(rp))  # log -> poziom indeksu
+            peak = np.maximum.accumulate(cum)
+            dd = cum/peak - 1.0
+            max_dd = float(dd.min()) if dd.size else 0.0
+
+            analyzed.append({
+                "name": name,
+                "start": start_d.isoformat(),
+                "end": end_d.isoformat(),
+                "days": len(rp),
+                "weight_coverage_pct": w_cov * 100.0,
+                "return_pct": pnl * 100.0,
+                "max_drawdown_pct": max_dd * 100.0
+            })
+
+        return {
+            "scenarios_analyzed": len(analyzed),
+            "scenarios_excluded": len(excluded),
+            "results": analyzed,
+            "excluded": excluded
+        }
+
+    def get_stress_testing(self, db: Session, username: str = "admin") -> Dict[str, Any]:
+        """Wrapper pod front – łączy Market Regime + Historical Scenarios."""
+        regime = self.get_market_regime(db, username)
+        scenarios = self.get_historical_scenarios(db, username)
+        return {
+            "market_regime": regime,
+            "scenarios": scenarios
+        } 
