@@ -102,6 +102,39 @@ def get_factor_exposure_data(username: str = "admin", db: Session = Depends(get_
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
+@app.get("/concentration-risk-data")
+def get_concentration_risk_data(username: str = "admin", db: Session = Depends(get_db)):
+    """Get concentration risk data for portfolio analysis"""
+    try:
+        # Get concentration risk data from database
+        concentration_data = data_service.get_concentration_risk_data(db, username)
+        return concentration_data
+
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/risk-scoring")
+def risk_scoring(username: str = "admin", db: Session = Depends(get_db)):
+    """Get risk scoring data for portfolio analysis"""
+    try:
+        data = data_service.get_risk_scoring(db, username)
+        if "error" in data:
+            raise HTTPException(status_code=400, detail=data["error"])
+        return data
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/stress-testing")
+def stress_testing(username: str = "admin", db: Session = Depends(get_db)):
+    """Get stress testing data for portfolio analysis"""
+    try:
+        data = data_service.get_stress_testing(db, username)
+        if "error" in data:
+            raise HTTPException(status_code=400, detail=data["error"])
+        return data
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
 @app.get("/health")
 def health_check():
     """Health check endpoint"""
