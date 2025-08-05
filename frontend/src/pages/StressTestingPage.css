@@ -1,0 +1,315 @@
+.stress-testing-page {
+  color: #ffffff;
+  padding: clamp(15px, 4vw, 30px);
+  background-color: #0a0a0a;
+  min-height: 100vh;
+  box-sizing: border-box;
+  width: 100%;
+  margin: 0;
+}
+
+.stress-testing-header {
+  margin-bottom: clamp(20px, 4vw, 30px);
+}
+
+.stress-testing-header h2 {
+  font-size: clamp(18px, 3vw, 24px);
+  font-weight: 700;
+  margin: 0;
+  color: #ffffff;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.market-regime-section,
+.stress-scenarios-section,
+.historical-scenarios-section {
+  background-color: #1a1a1a;
+  border-radius: clamp(6px, 1.5vw, 10px);
+  padding: clamp(15px, 3vw, 25px);
+  border: 1px solid #333;
+  margin-bottom: clamp(20px, 4vw, 30px);
+}
+
+.market-regime-section h3,
+.stress-scenarios-section h3,
+.historical-scenarios-section h3 {
+  font-size: clamp(14px, 2.5vw, 18px);
+  font-weight: 600;
+  margin: 0 0 clamp(15px, 3vw, 20px) 0;
+  color: #ffffff;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.regime-content {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: clamp(20px, 4vw, 30px);
+  align-items: start;
+}
+
+.regime-metrics {
+  display: flex;
+  flex-direction: column;
+  gap: clamp(15px, 3vw, 20px);
+}
+
+.regime-label {
+  display: flex;
+  align-items: center;
+  gap: clamp(10px, 2vw, 15px);
+  padding: clamp(10px, 2vw, 15px);
+  background-color: #2a2a2a;
+  border: 1px solid #333;
+  border-radius: clamp(4px, 1vw, 6px);
+}
+
+.label-text {
+  font-size: clamp(12px, 1.8vw, 14px);
+  color: #cccccc;
+}
+
+.regime-status {
+  font-size: clamp(12px, 1.8vw, 14px);
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  padding: clamp(4px, 1vw, 6px) clamp(8px, 1.5vw, 12px);
+  border-radius: clamp(2px, 0.5vw, 4px);
+}
+
+.regime-status.normal {
+  background-color: #4CAF50;
+  color: #ffffff;
+}
+
+.regime-status.cautious {
+  background-color: #FF9800;
+  color: #000000;
+}
+
+.regime-status.crisis {
+  background-color: #F44336;
+  color: #ffffff;
+}
+
+.regime-status.bullish {
+  background-color: #2196F3;
+  color: #ffffff;
+}
+
+.metrics-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: clamp(8px, 1.5vw, 12px);
+}
+
+.metric-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: clamp(8px, 1.5vw, 12px);
+  background-color: #2a2a2a;
+  border: 1px solid #333;
+  border-radius: clamp(4px, 1vw, 6px);
+}
+
+.metric-label {
+  font-size: clamp(11px, 1.5vw, 13px);
+  color: #888888;
+  font-weight: 500;
+}
+
+.metric-value {
+  font-size: clamp(12px, 1.8vw, 14px);
+  color: #ffffff;
+  font-weight: 600;
+}
+
+.radar-chart-container {
+  display: flex;
+  flex-direction: column;
+  gap: clamp(10px, 2vw, 15px);
+}
+
+.radar-chart-container h4 {
+  font-size: clamp(12px, 1.8vw, 14px);
+  font-weight: 600;
+  margin: 0;
+  color: #ffffff;
+  text-align: center;
+}
+
+.chart-container {
+  height: clamp(250px, 45vw, 350px);
+  position: relative;
+}
+
+.scenarios-summary {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: clamp(15px, 3vw, 20px);
+  margin-bottom: clamp(15px, 3vw, 20px);
+}
+
+.summary-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: clamp(10px, 2vw, 15px);
+  background-color: #2a2a2a;
+  border: 1px solid #333;
+  border-radius: clamp(4px, 1vw, 6px);
+}
+
+.summary-label {
+  font-size: clamp(11px, 1.5vw, 13px);
+  color: #888888;
+  font-weight: 500;
+}
+
+.summary-value {
+  font-size: clamp(14px, 2.5vw, 18px);
+  color: #ffffff;
+  font-weight: 700;
+}
+
+.excluded-scenarios {
+  margin-top: clamp(15px, 3vw, 20px);
+}
+
+.excluded-toggle {
+  background: none;
+  border: none;
+  color: #cccccc;
+  font-size: clamp(12px, 1.8vw, 14px);
+  cursor: pointer;
+  padding: clamp(8px, 1.5vw, 12px);
+  border-radius: clamp(4px, 1vw, 6px);
+  transition: all 0.2s ease;
+  display: flex;
+  align-items: center;
+  gap: clamp(5px, 1vw, 8px);
+}
+
+.excluded-toggle:hover {
+  background-color: #2a2a2a;
+  color: #ffffff;
+}
+
+.excluded-list {
+  margin-top: clamp(10px, 2vw, 15px);
+  display: flex;
+  flex-direction: column;
+  gap: clamp(8px, 1.5vw, 12px);
+}
+
+.excluded-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: clamp(8px, 1.5vw, 12px);
+  background-color: #2a2a2a;
+  border: 1px solid #333;
+  border-radius: clamp(4px, 1vw, 6px);
+}
+
+.excluded-name {
+  font-size: clamp(11px, 1.5vw, 13px);
+  color: #ffffff;
+  font-weight: 500;
+}
+
+.excluded-reason {
+  font-size: clamp(10px, 1.3vw, 12px);
+  color: #888888;
+  font-style: italic;
+}
+
+.loading,
+.error {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  min-height: 200px;
+  color: #cccccc;
+  font-size: clamp(14px, 2.5vw, 18px);
+}
+
+.retry-button {
+  margin-top: clamp(10px, 2vw, 15px);
+  padding: clamp(8px, 1.5vw, 12px) clamp(16px, 3vw, 24px);
+  background-color: #FF6B6B;
+  color: #ffffff;
+  border: none;
+  border-radius: clamp(4px, 1vw, 6px);
+  font-size: clamp(12px, 1.8vw, 14px);
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.retry-button:hover {
+  background-color: #FF5252;
+  transform: translateY(-1px);
+}
+
+/* Responsive design */
+@media (max-width: 1024px) {
+  .regime-content {
+    grid-template-columns: 1fr;
+    gap: clamp(15px, 3vw, 25px);
+  }
+  
+  .scenarios-summary {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 768px) {
+  .stress-testing-page {
+    padding: clamp(10px, 3vw, 20px);
+  }
+  
+  .market-regime-section,
+  .stress-scenarios-section,
+  .historical-scenarios-section {
+    padding: clamp(12px, 2.5vw, 20px);
+  }
+  
+  .regime-content {
+    gap: clamp(12px, 2.5vw, 20px);
+  }
+  
+  .scenarios-summary {
+    gap: clamp(10px, 2vw, 15px);
+  }
+}
+
+@media (max-width: 480px) {
+  .stress-testing-page {
+    padding: clamp(8px, 2.5vw, 15px);
+  }
+  
+  .market-regime-section,
+  .stress-scenarios-section,
+  .historical-scenarios-section {
+    padding: clamp(10px, 2vw, 15px);
+  }
+  
+  .regime-label {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: clamp(6px, 1.5vw, 10px);
+  }
+  
+  .metric-item,
+  .summary-item,
+  .excluded-item {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: clamp(4px, 1vw, 6px);
+  }
+} 
