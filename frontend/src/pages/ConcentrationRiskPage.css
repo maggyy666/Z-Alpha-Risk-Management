@@ -1,0 +1,269 @@
+.concentration-risk-page {
+  padding: 20px;
+  background-color: #0a0a0a;
+  min-height: 100vh;
+  color: #ffffff;
+  width: 100%;
+  box-sizing: border-box;
+}
+
+
+
+/* Sub-navigation */
+.sub-nav {
+  display: flex;
+  gap: 10px;
+  margin-bottom: 30px;
+  border-bottom: 1px solid #333;
+  padding-bottom: 10px;
+}
+
+.sub-nav-item {
+  background: none;
+  border: none;
+  color: #ffffff;
+  padding: 10px 20px;
+  cursor: pointer;
+  border-radius: 4px;
+  font-size: 14px;
+  transition: all 0.3s ease;
+}
+
+.sub-nav-item:hover {
+  background-color: #333;
+}
+
+.sub-nav-item.active {
+  background-color: #FF6B6B;
+  color: white;
+}
+
+/* Metrics Grid */
+.metrics-grid {
+  display: flex !important;
+  flex-direction: row !important;
+  flex-wrap: nowrap !important;
+  gap: clamp(10px, 2vw, 20px);
+  margin-bottom: clamp(20px, 4vw, 30px);
+  justify-content: center;
+  overflow-x: auto;
+  padding-bottom: 5px;
+  width: 100%;
+}
+
+.metric-card {
+  background-color: #1a1a1a;
+  border: 1px solid #333;
+  border-radius: clamp(6px, 1.5vw, 8px);
+  padding: clamp(15px, 3vw, 20px);
+  text-align: center;
+  min-width: clamp(140px, 18vw, 200px);
+  flex: 0 0 auto !important;
+  white-space: nowrap;
+  box-shadow: 0 2px 4px rgba(0,0,0,0.3);
+  display: block !important;
+}
+
+.metric-label {
+  font-size: clamp(11px, 1.5vw, 14px);
+  color: #cccccc;
+  margin-bottom: clamp(4px, 1vw, 8px);
+  font-weight: 500;
+}
+
+.metric-value {
+  font-size: clamp(18px, 3vw, 24px);
+  font-weight: bold;
+  color: #4FC3F7;
+}
+
+/* Chart Section */
+.chart-section {
+  background-color: #1a1a1a;
+  border: 1px solid #333;
+  border-radius: 8px;
+  padding: 20px;
+  margin-bottom: 30px;
+  width: 100%;
+}
+
+.chart-section h3 {
+  margin: 0 0 20px 0;
+  color: #ffffff;
+  font-size: 18px;
+}
+
+.chart-container {
+  height: clamp(350px, 50vw, 500px);
+  position: relative;
+  width: 100%;
+}
+
+/* Table Section */
+.table-section {
+  background-color: #1a1a1a;
+  border: 1px solid #333;
+  border-radius: 8px;
+  padding: 20px;
+  margin-bottom: 30px;
+  width: 100%;
+}
+
+.table-section h3 {
+  margin: 0 0 20px 0;
+  color: #ffffff;
+  font-size: 18px;
+}
+
+.table-container {
+  overflow-x: auto;
+  width: 100%;
+}
+
+.concentration-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 14px;
+}
+
+.concentration-table th,
+.concentration-table td {
+  padding: 12px;
+  text-align: left;
+  border-bottom: 1px solid #333;
+}
+
+.concentration-table th {
+  background-color: #2a2a2a;
+  color: #ffffff;
+  font-weight: bold;
+}
+
+.concentration-table td {
+  color: #cccccc;
+}
+
+.concentration-table tbody tr:hover {
+  background-color: #2a2a2a;
+}
+
+/* Position and Sector Concentration */
+.position-concentration,
+.sector-concentration {
+  background-color: #1a1a1a;
+  border: 1px solid #333;
+  border-radius: 8px;
+  padding: clamp(20px, 4vw, 30px);
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+}
+
+/* Sector Analysis Section */
+.sector-analysis-section {
+  margin-bottom: clamp(20px, 4vw, 30px);
+}
+
+.sector-analysis-section h3 {
+  color: #ffffff;
+  font-size: clamp(18px, 2.5vw, 24px);
+  margin-bottom: clamp(15px, 3vw, 20px);
+  font-weight: 600;
+}
+
+/* Coming Soon */
+.coming-soon {
+  background-color: #1a1a1a;
+  border: 1px solid #333;
+  border-radius: 8px;
+  padding: 40px;
+  text-align: center;
+}
+
+.coming-soon h3 {
+  color: #ffffff;
+  margin-bottom: 10px;
+}
+
+.coming-soon p {
+  color: #cccccc;
+  font-size: 14px;
+}
+
+/* Loading and Error States */
+.loading,
+.error {
+  text-align: center;
+  padding: 40px;
+  font-size: 16px;
+}
+
+.loading {
+  color: #4FC3F7;
+}
+
+.error {
+  color: #FF6B6B;
+}
+
+/* Responsive Design */
+@media (max-width: 768px) {
+  .concentration-risk-page {
+    padding: clamp(10px, 3vw, 15px);
+  }
+  
+  .sub-nav {
+    flex-wrap: wrap;
+  }
+  
+  .sub-nav-item {
+    flex: 1;
+    min-width: 120px;
+  }
+  
+  .metrics-grid {
+    gap: clamp(8px, 1.5vw, 15px);
+  }
+  
+  .metric-card {
+    padding: clamp(10px, 2vw, 15px);
+    min-width: clamp(120px, 15vw, 180px);
+  }
+  
+  .metric-value {
+    font-size: clamp(16px, 2.5vw, 20px);
+  }
+  
+  .chart-container {
+    height: clamp(250px, 40vw, 300px);
+  }
+  
+  .concentration-table {
+    font-size: clamp(10px, 1.5vw, 12px);
+  }
+  
+  .concentration-table th,
+  .concentration-table td {
+    padding: clamp(6px, 1vw, 8px) clamp(3px, 0.8vw, 4px);
+  }
+}
+
+@media (max-width: 480px) {
+  .metrics-grid {
+    gap: clamp(6px, 1vw, 10px);
+  }
+  
+  .metric-card {
+    padding: clamp(8px, 1.5vw, 12px);
+    min-width: clamp(100px, 12vw, 140px);
+  }
+  
+  .metric-label {
+    font-size: clamp(9px, 1.2vw, 11px);
+  }
+  
+  .metric-value {
+    font-size: clamp(14px, 2vw, 16px);
+  }
+} 
