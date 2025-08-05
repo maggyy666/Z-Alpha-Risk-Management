@@ -4,7 +4,7 @@ from sqlalchemy.orm import sessionmaker
 import os
 
 # SQLite database URL
-SQLALCHEMY_DATABASE_URL = "sqlite:///./backend/portfolio.db"
+SQLALCHEMY_DATABASE_URL = "sqlite:///portfolio.db"
 
 # Create engine
 engine = create_engine(
