@@ -4,6 +4,8 @@ import './App.css';
 import DashboardLayout from './components/DashboardLayout';
 import VolatilitySizingPage from './pages/VolatilitySizingPage';
 import FactorExposurePage from './pages/FactorExposurePage';
+import ConcentrationRiskPage from './pages/ConcentrationRiskPage';
+import StressTestingPage from './pages/StressTestingPage';
 
 function App() {
   return (
@@ -19,6 +21,16 @@ function App() {
         <Route path="/factor-exposure" element={
           <DashboardLayout>
             <FactorExposurePage />
+          </DashboardLayout>
+        } />
+        <Route path="/concentration-risk" element={
+          <DashboardLayout>
+            <ConcentrationRiskPage />
+          </DashboardLayout>
+        } />
+        <Route path="/stress-testing" element={
+          <DashboardLayout>
+            <StressTestingPage />
           </DashboardLayout>
         } />
       </Routes>
