@@ -62,9 +62,9 @@ const StressTestingPage: React.FC = () => {
         {
           label: 'Market Regime Indicators',
           data: [
-            data.market_regime.radar.correlation,
-            data.market_regime.radar.volatility,
-            data.market_regime.radar.momentum
+            data.market_regime.radar?.correlation || 0,
+            data.market_regime.radar?.volatility || 0,
+            data.market_regime.radar?.momentum || 0
           ],
           backgroundColor: 'rgba(54, 162, 235, 0.2)',
           borderColor: 'rgba(54, 162, 235, 1)',
@@ -81,8 +81,8 @@ const StressTestingPage: React.FC = () => {
   const createScenariosChartData = () => {
     if (!data) return null;
 
-    const labels = data.scenarios.results.map(r => r.name);
-    const drawdowns = data.scenarios.results.map(r => r.max_drawdown_pct);
+    const labels = data.scenarios.results?.map(r => r.name) || [];
+    const drawdowns = data.scenarios.results?.map(r => r.max_drawdown_pct) || [];
 
     // Create color scale based on drawdown severity
     const colors = drawdowns.map(dd => {
@@ -236,22 +236,22 @@ const StressTestingPage: React.FC = () => {
           <div className="regime-metrics">
             <div className="regime-label">
               <span className="label-text">Current Market Regime:</span>
-              <span className={`regime-status ${data.market_regime.label.toLowerCase()}`}>
-                {data.market_regime.label}
+              <span className={`regime-status ${data.market_regime.label?.toLowerCase() || 'normal'}`}>
+                {data.market_regime.label || 'Normal'}
               </span>
             </div>
             <div className="metrics-grid">
               <div className="metric-item">
                 <span className="metric-label">Volatility:</span>
-                <span className="metric-value">{data.market_regime.volatility_pct.toFixed(2)}%</span>
+                <span className="metric-value">{data.market_regime.volatility_pct?.toFixed(2) || '0.00'}%</span>
               </div>
               <div className="metric-item">
                 <span className="metric-label">Correlation:</span>
-                <span className="metric-value">{data.market_regime.correlation.toFixed(3)}</span>
+                <span className="metric-value">{data.market_regime.correlation?.toFixed(3) || '0.000'}</span>
               </div>
               <div className="metric-item">
                 <span className="metric-label">Momentum:</span>
-                <span className="metric-value">{data.market_regime.momentum_pct.toFixed(2)}%</span>
+                <span className="metric-value">{data.market_regime.momentum_pct?.toFixed(2) || '0.00'}%</span>
               </div>
             </div>
           </div>
@@ -272,15 +272,15 @@ const StressTestingPage: React.FC = () => {
         <div className="scenarios-summary">
           <div className="summary-item">
             <span className="summary-label">Scenarios Analyzed:</span>
-            <span className="summary-value">{data.scenarios.scenarios_analyzed}</span>
+            <span className="summary-value">{data.scenarios.scenarios_analyzed || 0}</span>
           </div>
           <div className="summary-item">
             <span className="summary-label">Scenarios Excluded:</span>
-            <span className="summary-value">{data.scenarios.scenarios_excluded}</span>
+            <span className="summary-value">{data.scenarios.scenarios_excluded || 0}</span>
           </div>
         </div>
         
-        {data.scenarios.excluded.length > 0 && (
+        {data.scenarios.excluded?.length > 0 && (
           <div className="excluded-scenarios">
             <button 
               className="excluded-toggle"
@@ -290,7 +290,7 @@ const StressTestingPage: React.FC = () => {
             </button>
             {showExcluded && (
               <div className="excluded-list">
-                {data.scenarios.excluded.map((item, index) => (
+                {data.scenarios.excluded?.map((item, index) => (
                   <div key={index} className="excluded-item">
                     <span className="excluded-name">{item.name}</span>
                     <span className="excluded-reason">{item.reason}</span>

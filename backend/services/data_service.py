@@ -880,7 +880,7 @@ class DataService:
             hhi = sum(w*w for w in w_frac)                         # ✅ na ułamkach (0-1)
             effective_positions = 1.0/hhi if hhi > 0 else 0.0      # ✅
             
-            # Mock sector and market cap data (in real implementation, get from instrument_meta table)
+            # Mock sector and market cap data (wymuszony fallback)
             sector_data = {
                 'ULTY': {'sector': 'Communication Services', 'market_cap': 27.70},
                 'RDDT': {'sector': 'Communication Services', 'market_cap': 2349.31},
@@ -897,16 +897,10 @@ class DataService:
                 'QQQM': {'sector': 'Technology', 'market_cap': 50.00},
                 'SGOV': {'sector': 'Financial Services', 'market_cap': 25.00}
             }
-            
-            # Add sector and market cap to portfolio data
             for item in portfolio_data:
                 ticker = item['ticker']
-                if ticker in sector_data:
-                    item['sector'] = sector_data[ticker]['sector']
-                    item['market_cap'] = sector_data[ticker]['market_cap']
-                else:
-                    item['sector'] = 'Unknown'
-                    item['market_cap'] = 0.0
+                item['sector'] = sector_data.get(ticker, {}).get('sector', 'Unknown')
+                item['market_cap'] = sector_data.get(ticker, {}).get('market_cap', 0.0)
             
             # 4) Sektor (agregacja po frakcjach!)
             from collections import defaultdict
