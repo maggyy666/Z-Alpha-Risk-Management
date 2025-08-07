@@ -53,6 +53,13 @@ def egarch_vol(returns, omega=-0.1, alpha=0.1, gamma=0.1, beta=0.9, annualize=Tr
 
 # -------- wygodny dispatcher -------- #
 
+def annualized_vol(returns: np.ndarray) -> float:
+    """Calculate annualized volatility from returns"""
+    if len(returns) < 2:
+        return 0.0
+    return float(np.std(returns, ddof=1) * np.sqrt(252))
+
+
 def forecast_sigma(returns, model="EWMA (5D)"):
     m = model.upper()
     if m.startswith("EWMA"):
