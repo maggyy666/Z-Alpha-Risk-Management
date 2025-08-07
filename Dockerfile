@@ -34,8 +34,11 @@ RUN npm install
 # Create startup script
 WORKDIR /app
 RUN echo '#!/bin/bash\n\
-cd /app/backend && poetry run uvicorn api.main:app --host 0.0.0.0 --port 8000 &\n\
-cd /app/frontend && npm start\n\
+echo "Starting backend..."\n\
+cd /app/backend && python -m uvicorn api.main:app --host 0.0.0.0 --port 8000 &\n\
+echo "Starting frontend..."\n\
+cd /app/frontend && BROWSER=none npm start &\n\
+echo "Both services started, waiting..."\n\
 wait' > /app/start.sh && chmod +x /app/start.sh
 
 # Expose ports

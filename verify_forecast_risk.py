@@ -72,7 +72,7 @@ class ForecastRiskVerifier:
     
     def verify_dashboard_data(self, username: str = "admin", vol_model: str = "EGARCH"):
         """Główna funkcja weryfikacji"""
-        print("🔍 WERYFIKACJA DANYCH FORECAST RISK CONTRIBUTION")
+        print("WERYFIKACJA DANYCH FORECAST RISK CONTRIBUTION")
         print("=" * 60)
         
         # 1. Pobierz dane z dashboardu

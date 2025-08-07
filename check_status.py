@@ -10,40 +10,40 @@ import os
 
 def check_backend():
     """Check backend status"""
-    print("🔧 Checking backend...")
+    print("Checking backend...")
     try:
         response = requests.get("http://localhost:8000/health", timeout=5)
         if response.status_code == 200:
-            print("✅ Backend is running")
+            print("Backend is running")
             return True
         else:
-            print("❌ Backend is not responding properly")
+            print("Backend is not responding properly")
             return False
     except requests.exceptions.RequestException:
-        print("❌ Backend is not running")
+        print("Backend is not running")
         return False
 
 def check_frontend():
     """Check frontend status"""
-    print("🎨 Checking frontend...")
+    print("Checking frontend...")
     try:
         response = requests.get("http://localhost:3000", timeout=5)
         if response.status_code == 200:
-            print("✅ Frontend is running")
+            print("Frontend is running")
             return True
         else:
-            print("❌ Frontend is not responding properly")
+            print("Frontend is not responding properly")
             return False
     except requests.exceptions.RequestException:
-        print("❌ Frontend is not running")
+        print("Frontend is not running")
         return False
 
 def check_database():
     """Check database status"""
-    print("📊 Checking database...")
+    print("Checking database...")
     try:
         if not os.path.exists("portfolio.db"):
-            print("❌ Database file not found")
+            print("Database file not found")
             return False
         
         conn = sqlite3.connect("portfolio.db")
@@ -52,32 +52,32 @@ def check_database():
         # Check tables
         cursor.execute("SELECT name FROM sqlite_master WHERE type='table';")
         tables = [row[0] for row in cursor.fetchall()]
-        print(f"✅ Database tables: {', '.join(tables)}")
+        print(f"Database tables: {', '.join(tables)}")
         
         # Check data
         cursor.execute("SELECT COUNT(*) FROM ticker_data;")
         total_records = cursor.fetchone()[0]
-        print(f"📊 Total records: {total_records}")
+        print(f"Total records: {total_records}")
         
         cursor.execute("SELECT COUNT(DISTINCT ticker_symbol) FROM ticker_data;")
         total_tickers = cursor.fetchone()[0]
-        print(f"📈 Total tickers: {total_tickers}")
+        print(f"Total tickers: {total_tickers}")
         
         # Check date range
         cursor.execute("SELECT MIN(date), MAX(date) FROM ticker_data;")
         min_date, max_date = cursor.fetchone()
-        print(f"📅 Date range: {min_date} to {max_date}")
+        print(f"Date range: {min_date} to {max_date}")
         
         conn.close()
         return True
         
     except Exception as e:
-        print(f"❌ Database error: {e}")
+        print(f"Database error: {e}")
         return False
 
 def test_endpoints():
     """Test all endpoints"""
-    print("\n🧪 Testing endpoints...")
+    print("\nTesting endpoints...")
     
     endpoints = [
         ("/concentration-risk-data?username=admin", "Concentration Risk"),
@@ -95,19 +95,19 @@ def test_endpoints():
             if response.status_code == 200:
                 data = response.json()
                 if "error" in data:
-                    print(f"❌ {name}: {data['error']}")
+                    print(f"{name}: {data['error']}")
                     all_ok = False
                 else:
-                    print(f"✅ {name}: OK")
+                    print(f"{name}: OK")
             else:
-                print(f"❌ {name}: HTTP {response.status_code}")
+                print(f"{name}: HTTP {response.status_code}")
                 all_ok = False
                 
         except requests.exceptions.RequestException as e:
-            print(f"❌ {name}: Connection error - {e}")
+            print(f"{name}: Connection error - {e}")
             all_ok = False
         except json.JSONDecodeError:
-            print(f"❌ {name}: Invalid JSON response")
+            print(f"{name}: Invalid JSON response")
             all_ok = False
     
     return all_ok
@@ -115,7 +115,7 @@ def test_endpoints():
 def main():
     """Main function"""
     print("=" * 60)
-    print("🔍 Z-ALPHA SECURITIES - STATUS CHECK")
+    print("Z-ALPHA SECURITIES - STATUS CHECK")
     print("=" * 60)
     
     backend_ok = check_backend()
@@ -128,19 +128,19 @@ def main():
         endpoints_ok = False
     
     print("\n" + "=" * 60)
-    print("📋 STATUS SUMMARY")
+    print("STATUS SUMMARY")
     print("=" * 60)
-    print(f"🔧 Backend: {'✅ OK' if backend_ok else '❌ FAILED'}")
-    print(f"🎨 Frontend: {'✅ OK' if frontend_ok else '❌ FAILED'}")
-    print(f"📊 Database: {'✅ OK' if database_ok else '❌ FAILED'}")
-    print(f"🧪 Endpoints: {'✅ OK' if endpoints_ok else '❌ FAILED'}")
+    print(f"Backend: {'OK' if backend_ok else 'FAILED'}")
+    print(f"Frontend: {'OK' if frontend_ok else 'FAILED'}")
+    print(f"Database: {'OK' if database_ok else 'FAILED'}")
+    print(f"Endpoints: {'OK' if endpoints_ok else 'FAILED'}")
     
     if all([backend_ok, frontend_ok, database_ok, endpoints_ok]):
-        print("\n🎉 EVERYTHING IS WORKING PERFECTLY!")
-        print("🌐 Open http://localhost:3000 to use the dashboard")
+        print("\nEVERYTHING IS WORKING PERFECTLY!")
+        print("Open http://localhost:3000 to use the dashboard")
     else:
-        print("\n⚠️  Some components are not working properly")
-        print("💡 Run 'python start_all.py' to restart everything")
+        print("\nSome components are not working properly")
+        print("Run 'python start_all.py' to restart everything")
     
     print("=" * 60)
 
