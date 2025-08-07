@@ -1,0 +1,323 @@
+.portfolio-summary {
+  color: #ffffff;
+  padding: clamp(20px, 4vw, 40px);
+  background-color: #0a0a0a;
+  min-height: 100vh;
+  box-sizing: border-box;
+  width: 100%;
+  margin: 0;
+  max-width: 1400px;
+  margin: 0 auto;
+}
+
+.portfolio-summary-header {
+  margin-bottom: clamp(30px, 5vw, 50px);
+}
+
+.portfolio-summary-header h2 {
+  font-size: clamp(18px, 3vw, 24px);
+  font-weight: 700;
+  margin: 0;
+  color: #ffffff;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+/* Risk Score Section */
+.risk-score-section {
+  display: grid;
+  grid-template-columns: 200px 1fr 200px;
+  gap: clamp(30px, 5vw, 50px);
+  margin-bottom: clamp(30px, 5vw, 50px);
+  align-items: center;
+  max-width: 100%;
+}
+
+.risk-gauge-container {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 15px;
+}
+
+.risk-score-display {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 5px;
+}
+
+.risk-scale {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+}
+
+.scale-gradient {
+  width: 200px;
+  height: 20px;
+  background: linear-gradient(
+    to right,
+    #4caf50 0%,
+    #4caf50 25%,
+    #ff9800 25%,
+    #ff9800 50%,
+    #ff5722 50%,
+    #ff5722 75%,
+    #f44336 75%,
+    #f44336 100%
+  );
+  border-radius: 10px;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
+}
+
+.scale-marks {
+  display: flex;
+  justify-content: space-between;
+  width: 200px;
+  font-size: 10px;
+  color: #cccccc;
+  font-weight: 600;
+}
+
+.gauge-value {
+  font-size: 28px;
+  font-weight: 700;
+  color: #ffffff;
+  z-index: 2;
+  margin-bottom: 4px;
+}
+
+.gauge-label {
+  font-size: 12px;
+  color: #cccccc;
+  margin-top: 4px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.gauge-change {
+  font-size: 10px;
+  color: #f44336;
+  margin-top: 2px;
+  font-weight: 600;
+}
+
+.risk-info {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.risk-level {
+  font-size: 20px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  margin-bottom: 8px;
+}
+
+.risk-description {
+  font-size: 14px;
+  color: #cccccc;
+  line-height: 1.4;
+  margin-bottom: 8px;
+}
+
+.overall-score {
+  font-size: 16px;
+  font-weight: 600;
+  color: #ffffff;
+  margin-top: 4px;
+}
+
+.highest-risk {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  align-items: flex-end;
+}
+
+.highest-risk-label {
+  font-size: 12px;
+  color: #cccccc;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.highest-risk-component {
+  font-size: 18px;
+  font-weight: 700;
+  color: #ffffff;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 4px;
+}
+
+.risk-percentage {
+  color: #4caf50;
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.high-risk-components {
+  font-size: 12px;
+  color: #cccccc;
+}
+
+/* Portfolio Overview Section */
+.portfolio-overview-section {
+  margin-bottom: clamp(30px, 5vw, 50px);
+  max-width: 100%;
+}
+
+.overview-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: clamp(15px, 3vw, 20px);
+  max-width: 100%;
+  margin: 0 auto;
+}
+
+.overview-item {
+  background-color: #1a1a1a;
+  border-radius: clamp(6px, 1.5vw, 10px);
+  padding: clamp(15px, 3vw, 20px);
+  border: 1px solid #333;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+  min-width: 0;
+  min-height: 80px;
+  justify-content: center;
+  align-items: center;
+  text-align: center;
+}
+
+.overview-label {
+  font-size: 11px;
+  color: #cccccc;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  font-weight: 600;
+  margin-bottom: 4px;
+  text-align: center;
+}
+
+.overview-value {
+  font-size: 18px;
+  font-weight: 700;
+  color: #ffffff;
+  line-height: 1.2;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  text-align: center;
+}
+
+.metric--warning {
+  color: #facc15 !important; /* amber-400 */
+}
+
+.metric--danger {
+  color: #f87171 !important; /* red-400 */
+}
+
+.warning-icon {
+  font-size: 14px;
+  margin-left: 4px;
+}
+
+/* Portfolio Positions Chart - pod statystykami */
+.portfolio-positions-chart {
+  margin-top: clamp(20px, 4vw, 30px);
+  background-color: #1a1a1a;
+  border-radius: clamp(6px, 1.5vw, 10px);
+  padding: clamp(20px, 4vw, 30px);
+  border: 1px solid #333;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+}
+
+.portfolio-positions-chart h3 {
+  font-size: clamp(14px, 2.5vw, 18px);
+  font-weight: 600;
+  margin: 0 0 clamp(15px, 3vw, 20px) 0;
+  color: #ffffff;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.chart-container {
+  height: clamp(300px, 50vw, 400px);
+  position: relative;
+  background-color: #2a2a2a;
+  border-radius: clamp(4px, 1vw, 6px);
+  padding: clamp(15px, 3vw, 20px);
+  border: 1px solid #444;
+}
+
+/* Loading and Error States */
+.loading, .error {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  min-height: 200px;
+  font-size: 16px;
+  color: #cccccc;
+}
+
+.error {
+  flex-direction: column;
+  gap: 15px;
+}
+
+.retry-button {
+  background-color: #4caf50;
+  color: #ffffff;
+  border: none;
+  padding: 10px 20px;
+  border-radius: 6px;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background-color 0.2s ease;
+}
+
+.retry-button:hover {
+  background-color: #45a049;
+}
+
+/* Responsive Design */
+@media (max-width: 1200px) {
+  .overview-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+@media (max-width: 768px) {
+  .risk-score-section {
+    grid-template-columns: 1fr;
+    gap: 20px;
+  }
+  
+  .overview-grid {
+    grid-template-columns: 1fr;
+  }
+  
+  .highest-risk {
+    align-items: flex-start;
+  }
+  
+  .risk-gauge {
+    width: 100px;
+    height: 100px;
+  }
+  
+  .gauge-value {
+    font-size: 20px;
+  }
+}

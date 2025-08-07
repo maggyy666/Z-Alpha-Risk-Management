@@ -40,14 +40,10 @@
 
 /* Metrics Grid */
 .metrics-grid {
-  display: flex !important;
-  flex-direction: row !important;
-  flex-wrap: nowrap !important;
-  gap: clamp(10px, 2vw, 20px);
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: clamp(15px, 3vw, 25px);
   margin-bottom: clamp(20px, 4vw, 30px);
-  justify-content: center;
-  overflow-x: auto;
-  padding-bottom: 5px;
   width: 100%;
 }
 
@@ -57,11 +53,13 @@
   border-radius: clamp(6px, 1.5vw, 8px);
   padding: clamp(15px, 3vw, 20px);
   text-align: center;
-  min-width: clamp(140px, 18vw, 200px);
-  flex: 0 0 auto !important;
-  white-space: nowrap;
   box-shadow: 0 2px 4px rgba(0,0,0,0.3);
-  display: block !important;
+  transition: all 0.3s ease;
+}
+
+.metric-card:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 8px rgba(0,0,0,0.4);
 }
 
 .metric-label {
@@ -223,12 +221,12 @@
   }
   
   .metrics-grid {
+    grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
     gap: clamp(8px, 1.5vw, 15px);
   }
   
   .metric-card {
     padding: clamp(10px, 2vw, 15px);
-    min-width: clamp(120px, 15vw, 180px);
   }
   
   .metric-value {
@@ -251,12 +249,12 @@
 
 @media (max-width: 480px) {
   .metrics-grid {
+    grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
     gap: clamp(6px, 1vw, 10px);
   }
   
   .metric-card {
     padding: clamp(8px, 1.5vw, 12px);
-    min-width: clamp(100px, 12vw, 140px);
   }
   
   .metric-label {

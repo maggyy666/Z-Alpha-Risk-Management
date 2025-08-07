@@ -37,14 +37,62 @@
 }
 
 .logo {
-  font-size: clamp(1.2rem, 2.5vw, 1.8rem);
-  font-weight: 700;
-  margin: 0;
-  color: #FF6B6B;
-  letter-spacing: 1px;
-  text-transform: uppercase;
-  font-family: 'Arial', sans-serif;
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  font-family: 'Times New Roman', 'Georgia', serif;
   white-space: nowrap;
+  min-width: 280px;
+}
+
+.logo-icon {
+  font-size: clamp(1.8rem, 3.5vw, 2.5rem);
+  font-weight: 700;
+  color: #FF6B6B;
+  background: linear-gradient(135deg, #FF6B6B, #ff8a8a);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+  text-shadow: 0 2px 4px rgba(255, 107, 107, 0.3);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  line-height: 1;
+  height: 100%;
+  margin-top: 0;
+}
+
+.logo-text {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-weight: 700;
+  letter-spacing: 0.5px;
+}
+
+.logo-main {
+  font-size: clamp(1.4rem, 2.8vw, 2.1rem);
+  color: #FF6B6B;
+  text-transform: uppercase;
+  font-weight: 700;
+  letter-spacing: 1px;
+  font-family: 'Helvetica Neue', 'Arial', sans-serif;
+}
+
+.logo-separator {
+  font-size: clamp(1.2rem, 2.4vw, 1.6rem);
+  color: #FF6B6B;
+  font-weight: 400;
+  font-family: 'Times New Roman', 'Georgia', serif;
+}
+
+.logo-sub {
+  font-size: clamp(1rem, 2vw, 1.4rem);
+  color: #FF6B6B;
+  text-transform: none;
+  font-weight: 300;
+  letter-spacing: 0.5px;
+  font-family: 'Times New Roman', 'Georgia', serif;
 }
 
 .user-info {

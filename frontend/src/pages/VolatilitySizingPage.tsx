@@ -79,26 +79,25 @@ const VolatilitySizingPage: React.FC = () => {
     );
   }
 
-                return (
-                <div className="volatility-sizing-page">
-      
+  return (
+    <div className="volatility-sizing-page">
       <div className="section">
         <div className="section-header">
           <h2>Volatility-Based Sizing</h2>
-                                <div className="dropdown-container">
-                        <label>Select Volatility Forecast Model:</label>
-                        <select 
-                          className="model-dropdown"
-                          value={selectedModel}
-                          onChange={(e) => setSelectedModel(e.target.value)}
-                        >
-                          <option value="EWMA (5D)">EWMA (5D)</option>
-                          <option value="EWMA (30D)">EWMA (30D)</option>
-                          <option value="EWMA (200D)">EWMA (200D)</option>
-                          <option value="Garch Volatility">Garch Volatility</option>
-                          <option value="E-Garch Volatility">E-Garch Volatility</option>
-                        </select>
-                      </div>
+          <div className="dropdown-container">
+            <label>Select Volatility Forecast Model:</label>
+            <select 
+              className="model-dropdown"
+              value={selectedModel}
+              onChange={(e) => setSelectedModel(e.target.value)}
+            >
+              <option value="EWMA (5D)">EWMA (5D)</option>
+              <option value="EWMA (30D)">EWMA (30D)</option>
+              <option value="EWMA (200D)">EWMA (200D)</option>
+              <option value="Garch Volatility">Garch Volatility</option>
+              <option value="E-Garch Volatility">E-Garch Volatility</option>
+            </select>
+          </div>
         </div>
         
         <div className="table-container">
@@ -116,35 +115,34 @@ const VolatilitySizingPage: React.FC = () => {
                 <th>Shares Delta</th>
               </tr>
             </thead>
-                                    <tbody>
-                          {portfolioData.map((item) => (
-                            <tr key={item.symbol}>
-                              <td>{item.symbol}</td>
-                              <td className="percentage-column">{formatPercentage(item.forecast_volatility_pct)}</td>
-                              <td className="percentage-column">{formatPercentage(item.current_weight_pct)}</td>
-                              <td className="percentage-column">{formatPercentage(item.adj_volatility_weight_pct)}</td>
-                              <td className="currency-column">{formatCurrency(item.current_mv || 0)}</td>
-                              <td className="currency-column">{formatCurrency(item.target_mv || 0)}</td>
-                              <td className={`currency-column ${item.delta_mv && item.delta_mv > 0 ? 'positive' : 'negative'}`}>
-                                {formatCurrency(item.delta_mv || 0)}
-                              </td>
-                              <td className="currency-column">{formatCurrency(item.last_price)}</td>
-                              <td className={`number-column ${item.delta_shares && item.delta_shares > 0 ? 'positive' : 'negative'}`}>
-                                {formatNumber(item.delta_shares || 0)}
-                              </td>
-                            </tr>
-                          ))}
-                        </tbody>
+            <tbody>
+              {portfolioData.map((item) => (
+                <tr key={item.symbol}>
+                  <td>{item.symbol}</td>
+                  <td className="percentage-column">{formatPercentage(item.forecast_volatility_pct)}</td>
+                  <td className="percentage-column">{formatPercentage(item.current_weight_pct)}</td>
+                  <td className="percentage-column">{formatPercentage(item.adj_volatility_weight_pct)}</td>
+                  <td className="currency-column">{formatCurrency(item.current_mv || 0)}</td>
+                  <td className="currency-column">{formatCurrency(item.target_mv || 0)}</td>
+                  <td className={`currency-column ${item.delta_mv && item.delta_mv > 0 ? 'positive' : 'negative'}`}>
+                    {formatCurrency(item.delta_mv || 0)}
+                  </td>
+                  <td className="currency-column">{formatCurrency(item.last_price)}</td>
+                  <td className={`number-column ${item.delta_shares && item.delta_shares > 0 ? 'positive' : 'negative'}`}>
+                    {formatNumber(item.delta_shares || 0)}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
           </table>
         </div>
       </div>
       
-                        <div className="section">
-                    <h2>Volatility-Adjusted Weights</h2>
-                    <div className="chart-container">
-                      <VolatilityDonutChart data={portfolioData} />
-                    </div>
-                  </div>
+      <div className="chart-section">
+        <div className="chart-container">
+          <VolatilityDonutChart data={portfolioData} />
+        </div>
+      </div>
     </div>
   );
 };

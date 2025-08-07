@@ -133,6 +133,76 @@ export interface ForecastRiskContributionResponse {
   vol_model: string;
 }
 
+export interface ForecastMetricsResponse {
+  metrics: Array<{
+    ticker: string;
+    ewma5_pct: number;
+    ewma20_pct: number;
+    garch_vol_pct: number;
+    egarch_vol_pct: number;
+    var_pct: number;
+    cvar_pct: number;
+    var_usd: number;
+    cvar_usd: number;
+  }>;
+  conf_level: number;
+}
+
+export interface RollingForecastResponse {
+  data: Array<{
+    date: string;
+    ticker: string;
+    vol_pct: number;
+  }>;
+  model: string;
+  window: number;
+}
+
+export interface LatestFactorExposuresResponse {
+  as_of: string;
+  factors: string[];
+  data: Array<{
+    ticker: string;
+    [key: string]: string | number;
+  }>;
+}
+
+export interface PortfolioSummaryResponse {
+  risk_score: {
+    overall_score: number;
+    risk_level: string;
+    highest_risk_component: string;
+    highest_risk_percentage: number;
+    high_risk_components_count: number;
+  };
+  portfolio_overview: {
+    total_market_value: number;
+    total_positions: number;
+    largest_position: number;
+    top_3_concentration: number;
+    volatility_egarch: number;
+    cvar_percentage: number;
+    cvar_usd: number;
+    top_risk_contributor: {
+      ticker: string;
+      weight_pct: number;
+      vol_contribution_pct: number;
+    };
+  };
+  portfolio_positions: Array<{
+    ticker: string;
+    weight: number;
+    shares: number;
+    market_value: number;
+    sector: string;
+  }>;
+  flags?: {
+    high_vol?: boolean;
+    high_risk_score?: boolean;
+    high_cvar?: boolean;
+  };
+}
+
 class ApiService {
   async getVolatilityData(forecastModel: string = 'EWMA (5D)', username: string = "admin"): Promise<VolatilityData> {
     try {
@@ -202,6 +272,59 @@ class ApiService {
       return response.data;
     } catch (error) {
       console.error('Error fetching forecast risk contribution data:', error);
+      throw error;
+    }
+  }
+
+  async getForecastMetrics(username: string = "admin"): Promise<ForecastMetricsResponse> {
+    try {
+      const response = await api.get('/forecast-metrics', {
+        params: { username }
+      });
+      return response.data;
+    } catch (error) {
+      console.error('Error fetching forecast metrics data:', error);
+      throw error;
+    }
+  }
+
+  async getRollingForecast(model: string, window: number, tickers: string[], username: string = "admin"): Promise<RollingForecastResponse> {
+    try {
+      const response = await api.get('/rolling-forecast', {
+        params: { 
+          model, 
+          window, 
+          tickers: tickers.join(','), 
+          username 
+        }
+      });
+      return response.data;
+    } catch (error) {
+      console.error('Error fetching rolling forecast data:', error);
+      throw error;
+    }
+  }
+
+  async getLatestFactorExposures(username: string = "admin"): Promise<LatestFactorExposuresResponse> {
+    try {
+      const response = await api.get('/latest-factor-exposures', {
+        params: { username }
+      });
+      return response.data;
+    } catch (error) {
+      console.error('Error fetching latest factor exposures data:', error);
+      throw error;
+    }
+  }
+
+  async getPortfolioSummary(username: string = "admin"): Promise<PortfolioSummaryResponse> {
+    try {
+      const response = await api.get('/portfolio-summary', {
+        params: { username }
+      });
+      return response.data;
+    } catch (error) {
+      console.error('Error fetching portfolio summary data:', error);
       throw error;
     }
   }

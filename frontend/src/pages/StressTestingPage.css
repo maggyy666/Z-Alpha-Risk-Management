@@ -53,16 +53,19 @@
   display: flex;
   flex-direction: column;
   gap: clamp(15px, 3vw, 20px);
+  width: 100%;
 }
 
 .regime-label {
   display: flex;
   align-items: center;
   gap: clamp(10px, 2vw, 15px);
-  padding: clamp(10px, 2vw, 15px);
+  padding: clamp(12px, 2.5vw, 18px);
   background-color: #2a2a2a;
   border: 1px solid #333;
   border-radius: clamp(4px, 1vw, 6px);
+  margin-bottom: clamp(15px, 3vw, 20px);
+  width: 100%;
 }
 
 .label-text {
@@ -84,6 +87,11 @@
   color: #ffffff;
 }
 
+.regime-status.neutral {
+  background-color: #4CAF50;
+  color: #ffffff;
+}
+
 .regime-status.cautious {
   background-color: #FF9800;
   color: #000000;
@@ -94,6 +102,11 @@
   color: #ffffff;
 }
 
+.regime-status.bull {
+  background-color: #2196F3;
+  color: #ffffff;
+}
+
 .regime-status.bullish {
   background-color: #2196F3;
   color: #ffffff;
@@ -101,30 +114,38 @@
 
 .metrics-grid {
   display: grid;
-  grid-template-columns: 1fr;
+  grid-template-columns: 1fr 1fr 1fr;
   gap: clamp(8px, 1.5vw, 12px);
+  width: 100%;
+  align-items: stretch;
 }
 
 .metric-item {
   display: flex;
-  justify-content: space-between;
+  flex-direction: column;
+  justify-content: center;
   align-items: center;
-  padding: clamp(8px, 1.5vw, 12px);
+  padding: clamp(12px, 2vw, 16px);
   background-color: #2a2a2a;
   border: 1px solid #333;
   border-radius: clamp(4px, 1vw, 6px);
+  text-align: center;
+  min-height: 60px;
+  height: 100%;
+  flex: 1;
 }
 
 .metric-label {
-  font-size: clamp(11px, 1.5vw, 13px);
+  font-size: clamp(10px, 1.3vw, 12px);
   color: #888888;
   font-weight: 500;
+  margin-bottom: 4px;
 }
 
 .metric-value {
-  font-size: clamp(12px, 1.8vw, 14px);
+  font-size: clamp(14px, 2vw, 16px);
   color: #ffffff;
-  font-weight: 600;
+  font-weight: 700;
 }
 
 .radar-chart-container {
@@ -147,32 +168,37 @@
 }
 
 .scenarios-summary {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
+  display: flex;
   gap: clamp(15px, 3vw, 20px);
   margin-bottom: clamp(15px, 3vw, 20px);
+  width: 100%;
 }
 
 .summary-item {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: clamp(10px, 2vw, 15px);
+  padding: clamp(15px, 3vw, 25px);
   background-color: #2a2a2a;
   border: 1px solid #333;
   border-radius: clamp(4px, 1vw, 6px);
+  flex: 1;
+  min-height: 80px;
 }
 
 .summary-label {
-  font-size: clamp(11px, 1.5vw, 13px);
+  font-size: clamp(12px, 1.8vw, 14px);
   color: #888888;
   font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
 }
 
 .summary-value {
-  font-size: clamp(14px, 2.5vw, 18px);
+  font-size: clamp(18px, 3vw, 24px);
   color: #ffffff;
   font-weight: 700;
+  font-family: 'Courier New', monospace;
 }
 
 .excluded-scenarios {
@@ -264,7 +290,11 @@
   }
   
   .scenarios-summary {
-    grid-template-columns: 1fr;
+    flex-direction: column;
+  }
+  
+  .metrics-grid {
+    grid-template-columns: 1fr 1fr 1fr;
   }
 }
 
@@ -284,6 +314,7 @@
   }
   
   .scenarios-summary {
+    flex-direction: column;
     gap: clamp(10px, 2vw, 15px);
   }
 }
@@ -305,7 +336,16 @@
     gap: clamp(6px, 1.5vw, 10px);
   }
   
-  .metric-item,
+  .metrics-grid {
+    grid-template-columns: 1fr;
+  }
+  
+  .metric-item {
+    flex-direction: column;
+    align-items: center;
+    gap: clamp(4px, 1vw, 6px);
+  }
+  
   .summary-item,
   .excluded-item {
     flex-direction: column;

@@ -20,7 +20,14 @@ const DashboardLayout: React.FC<DashboardLayoutProps> = ({ children }) => {
         {/* Top navbar - Logo and User Info */}
         <div className="top-navbar">
           <div className="logo-container">
-            <h1 className="logo">Z-Alpha Securities</h1>
+            <div className="logo">
+              <div className="logo-icon">σ</div>
+              <div className="logo-text">
+                <span className="logo-main">Z-ALPHA</span>
+                <span className="logo-separator">|</span>
+                <span className="logo-sub">Securities</span>
+              </div>
+            </div>
           </div>
           <div className="user-info">
             <span className="logged-in-label">Logged in:</span>
@@ -30,6 +37,9 @@ const DashboardLayout: React.FC<DashboardLayoutProps> = ({ children }) => {
         
         {/* Bottom navbar - Navigation Tabs */}
         <div className="nav-tabs">
+          <Link to="/introduction" className={`nav-tab ${isActive('/introduction') ? 'active' : ''}`}>
+            Introduction
+          </Link>
           <Link to="/portfolio-summary" className={`nav-tab ${isActive('/portfolio-summary') ? 'active' : ''}`}>
             Portfolio Summary
           </Link>
@@ -54,11 +64,8 @@ const DashboardLayout: React.FC<DashboardLayoutProps> = ({ children }) => {
           <Link to="/volatility-sizing" className={`nav-tab ${isActive('/volatility-sizing') ? 'active' : ''}`}>
             Volatility-Based Sizing
           </Link>
-          <Link to="/reconstructed-prices" className={`nav-tab ${isActive('/reconstructed-prices') ? 'active' : ''}`}>
-            Reconstructed Prices
-          </Link>
-          <Link to="/themes-proxies" className={`nav-tab ${isActive('/themes-proxies') ? 'active' : ''}`}>
-            Themes & Proxies
+          <Link to="/user-profile" className={`nav-tab ${isActive('/user-profile') ? 'active' : ''}`}>
+            User Profile
           </Link>
         </div>
       </header>

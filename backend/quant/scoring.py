@@ -4,6 +4,11 @@ def clip01(x: float) -> float:
     """Clip value to [0, 1] range"""
     return float(np.clip(x, 0, 1))
 
+def weighted_avg(values: dict[str, float], weights: dict[str, float]) -> float:
+    """Calculate weighted average of values"""
+    w_sum = sum(weights.get(k, 1.0) for k in values)
+    return sum(values[k] * weights.get(k, 1.0) for k in values) / w_sum if w_sum else 0.0
+
 def risk_mix(raw_metrics: dict, normalization: dict, weights: dict) -> tuple[dict, dict]:
     """
     Normalize and mix risk metrics into scores
@@ -48,4 +53,61 @@ def risk_mix(raw_metrics: dict, normalization: dict, weights: dict) -> tuple[dic
     for component, weighted_score in weighted_scores.items():
         contrib_pct[component] = (weighted_score / total_weighted * 100) if total_weighted > 0 else 0
     
+    # 4. Calculate overall score with validation
+    overall_score = weighted_avg(scores, weights)
+    
+    # Sanity check: ensure overall score is in valid range
+    if not (0.0 <= overall_score <= 1.0):
+        print(f"Warning: Overall score out of range: {overall_score}, clipping to [0,1]")
+        overall_score = clip01(overall_score)
+    
+    scores["overall"] = overall_score
+    
     return scores, contrib_pct
+
+
+def test_risk_mix_overall():
+    """Unit test for risk_mix function"""
+    # Mock data
+    raw_metrics = {
+        "hhi": 0.3,
+        "vol_ann_pct": 15.0,
+        "beta_market": 0.8,
+        "avg_pair_corr": 0.2,
+        "max_drawdown_pct": -5.0,
+        "factor_l1": 0.5
+    }
+    
+    normalization = {
+        "HHI_LOW": 0.1,
+        "HHI_HIGH": 0.5,
+        "VOL_MAX": 50.0,
+        "BETA_ABS_MAX": 2.0,
+        "STRESS_5PCT_FULLSCORE": 20.0,
+        "FACTOR_L1_MAX": 2.0
+    }
+    
+    weights = {
+        "concentration": 0.3,
+        "volatility": 0.25,
+        "beta": 0.2,
+        "correlation": 0.15,
+        "drawdown": 0.1
+    }
+    
+    scores, contrib = risk_mix(raw_metrics, normalization, weights)
+    
+    # Assertions
+    assert "overall" in scores, "Overall score should be present"
+    assert 0.0 <= scores["overall"] <= 1.0, f"Overall score should be in [0,1], got {scores['overall']}"
+    assert abs(sum(contrib.values()) - 100.0) < 1e-6, f"Contributions should sum to 100%, got {sum(contrib.values())}"
+    
+    print("✅ risk_mix unit test passed!")
+    print(f"Overall score: {scores['overall']:.3f}")
+    print(f"Contributions sum: {sum(contrib.values()):.1f}%")
+    
+    return True
+
+
+if __name__ == "__main__":
+    test_risk_mix_overall()

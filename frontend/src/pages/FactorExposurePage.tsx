@@ -42,6 +42,174 @@ interface FactorExposureResponse {
   available_tickers: string[];
 }
 
+interface LatestFactorExposuresSectionProps {
+  data: any;
+  loading: boolean;
+  error: string | null;
+  onRetry: () => void;
+}
+
+const LatestFactorExposuresSection: React.FC<LatestFactorExposuresSectionProps> = ({ 
+  data, 
+  loading, 
+  error, 
+  onRetry 
+}) => {
+  if (loading) {
+    return (
+      <div className="section">
+        <div className="loading">Loading latest factor exposures...</div>
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="section">
+        <div className="error">
+          <p>{error}</p>
+          <button onClick={onRetry} className="retry-button">
+            Retry
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  if (!data || !data.data) {
+    return (
+      <div className="section">
+        <div className="error">No latest factor exposures data available</div>
+      </div>
+    );
+  }
+
+  return (
+    <>
+      {/* Latest Factor Exposures Table */}
+      <div className="section">
+        <div className="section-header">
+          <h2>Latest Factor Exposures</h2>
+          {data.as_of && (
+            <p className="as-of-date">Exposures as of {new Date(data.as_of).toLocaleDateString()}</p>
+          )}
+        </div>
+        <div className="table-container">
+          <table className="factor-exposure-table">
+            <thead>
+              <tr>
+                <th>Ticker</th>
+                {data.factors?.map((factor: string) => (
+                  <th key={factor}>{factor}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {data.data?.map((row: any, index: number) => (
+                <tr key={index}>
+                  <td className="ticker-cell">{row.ticker}</td>
+                  {data.factors?.map((factor: string) => {
+                    const value = row[factor];
+                    const isPositive = value > 0;
+                    const isNegative = value < 0;
+                    return (
+                      <td 
+                        key={factor} 
+                        className={`beta-cell ${isPositive ? 'positive' : ''} ${isNegative ? 'negative' : ''}`}
+                      >
+                        {typeof value === 'number' ? value.toFixed(2) : value}
+                      </td>
+                    );
+                  })}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      {/* Heatmap of Latest Exposures */}
+      <div className="section">
+        <div className="section-header">
+          <h2>Heatmap of Latest Exposures</h2>
+        </div>
+        <div className="heatmap-container">
+          <div className="heatmap">
+            {/* Heatmap header */}
+            <div className="heatmap-header">
+              <div className="heatmap-corner"></div>
+              {data.factors?.map((factor: string) => (
+                <div key={factor} className="heatmap-factor-header">
+                  {factor}
+                </div>
+              ))}
+            </div>
+            
+            {/* Heatmap rows */}
+            {data.data?.map((row: any, rowIndex: number) => (
+              <div key={rowIndex} className="heatmap-row">
+                <div className="heatmap-ticker-label">{row.ticker}</div>
+                                 {data.factors?.map((factor: string, colIndex: number) => {
+                   const value = row[factor];
+                   const normalizedValue = Math.max(-1, Math.min(1, value)); // Clamp to [-1, 1]
+                   const intensity = Math.abs(normalizedValue);
+                   const isPositive = normalizedValue > 0;
+                   const isNegative = normalizedValue < 0;
+                   
+                   // Color calculation using our palette - gradient approach
+                   let backgroundColor = '#1a1a1a'; // neutral dark
+                   let textColor = '#ffffff';
+                   
+                   if (isPositive) {
+                     // Green gradient for positive values using our palette
+                     const greenIntensity = Math.round(76 + (179 * intensity)); // #4caf50 to #00ff00
+                     backgroundColor = `rgb(0, ${greenIntensity}, 0)`;
+                     textColor = '#ffffff';
+                   } else if (isNegative) {
+                     // Red gradient for negative values using our palette
+                     const redIntensity = Math.round(244 + (11 * intensity)); // #f44336 to #ff0000
+                     backgroundColor = `rgb(${redIntensity}, 0, 0)`;
+                     textColor = '#ffffff';
+                   } else {
+                     // Neutral for zero values
+                     backgroundColor = '#2a2a2a';
+                     textColor = '#cccccc';
+                   }
+                   
+                   return (
+                     <div 
+                       key={colIndex} 
+                       className="heatmap-cell"
+                       style={{ 
+                         backgroundColor,
+                         color: textColor,
+                         fontWeight: intensity > 0.3 ? '700' : '600'
+                       }}
+                       title={`${row.ticker} - ${factor}: ${typeof value === 'number' ? value.toFixed(2) : value}`}
+                     >
+                       {typeof value === 'number' ? value.toFixed(2) : value}
+                     </div>
+                   );
+                 })}
+              </div>
+            ))}
+          </div>
+          
+          {/* Color legend */}
+          <div className="heatmap-legend">
+            <div className="legend-title">Beta</div>
+            <div className="legend-gradient">
+              <div className="legend-color" style={{ backgroundColor: '#f44336', color: '#ffffff' }}>-1</div>
+              <div className="legend-color" style={{ backgroundColor: '#2a2a2a', color: '#cccccc' }}>0</div>
+              <div className="legend-color" style={{ backgroundColor: '#4caf50', color: '#ffffff' }}>+1</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </>
+  );
+};
+
 const FactorExposurePage: React.FC = () => {
   const [factorData, setFactorData] = useState<FactorExposureResponse | null>(null);
   const [loading, setLoading] = useState(true);
@@ -58,6 +226,20 @@ const FactorExposurePage: React.FC = () => {
 
   // Date range state
   const [selectedDateRange, setSelectedDateRange] = useState<DateRange>('1Y');
+  
+  // Chart density control
+  const [chartDensity, setChartDensity] = useState<'high' | 'medium' | 'low'>('medium');
+  
+  // R² smoothing control
+  const [r2Smoothing, setR2Smoothing] = useState<boolean>(true);
+
+  // Sub-navigation state
+  const [activeTab, setActiveTab] = useState<'charts' | 'latest'>('charts');
+
+  // Latest factor exposures state
+  const [latestExposuresData, setLatestExposuresData] = useState<any>(null);
+  const [latestExposuresLoading, setLatestExposuresLoading] = useState(false);
+  const [latestExposuresError, setLatestExposuresError] = useState<string | null>(null);
 
 
 
@@ -90,6 +272,45 @@ const FactorExposurePage: React.FC = () => {
   const filterDataByDateRange = (data: FactorExposureData[], range: DateRange) => {
     const filterFn = getDateRangeFilter(range);
     return data.filter(item => filterFn(item.date));
+  };
+
+  const getAggregationStep = () => {
+    switch (chartDensity) {
+      case 'high':
+        return 1; // Wszystkie punkty
+      case 'medium':
+        return 7; // Co tydzień
+      case 'low':
+        return 14; // Co 2 tygodnie
+      default:
+        return 7;
+    }
+  };
+
+  const smoothR2Data = (data: FactorExposureData[], windowSize: number = 5) => {
+    if (!r2Smoothing || data.length < windowSize) {
+      return data;
+    }
+    
+    const smoothed = [];
+    for (let i = 0; i < data.length; i++) {
+      const start = Math.max(0, i - Math.floor(windowSize / 2));
+      const end = Math.min(data.length, i + Math.floor(windowSize / 2) + 1);
+      const window = data.slice(start, end);
+      
+      // Filtruj tylko elementy z r2 i oblicz średnią
+      const validR2Items = window.filter(item => item.r2 !== undefined);
+      const avgR2 = validR2Items.length > 0 
+        ? validR2Items.reduce((sum, item) => sum + (item.r2 || 0), 0) / validR2Items.length
+        : (data[i].r2 || 0);
+      
+      smoothed.push({
+        ...data[i],
+        r2: avgR2
+      });
+    }
+    
+    return smoothed;
   };
 
   const fetchFactorExposureData = useCallback(async () => {
@@ -135,9 +356,24 @@ const FactorExposurePage: React.FC = () => {
     }
   }, []); // Usunięte zależności - dane ładują się tylko raz
 
+  const fetchLatestFactorExposures = useCallback(async () => {
+    try {
+      setLatestExposuresLoading(true);
+      const data = await apiService.getLatestFactorExposures("admin");
+      setLatestExposuresData(data);
+      setLatestExposuresError(null);
+    } catch (err) {
+      console.error('Error fetching latest factor exposures:', err);
+      setLatestExposuresError('Failed to fetch latest factor exposures data');
+    } finally {
+      setLatestExposuresLoading(false);
+    }
+  }, []);
+
   useEffect(() => {
     fetchFactorExposureData();
-  }, [fetchFactorExposureData]);
+    fetchLatestFactorExposures();
+  }, [fetchFactorExposureData, fetchLatestFactorExposures]);
 
   // Generate sample data for charts (until backend is ready)
   const generateSampleData = () => {
@@ -195,57 +431,75 @@ const FactorExposurePage: React.FC = () => {
           .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
 
         if (data.length > 0) {
-          // Agreguj dane - bierz co 14 dni (2 tygodnie) żeby zmniejszyć gęstość
-          const aggregatedData = [];
-          for (let i = 0; i < data.length; i += 14) {
-            aggregatedData.push(data[i]);
-          }
-          
-          // Użyj różnych kolorów dla każdej kombinacji factor-ticker
+          // Użyj wszystkich punktów danych, ale z lepszymi opcjami wyświetlania
           const colorIndex = (factorIndex * selectedTickers.length + tickerIndex) % colors.length;
+          
+          // Agreguj dane na podstawie wybranej gęstości
+          let displayData = data;
+          if (chartDensity !== 'high') {
+            const step = chartDensity === 'medium' ? 7 : 14; // 7 dni dla medium, 14 dla low
+            displayData = [];
+            for (let i = 0; i < data.length; i += step) {
+              displayData.push(data[i]);
+            }
+          }
           
           datasets.push({
             label: `${factor}, ${ticker}`,
-            data: aggregatedData.map(d => d.beta),
+            data: displayData.map(d => d.beta),
             borderColor: colors[colorIndex],
             backgroundColor: 'transparent',
-            borderWidth: 2,
+            borderWidth: 1.5, // Cieńsze linie dla lepszej czytelności
             fill: false,
-            tension: 0.1,
-            borderDash: tickerIndex % 2 === 0 ? [] : [5, 5]
+            tension: 0.1, // Delikatne wygładzenie
+            borderDash: tickerIndex % 2 === 0 ? [] : [5, 5],
+            pointRadius: 0, // Ukryj punkty dla lepszej czytelności
+            pointHoverRadius: 4, // Pokaż punkty tylko przy hover
+            pointHoverBackgroundColor: colors[colorIndex],
+            pointHoverBorderColor: '#ffffff',
+            pointHoverBorderWidth: 2
           });
         }
       });
     });
 
-    // Get unique dates for labels (agregowane)
+    // Get unique dates for labels - wszystkie daty
     const allDates = sampleData.factorExposures
       .map(d => d.date)
       .filter((date, index, arr) => arr.indexOf(date) === index)
       .sort();
 
-    // Agreguj daty - bierz co 14 dni (2 tygodnie)
-    const aggregatedDates: string[] = [];
-    for (let i = 0; i < allDates.length; i += 14) {
-      aggregatedDates.push(allDates[i]);
+    // Agreguj daty na podstawie wybranej gęstości
+    let displayDates = allDates;
+    if (chartDensity !== 'high') {
+      const step = chartDensity === 'medium' ? 7 : 14;
+      displayDates = [];
+      for (let i = 0; i < allDates.length; i += step) {
+        displayDates.push(allDates[i]);
+      }
     }
 
-    // Format labels - lata tylko na początku i końcu
-    const labels = aggregatedDates.map((date, index) => {
+    // Format labels - inteligentne etykiety osi X
+    const labels = displayDates.map((date, index) => {
       const dateObj = new Date(date);
       const year = dateObj.getFullYear();
       const month = dateObj.getMonth();
       
-      // Jeśli to pierwszy lub ostatni punkt, lub zmiana roku
-      if (index === 0 || index === aggregatedDates.length - 1 || 
-          (index > 0 && new Date(aggregatedDates[index - 1]).getFullYear() !== year)) {
+      // Pokaż rok tylko na początku każdego roku lub co 2-3 lata
+      if (index === 0 || 
+          (index > 0 && new Date(allDates[index - 1]).getFullYear() !== year) ||
+          year % 2 === 0) {
         return year.toString();
       }
       
-      // W środku pokazuj miesiące
-      const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 
-                         'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-      return monthNames[month];
+      // W pozostałych przypadkach pokazuj tylko miesiące co kilka miesięcy
+      if (index % 30 === 0) { // Co ~miesiąc
+        const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 
+                           'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+        return monthNames[month];
+      }
+      
+      return ''; // Puste etykiety dla większości punktów
     });
 
     return {
@@ -278,52 +532,73 @@ const FactorExposurePage: React.FC = () => {
         .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
 
       if (data.length > 0) {
-        // Agreguj dane - bierz co 14 dni (2 tygodnie) żeby zmniejszyć gęstość
-        const aggregatedData = [];
-        for (let i = 0; i < data.length; i += 14) {
-          aggregatedData.push(data[i]);
+        // Użyj wszystkich punktów danych z lepszymi opcjami wyświetlania
+        let displayData = data;
+        if (chartDensity !== 'high') {
+          const step = chartDensity === 'medium' ? 7 : 14;
+          displayData = [];
+          for (let i = 0; i < data.length; i += step) {
+            displayData.push(data[i]);
+          }
         }
+        
+        // Zastosuj wygładzanie tylko dla R²
+        const smoothedData = smoothR2Data(displayData, 7); // 7-dniowe wygładzanie
         
         datasets.push({
           label: ticker,
-          data: aggregatedData.map(d => d.r2),
+          data: smoothedData.map(d => d.r2),
           borderColor: colors[index % colors.length],
           backgroundColor: 'transparent',
-          borderWidth: 2,
+          borderWidth: 2, // Grubsze linie dla R² (łatwiejsze do śledzenia)
           fill: false,
-          tension: 0.1
+          tension: 0.2, // Większe wygładzenie dla R²
+          pointRadius: 0, // Ukryj punkty dla lepszej czytelności
+          pointHoverRadius: 4, // Pokaż punkty tylko przy hover
+          pointHoverBackgroundColor: colors[index % colors.length],
+          pointHoverBorderColor: '#ffffff',
+          pointHoverBorderWidth: 2
         });
       }
     });
 
-    // Get unique dates for labels (agregowane)
+    // Get unique dates for labels - wszystkie daty
     const allDates = sampleData.r2Data
       .map(d => d.date)
       .filter((date, index, arr) => arr.indexOf(date) === index)
       .sort();
 
-    // Agreguj daty - bierz co 14 dni (2 tygodnie)
-    const aggregatedDates: string[] = [];
-    for (let i = 0; i < allDates.length; i += 14) {
-      aggregatedDates.push(allDates[i]);
+    // Agreguj daty na podstawie wybranej gęstości
+    let displayDates = allDates;
+    if (chartDensity !== 'high') {
+      const step = chartDensity === 'medium' ? 7 : 14;
+      displayDates = [];
+      for (let i = 0; i < allDates.length; i += step) {
+        displayDates.push(allDates[i]);
+      }
     }
 
-    // Format labels - lata tylko na początku i końcu
-    const labels = aggregatedDates.map((date, index) => {
+    // Format labels - inteligentne etykiety osi X
+    const labels = displayDates.map((date, index) => {
       const dateObj = new Date(date);
       const year = dateObj.getFullYear();
       const month = dateObj.getMonth();
       
-      // Jeśli to pierwszy lub ostatni punkt, lub zmiana roku
-      if (index === 0 || index === aggregatedDates.length - 1 || 
-          (index > 0 && new Date(aggregatedDates[index - 1]).getFullYear() !== year)) {
+      // Pokaż rok tylko na początku każdego roku lub co 2-3 lata
+      if (index === 0 || 
+          (index > 0 && new Date(allDates[index - 1]).getFullYear() !== year) ||
+          year % 2 === 0) {
         return year.toString();
       }
       
-      // W środku pokazuj miesiące
-      const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 
-                         'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-      return monthNames[month];
+      // W pozostałych przypadkach pokazuj tylko miesiące co kilka miesięcy
+      if (index % 30 === 0) { // Co ~miesiąc
+        const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 
+                           'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+        return monthNames[month];
+      }
+      
+      return ''; // Puste etykiety dla większości punktów
     });
 
     return {
@@ -393,7 +668,11 @@ const FactorExposurePage: React.FC = () => {
           color: '#ffffff',
           font: {
             size: 11
-          }
+          },
+          maxTicksLimit: 20, // Ogranicz liczbę etykiet na osi X
+          maxRotation: 0, // Brak rotacji etykiet
+          autoSkip: true,
+          autoSkipPadding: 10
         }
       },
       y: {
@@ -448,37 +727,90 @@ const FactorExposurePage: React.FC = () => {
 
   return (
     <div className="factor-exposure-page">
-      <div className="section">
-        <div className="section-header">
-          <h2>Rolling Factor Exposures</h2>
-          <div className="controls">
-            <SelectableTags title="Select Factors" selectedItems={selectedFactors} availableItems={availableFactors} onSelectionChange={setSelectedFactors} placeholder="Add factor" />
-            <SelectableTags title="Select Tickers" selectedItems={selectedTickers} availableItems={availableTickers} onSelectionChange={setSelectedTickers} placeholder="Add ticker" />
-          </div>
-          <DateRangeSelector 
-            selectedRange={selectedDateRange}
-            onRangeChange={setSelectedDateRange}
-          />
-        </div>
-        <div className="chart-container">
-          <Line data={createFactorExposureChartData()} options={{ ...chartOptions, scales: { ...chartOptions.scales, y: { ...chartOptions.scales.y } } }} />
-        </div>
+      {/* Sub-navigation */}
+      <div className="sub-nav">
+        <button 
+          className={`sub-nav-item ${activeTab === 'charts' ? 'active' : ''}`}
+          onClick={() => setActiveTab('charts')}
+        >
+          Rolling Charts
+        </button>
+        <button 
+          className={`sub-nav-item ${activeTab === 'latest' ? 'active' : ''}`}
+          onClick={() => setActiveTab('latest')}
+        >
+          Latest Exposures
+        </button>
       </div>
-      <div className="section">
-        <div className="section-header">
-          <h2>Rolling R²</h2>
-          <div className="controls">
-            <SelectableTags title="Select Tickers for R²" selectedItems={selectedTickersR2} availableItems={availableTickers} onSelectionChange={setSelectedTickersR2} placeholder="Add ticker" />
+
+      {activeTab === 'charts' && (
+        <>
+          <div className="section">
+            <div className="section-header">
+              <h2>Rolling Factor Exposures</h2>
+              <div className="controls">
+                <SelectableTags title="Select Factors" selectedItems={selectedFactors} availableItems={availableFactors} onSelectionChange={setSelectedFactors} placeholder="Add factor" />
+                <SelectableTags title="Select Tickers" selectedItems={selectedTickers} availableItems={availableTickers} onSelectionChange={setSelectedTickers} placeholder="Add ticker" />
+                <div className="control-group">
+                  <label>Chart Density</label>
+                  <select 
+                    value={chartDensity} 
+                    onChange={(e) => setChartDensity(e.target.value as 'high' | 'medium' | 'low')}
+                    className="density-select"
+                  >
+                    <option value="high">High (All Points)</option>
+                    <option value="medium">Medium (Weekly)</option>
+                    <option value="low">Low (Bi-weekly)</option>
+                  </select>
+                </div>
+              </div>
+              <DateRangeSelector 
+                selectedRange={selectedDateRange}
+                onRangeChange={setSelectedDateRange}
+              />
+            </div>
+            <div className="chart-container">
+              <Line data={createFactorExposureChartData()} options={{ ...chartOptions, scales: { ...chartOptions.scales, y: { ...chartOptions.scales.y } } }} />
+            </div>
           </div>
-          <DateRangeSelector 
-            selectedRange={selectedDateRange}
-            onRangeChange={setSelectedDateRange}
-          />
-        </div>
-        <div className="chart-container">
-          <Line data={createR2ChartData()} options={{ ...chartOptions, scales: { ...chartOptions.scales, y: { ...chartOptions.scales.y } } }} />
-        </div>
-      </div>
+          <div className="section">
+            <div className="section-header">
+              <h2>Rolling R²</h2>
+              <div className="controls">
+                <SelectableTags title="Select Tickers for R²" selectedItems={selectedTickersR2} availableItems={availableTickers} onSelectionChange={setSelectedTickersR2} placeholder="Add ticker" />
+                <div className="control-group">
+                  <label>R² Smoothing</label>
+                  <div className="smoothing-toggle">
+                    <input
+                      type="checkbox"
+                      id="r2-smoothing"
+                      checked={r2Smoothing}
+                      onChange={(e) => setR2Smoothing(e.target.checked)}
+                    />
+                    <label htmlFor="r2-smoothing">Enable Smoothing</label>
+                  </div>
+                </div>
+              </div>
+              <DateRangeSelector 
+                selectedRange={selectedDateRange}
+                onRangeChange={setSelectedDateRange}
+              />
+            </div>
+            <div className="chart-container">
+              <Line data={createR2ChartData()} options={{ ...chartOptions, scales: { ...chartOptions.scales, y: { ...chartOptions.scales.y } } }} />
+            </div>
+          </div>
+        </>
+      )}
+
+      {activeTab === 'latest' && (
+        <LatestFactorExposuresSection 
+          data={latestExposuresData}
+          loading={latestExposuresLoading}
+          error={latestExposuresError}
+          onRetry={fetchLatestFactorExposures}
+        />
+      )}
     </div>
   );
 };

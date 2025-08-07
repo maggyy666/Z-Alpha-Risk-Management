@@ -7,7 +7,7 @@ const Footer: React.FC = () => {
       <div className="footer-content">
         <div className="footer-section">
           <div className="company-info">
-            <h3 className="company-name">Z-Alpha Securities LLC</h3>
+            <h3 className="company-name">Z-Alpha Securities</h3>
             <p className="company-address">
               350 Park Avenue, 20th Floor<br />
               New York, NY 10022<br />

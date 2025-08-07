@@ -1,4 +1,4 @@
-from fastapi import FastAPI, Depends, HTTPException
+from fastapi import FastAPI, Depends, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.orm import Session
 from database.database import get_db, engine, Base
@@ -135,6 +135,24 @@ def stress_testing(username: str = "admin", db: Session = Depends(get_db)):
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
+@app.get("/covariance-matrix")
+def get_covariance_matrix(
+    tickers: str = Query(..., description="Comma-separated list of tickers"),
+    vol_model: str = 'EWMA (5D)',
+    username: str = "admin",
+    db: Session = Depends(get_db)
+):
+    """Get covariance matrix for specified tickers"""
+    try:
+        ticker_list = [t.strip().upper() for t in tickers.split(",") if t.strip()]
+        if not ticker_list:
+            raise HTTPException(status_code=400, detail="No tickers specified")
+        
+        cov_matrix = data_service.build_covariance_matrix(db, ticker_list, vol_model)
+        return {"cov_matrix": cov_matrix.tolist()}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
 @app.get("/forecast-risk-contribution")
 def get_forecast_risk_contribution(
     vol_model: str = 'EWMA (5D)',
@@ -161,6 +179,63 @@ def clear_cache(pattern: str = None):
     try:
         data_service._clear_cache(pattern)
         return {"message": f"Cache cleared for pattern: {pattern or 'all'}"}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/forecast-metrics")
+def get_forecast_metrics(
+    conf_level: float = 0.95,
+    username: str = "admin",
+    db: Session = Depends(get_db)
+):
+    """Get forecast metrics for all portfolio tickers"""
+    try:
+        data = data_service.get_forecast_metrics(db, username, conf_level)
+        if "error" in data:
+            raise HTTPException(status_code=400, detail=data["error"])
+        return data
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/rolling-forecast")
+def get_rolling_forecast(
+    model: str = Query("EWMA (5D)"),
+    window: int = Query(21, ge=5, le=252),
+    tickers: str = Query("PORTFOLIO"),   # CSV w URL-u
+    username: str = "admin",
+    db: Session = Depends(get_db)
+):
+    """Get rolling forecast data for selected tickers"""
+    try:
+        # Parse tickers from comma-separated string
+        ticker_list = [t.strip().upper() for t in tickers.split(",") if t.strip()]
+        if not ticker_list:
+            raise HTTPException(status_code=400, detail="No tickers specified")
+        
+        data = data_service.get_rolling_forecast(db, ticker_list, model, window, username)
+        return {"model": model, "window": window, "data": data}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/latest-factor-exposures")
+def get_latest_factor_exposures(username: str = "admin", db: Session = Depends(get_db)):
+    """Get latest factor exposures table data"""
+    try:
+        data = data_service.get_latest_factor_exposures(db, username)
+        if "error" in data:
+            raise HTTPException(status_code=400, detail=data["error"])
+        return data
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/portfolio-summary")
+def get_portfolio_summary(username: str = "admin", db: Session = Depends(get_db)):
+    """Get comprehensive portfolio summary data for dashboard"""
+    try:
+        data = data_service.get_portfolio_summary(db, username)
+        if "error" in data:
+            raise HTTPException(status_code=400, detail=data["error"])
+        return data
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 

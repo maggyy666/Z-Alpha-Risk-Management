@@ -1,0 +1,652 @@
+.user-profile-page {
+  padding: clamp(20px, 4vw, 40px);
+  background-color: #0a0a0a;
+  min-height: 100vh;
+  color: #ffffff;
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.profile-container {
+  max-width: 1200px;
+  margin: 0 auto;
+  background: transparent;
+}
+
+.profile-header {
+  margin-bottom: clamp(30px, 6vw, 50px);
+  text-align: center;
+}
+
+.profile-header h1 {
+  font-size: clamp(2rem, 4vw, 3rem);
+  font-weight: 700;
+  color: #FF6B6B;
+  text-transform: uppercase;
+  letter-spacing: 2px;
+  margin: 0;
+}
+
+.profile-subtitle {
+  font-size: clamp(1rem, 2vw, 1.3rem);
+  color: #cccccc;
+  margin-top: 10px;
+  font-weight: 400;
+  letter-spacing: 0.5px;
+}
+
+.profile-content {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: clamp(30px, 6vw, 50px);
+}
+
+.profile-main {
+  display: flex;
+  flex-direction: column;
+  gap: clamp(25px, 5vw, 40px);
+}
+
+.profile-photo-section {
+  display: flex;
+  align-items: center;
+  gap: clamp(20px, 4vw, 30px);
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 107, 107, 0.2);
+  border-radius: 12px;
+  padding: clamp(25px, 5vw, 35px);
+}
+
+.profile-photo {
+  flex-shrink: 0;
+}
+
+.photo-container {
+  position: relative;
+  width: 120px;
+  height: 120px;
+}
+
+.profile-image {
+  width: 120px;
+  height: 120px;
+  border-radius: 50%;
+  object-fit: cover;
+  border: 3px solid rgba(255, 107, 107, 0.3);
+  box-shadow: 0 8px 25px rgba(255, 107, 107, 0.3);
+}
+
+.photo-placeholder {
+  width: 120px;
+  height: 120px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, #FF6B6B, #ff8a8a);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 3px solid rgba(255, 107, 107, 0.3);
+  box-shadow: 0 8px 25px rgba(255, 107, 107, 0.3);
+}
+
+.photo-placeholder.hidden {
+  display: none;
+}
+
+.photo-icon {
+  font-size: 3rem;
+  color: #ffffff;
+}
+
+.profile-basic-info {
+  flex: 1;
+}
+
+.user-name {
+  font-size: clamp(1.8rem, 3.5vw, 2.5rem);
+  font-weight: 700;
+  color: #ffffff;
+  margin: 0 0 10px 0;
+  letter-spacing: 1px;
+}
+
+.user-title {
+  font-size: clamp(1.1rem, 2.2vw, 1.4rem);
+  color: #FF6B6B;
+  font-weight: 600;
+  margin: 0 0 5px 0;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.user-company {
+  font-size: clamp(1rem, 2vw, 1.2rem);
+  color: #cccccc;
+  font-weight: 500;
+  margin: 0 0 5px 0;
+}
+
+.user-join-date {
+  font-size: clamp(0.9rem, 1.8vw, 1rem);
+  color: #888888;
+  font-weight: 400;
+  margin: 0 0 15px 0;
+}
+
+.compliance-badges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 15px;
+}
+
+.compliance-badge {
+  padding: 4px 12px;
+  border-radius: 20px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  border: 1px solid;
+}
+
+.compliance-badge.accredited {
+  background: rgba(76, 175, 80, 0.1);
+  color: #4CAF50;
+  border-color: rgba(76, 175, 80, 0.3);
+}
+
+.compliance-badge.qualified {
+  background: rgba(255, 152, 0, 0.1);
+  color: #FF9800;
+  border-color: rgba(255, 152, 0, 0.3);
+}
+
+.compliance-badge.verified {
+  background: rgba(33, 150, 243, 0.1);
+  color: #2196F3;
+  border-color: rgba(33, 150, 243, 0.3);
+}
+
+.profile-stats-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: clamp(15px, 3vw, 25px);
+}
+
+.stat-card {
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 107, 107, 0.2);
+  border-radius: 10px;
+  padding: clamp(20px, 4vw, 25px);
+  text-align: center;
+  transition: all 0.3s ease;
+}
+
+.stat-card:hover {
+  transform: translateY(-3px);
+  box-shadow: 0 8px 25px rgba(255, 107, 107, 0.2);
+}
+
+.stat-label {
+  font-size: clamp(0.8rem, 1.5vw, 1rem);
+  color: #cccccc;
+  font-weight: 500;
+  margin-bottom: 8px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.stat-value {
+  font-size: clamp(1.5rem, 3vw, 2rem);
+  font-weight: 700;
+  color: #ffffff;
+  margin-bottom: 5px;
+}
+
+.stat-change {
+  font-size: clamp(0.8rem, 1.5vw, 1rem);
+  font-weight: 600;
+  padding: 4px 8px;
+  border-radius: 4px;
+  display: inline-block;
+}
+
+.stat-change.positive {
+  color: #4CAF50;
+  background: rgba(76, 175, 80, 0.1);
+}
+
+.stat-change.negative {
+  color: #FF6B6B;
+  background: rgba(255, 107, 107, 0.1);
+}
+
+.stat-change.neutral {
+  color: #FF9800;
+  background: rgba(255, 152, 0, 0.1);
+}
+
+.risk-compliance-section {
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 107, 107, 0.2);
+  border-radius: 12px;
+  padding: clamp(25px, 5vw, 35px);
+}
+
+.risk-compliance-section h3 {
+  font-size: clamp(1.2rem, 2.4vw, 1.6rem);
+  font-weight: 700;
+  color: #FF6B6B;
+  margin: 0 0 20px 0;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+}
+
+.compliance-grid {
+  display: grid;
+  gap: 12px;
+}
+
+.compliance-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 10px 0;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.compliance-item:last-child {
+  border-bottom: none;
+}
+
+.compliance-label {
+  font-size: clamp(0.9rem, 1.8vw, 1.1rem);
+  color: #cccccc;
+  font-weight: 500;
+}
+
+.compliance-value {
+  font-size: clamp(0.9rem, 1.8vw, 1.1rem);
+  font-weight: 600;
+  text-align: right;
+}
+
+.compliance-value.approved {
+  color: #4CAF50;
+}
+
+.compliance-value.moderate {
+  color: #FF9800;
+}
+
+.compliance-value.none {
+  color: #4CAF50;
+}
+
+.profile-details {
+  display: flex;
+  flex-direction: column;
+  gap: clamp(25px, 5vw, 35px);
+}
+
+.detail-section {
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 107, 107, 0.2);
+  border-radius: 12px;
+  padding: clamp(25px, 5vw, 35px);
+}
+
+.detail-section h3 {
+  font-size: clamp(1.2rem, 2.4vw, 1.6rem);
+  font-weight: 700;
+  color: #FF6B6B;
+  margin: 0 0 20px 0;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+}
+
+.detail-grid {
+  display: grid;
+  gap: 15px;
+}
+
+.detail-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 12px 0;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.detail-item:last-child {
+  border-bottom: none;
+}
+
+.detail-label {
+  font-size: clamp(0.9rem, 1.8vw, 1.1rem);
+  color: #cccccc;
+  font-weight: 500;
+}
+
+.detail-value {
+  font-size: clamp(0.9rem, 1.8vw, 1.1rem);
+  color: #ffffff;
+  font-weight: 600;
+  text-align: right;
+}
+
+.detail-value.positive {
+  color: #4CAF50;
+}
+
+.detail-value.negative {
+  color: #FF6B6B;
+}
+
+.detail-value.approved {
+  color: #4CAF50;
+}
+
+/* Add Ticker Section */
+.add-ticker-section {
+  margin-bottom: clamp(20px, 4vw, 30px);
+  padding: clamp(15px, 3vw, 20px);
+  background-color: #1a1a1a;
+  border: 1px solid #333;
+  border-radius: clamp(6px, 1.5vw, 10px);
+}
+
+.add-ticker-section h4 {
+  font-size: clamp(14px, 2.5vw, 18px);
+  font-weight: 600;
+  margin: 0 0 clamp(15px, 3vw, 20px) 0;
+  color: #ffffff;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.add-ticker-container {
+  display: flex;
+  gap: clamp(10px, 2vw, 15px);
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.ticker-input,
+.shares-input {
+  background: rgba(255, 255, 255, 0.1);
+  border: 1px solid rgba(255, 107, 107, 0.3);
+  border-radius: clamp(4px, 1vw, 6px);
+  padding: clamp(8px, 1.5vw, 12px);
+  color: #ffffff;
+  font-size: clamp(12px, 1.8vw, 14px);
+  font-family: 'Courier New', monospace;
+  transition: border-color 0.2s ease;
+}
+
+.ticker-input {
+  flex: 2;
+  min-width: 120px;
+}
+
+.shares-input {
+  flex: 1;
+  min-width: 80px;
+}
+
+.ticker-input:focus,
+.shares-input:focus {
+  outline: none;
+  border-color: #FF6B6B;
+  background: rgba(255, 107, 107, 0.1);
+}
+
+.ticker-input::placeholder,
+.shares-input::placeholder {
+  color: #888888;
+}
+
+/* Remove arrows from number inputs */
+.shares-input::-webkit-outer-spin-button,
+.shares-input::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+
+.shares-input[type=number] {
+  -moz-appearance: textfield;
+}
+
+.add-ticker-btn {
+  background-color: #FF6B6B;
+  color: #ffffff;
+  border: none;
+  border-radius: clamp(4px, 1vw, 6px);
+  padding: clamp(8px, 1.5vw, 12px) clamp(16px, 3vw, 24px);
+  font-size: clamp(12px, 1.8vw, 14px);
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.add-ticker-btn:hover {
+  background-color: #FF5252;
+  transform: translateY(-1px);
+}
+
+/* Portfolio Table Styles */
+.portfolio-table-container {
+  overflow-x: auto;
+  border-radius: 8px;
+  border: 1px solid rgba(255, 107, 107, 0.2);
+}
+
+.portfolio-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.9rem;
+  background: rgba(255, 255, 255, 0.02);
+}
+
+.portfolio-table th {
+  background-color: rgba(255, 107, 107, 0.1);
+  color: #ffffff;
+  padding: 12px 8px;
+  text-align: left;
+  font-weight: 700;
+  border-bottom: 1px solid rgba(255, 107, 107, 0.3);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  font-size: 0.8rem;
+}
+
+.portfolio-table td {
+  padding: 10px 8px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+  color: #cccccc;
+}
+
+.portfolio-table tbody tr:hover {
+  background-color: rgba(255, 255, 255, 0.05);
+}
+
+.portfolio-table tbody tr:last-child td {
+  border-bottom: none;
+}
+
+.ticker-cell {
+  font-weight: 700;
+  color: #ffffff;
+  font-family: 'Courier New', monospace;
+}
+
+.price-cell {
+  font-family: 'Courier New', monospace;
+  font-weight: 600;
+  color: #FF9800;
+  text-align: right;
+}
+
+.market-value-cell {
+  font-family: 'Courier New', monospace;
+  font-weight: 600;
+  color: #4CAF50;
+  text-align: right;
+}
+
+.weight-cell {
+  font-family: 'Courier New', monospace;
+  font-weight: 600;
+  color: #FF9800;
+  text-align: right;
+}
+
+.portfolio-input {
+  background: rgba(255, 255, 255, 0.1);
+  border: 1px solid rgba(255, 107, 107, 0.3);
+  border-radius: clamp(4px, 1vw, 6px);
+  padding: clamp(6px, 1.2vw, 8px);
+  color: #ffffff;
+  font-size: clamp(12px, 1.8vw, 14px);
+  font-family: 'Courier New', monospace;
+  width: 80px;
+  text-align: right;
+  transition: border-color 0.2s ease;
+}
+
+.portfolio-input:focus {
+  outline: none;
+  border-color: #FF6B6B;
+  background: rgba(255, 107, 107, 0.1);
+}
+
+/* Remove arrows from portfolio inputs */
+.portfolio-input::-webkit-outer-spin-button,
+.portfolio-input::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+
+.portfolio-input[type=number] {
+  -moz-appearance: textfield;
+}
+
+.remove-ticker-btn {
+  background-color: #f44336;
+  color: #ffffff;
+  border: none;
+  border-radius: 50%;
+  width: 24px;
+  height: 24px;
+  font-size: 12px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.remove-ticker-btn:hover {
+  background-color: #d32f2f;
+  transform: scale(1.1);
+}
+
+.total-row {
+  background-color: rgba(255, 107, 107, 0.1) !important;
+  border-top: 2px solid rgba(255, 107, 107, 0.3);
+}
+
+.total-row td {
+  color: #ffffff;
+  font-weight: 700;
+}
+
+/* Responsive design */
+@media (max-width: 1024px) {
+  .profile-content {
+    grid-template-columns: 1fr;
+    gap: clamp(25px, 5vw, 35px);
+  }
+}
+
+@media (max-width: 768px) {
+  .profile-photo-section {
+    flex-direction: column;
+    text-align: center;
+  }
+  
+  .profile-stats-grid {
+    grid-template-columns: 1fr;
+  }
+  
+  .detail-item {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 5px;
+  }
+  
+  .detail-value {
+    text-align: left;
+  }
+
+  .compliance-item {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 5px;
+  }
+
+  .compliance-value {
+    text-align: left;
+  }
+
+  .compliance-badges {
+    justify-content: center;
+  }
+
+  .portfolio-table {
+    font-size: 0.8rem;
+  }
+
+  .portfolio-input {
+    width: 60px;
+    font-size: 0.8rem;
+  }
+
+  .add-ticker-container {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .ticker-input,
+  .shares-input {
+    flex: none;
+    width: 100%;
+  }
+}
+
+@media (max-width: 480px) {
+  .user-profile-page {
+    padding: clamp(15px, 3vw, 25px);
+  }
+  
+  .photo-container {
+    width: 100px;
+    height: 100px;
+  }
+  
+  .profile-image {
+    width: 100px;
+    height: 100px;
+  }
+  
+  .photo-placeholder {
+    width: 100px;
+    height: 100px;
+  }
+  
+  .photo-icon {
+    font-size: 2.5rem;
+  }
+}

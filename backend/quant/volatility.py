@@ -5,6 +5,8 @@ ani wewnętrznych klas projektu.
 
 from math import exp, log, sqrt
 import numpy as np
+from arch import arch_model
+import warnings
 
 # -------- helpers -------- #
 
@@ -60,20 +62,85 @@ def annualized_vol(returns: np.ndarray) -> float:
     return float(np.std(returns, ddof=1) * np.sqrt(252))
 
 
-def forecast_sigma(returns, model="EWMA (5D)"):
-    m = model.upper()
-    if m.startswith("EWMA"):
-        if "5" in m:
-            lam = lambda_from_half_life(5)
-        elif "30" in m:
-            lam = lambda_from_half_life(30)
-        elif "200" in m:
-            lam = lambda_from_half_life(200)
+def forecast_sigma(returns: np.ndarray, model: str = "EWMA (5D)") -> float:
+    """
+    Forecast volatility using specified model.
+    Returns annualized volatility as decimal (e.g., 0.25 for 25%).
+    """
+    if len(returns) < 30:
+        return np.std(returns) * np.sqrt(252)
+    
+    if model.startswith("EWMA"):
+        # Extract lambda from model name
+        if "(5D)" in model:
+            lam = np.exp(-1/5)
+        elif "(20D)" in model:
+            lam = np.exp(-1/20)
         else:
-            lam = 0.94
-        return ewma_vol(returns, lam)
-    if "E-GARCH" in m or "EGARCH" in m:
-        return egarch_vol(returns)
-    if "GARCH" in m:
-        return garch11_vol(returns)
-    return np.std(returns, ddof=1) * np.sqrt(252)
+            lam = 0.94  # default
+            
+        # EWMA calculation
+        weights = np.array([(1-lam) * lam**i for i in range(len(returns))])
+        weights = weights / weights.sum()
+        
+        # Calculate weighted variance
+        mean_return = np.mean(returns)
+        variance = np.sum(weights * (returns - mean_return)**2)
+        return np.sqrt(variance * 252)
+    
+    elif model in ["GARCH", "EGARCH"]:
+        try:
+            # Clamp extreme returns to prevent model explosion
+            returns_clamped = np.clip(returns, -0.2, 0.2)
+            
+            if model == "GARCH":
+                am = arch_model(returns_clamped, vol='Garch', p=1, q=1, dist='normal')
+            else:  # EGARCH
+                am = arch_model(returns_clamped, vol='EGARCH', p=1, q=1, dist='normal')
+            
+            with warnings.catch_warnings():
+                warnings.simplefilter("ignore")
+                res = am.fit(disp='off', show_warning=False)
+            
+            # Get forecast
+            forecast = res.forecast(horizon=1)
+            sigma = np.sqrt(forecast.variance.values[-1, 0] * 252)
+            
+            # Sanity check: clip extreme values
+            if sigma > 3.0:  # > 300% annualized
+                print(f"Warning: {model} volatility {sigma*100:.1f}% exceeds 300%, clipping to 300%")
+                sigma = 3.0
+                
+            return sigma
+            
+        except Exception as e:
+            print(f"Warning: {model} failed for volatility forecast: {e}")
+            # Fallback to simple std
+            return np.std(returns) * np.sqrt(252)
+    
+    else:
+        raise ValueError(f"Unknown model: {model}")
+
+
+def test_vol_reasonable(returns: np.ndarray, symbol: str = "UNKNOWN") -> bool:
+    """
+    Test if volatility forecast is reasonable.
+    Returns True if OK, False if suspicious.
+    """
+    try:
+        sigma = forecast_sigma(returns, "EGARCH")
+        
+        # Check if volatility is reasonable
+        if sigma > 3.0:  # > 300% annualized
+            print(f"⚠️  {symbol}: EGARCH volatility {sigma*100:.1f}% > 300% – suspicious!")
+            return False
+        elif sigma < 0.05:  # < 5% annualized
+            print(f"⚠️  {symbol}: EGARCH volatility {sigma*100:.1f}% < 5% – suspicious!")
+            return False
+        else:
+            print(f"✅ {symbol}: EGARCH volatility {sigma*100:.1f}% – reasonable")
+            return True
+            
+    except Exception as e:
+        print(f"❌ {symbol}: EGARCH volatility test failed: {e}")
+        return False

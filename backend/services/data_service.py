@@ -18,8 +18,13 @@ from quant.concentration import concentration_metrics
 from quant.weights import inverse_vol_allocation
 from quant.correlation import avg_and_high_corr
 from quant.returns import stack_common_returns
+from quant.stats import basic_stats
+from quant.var import var_cvar
 import threading
 import time
+
+# Memo cache for volatility calculations within a single request
+_vol_cache = {}
 
 # Risk Scoring Configuration
 NORMALIZATION = {
@@ -111,6 +116,18 @@ class DataService:
                     del self._cache[key]
                 if key in self._cache_timestamps:
                     del self._cache_timestamps[key]
+    
+    def _get_cached_volatility(self, symbol: str, model: str, returns: np.ndarray) -> float:
+        """Get cached volatility calculation or compute and cache"""
+        cache_key = f"{symbol}_{model}_{hash(returns.tobytes())}"
+        
+        if cache_key in _vol_cache:
+            return _vol_cache[cache_key]
+        
+        # Calculate and cache
+        vol = forecast_sigma(returns, model)
+        _vol_cache[cache_key] = vol
+        return vol
         
     def get_all_tickers(self, db: Session, username: str = "admin") -> List[str]:
         """Get all tickers: user portfolio + static tickers"""
@@ -241,21 +258,20 @@ class DataService:
                 print(f"❌ Not enough returns for {symbol}")
                 return {}
             
-            # Calculate metrics
-            mean_daily = float(np.mean(returns))
-            std_daily = float(np.std(returns, ddof=1))  # ddof=1 for estimation
+            # Calculate basic statistics
+            stats = basic_stats(returns, risk_free_annual)
+            mean_daily = stats["mean_daily"]
+            std_daily = stats["std_daily"]
+            std_annual = stats["std_annual"]
+            sharpe_ratio = stats["sharpe_ratio"]
             
-            # Annualize
+            # Calculate forecast volatility using cached calculation
+            print(f"Calculating {forecast_model} volatility for returns shape: {returns.shape}")
+            forecast_vol = self._get_cached_volatility(symbol, forecast_model, returns) * 100  # Convert to percentage
+            print(f"{symbol}: Calculated volatility: {forecast_vol:.2f}%")
+            
+            # Annualize mean
             mean_annual = mean_daily * 252
-            std_annual = std_daily * np.sqrt(252)
-            
-            # Calculate forecast volatility using new math module
-            print(f"🔍 Calculating {forecast_model} volatility for returns shape: {returns.shape}")
-            forecast_vol = forecast_sigma(returns, forecast_model) * 100  # Convert to percentage
-            print(f"📊 {symbol}: Calculated volatility: {forecast_vol:.2f}%")
-            
-            # Calculate Sharpe ratio
-            sharpe_ratio = ((mean_daily * 252) - risk_free_annual) / (std_daily * np.sqrt(252)) if std_daily > 0 else 0.0
             
             # Get last price
             last_price = float(historical_data[-1].close_price)
@@ -1034,9 +1050,6 @@ class DataService:
         window = min(60, T)
         dates_win = dates[-window:]
 
-        # Build index maps
-        idx_port = {d:i for i,d in enumerate(dates)}
-
         # SPY alignment
         d_spy, r_spy_full = ret_map.get("SPY", ([], np.array([])))
         spy_idx = {d:i for i,d in enumerate(d_spy)}
@@ -1047,7 +1060,10 @@ class DataService:
             r_spy = np.zeros(len(dates_mkt))
         else:
             r_spy = np.array([r_spy_full[spy_idx[d]] for d in dates_mkt], dtype=float)
-        rp_win = np.array([rp[idx_port[d]] for d in dates_mkt], dtype=float)
+        
+        # Map dates_win to rp indices
+        idx_win = {d:i for i,d in enumerate(dates_win)}
+        rp_win = np.array([rp[idx_win[d]] for d in dates_mkt], dtype=float)
 
         # 4) metryki surowe
         # vol ann
@@ -1135,7 +1151,7 @@ class DataService:
             recs.append("Add diversifiers to lower average pairwise correlation (<0.4).")
 
         return {
-            "score_weights": weights,
+            "score_weights": WEIGHTS,
             "component_scores": scores,                 # 0..1
             "risk_contribution_pct": contrib_pct,       # do pie chart
             "alerts": alerts,
@@ -1204,12 +1220,11 @@ class DataService:
         w = w / w.sum()  # renormalizuj
 
         R = clamp(R, STRESS_LIMITS["clamp_return_abs"])
-        rp = R @ w
-        window = min(STRESS_LIMITS["lookback_regime_days"], len(rp))
-        rp = rp[-window:]
+        window = STRESS_LIMITS["lookback_regime_days"]
+        R_win = R[-window:, :]
 
         # Calculate regime metrics
-        vol_ann, avg_corr, mom, radar, label = regime_metrics(R, w, REGIME_THRESH)
+        vol_ann, avg_corr, mom, radar, label = regime_metrics(R_win, w, REGIME_THRESH)
 
         return {
             "label": label,
@@ -1263,17 +1278,14 @@ class DataService:
             w = np.array([w_map[t] for t in active], dtype=float)
             w = w / w.sum()
 
-            R = clamp(R, STRESS_LIMITS["clamp_return_abs"])
-            rp = R @ w
-
-            # Calculate scenario PnL and drawdown
+            # Calculate scenario PnL and drawdown (bez clampu dla wierności historycznej)
             ret_pct, max_dd = scenario_pnl(R, w)
 
             analyzed.append({
                 "name": name,
                 "start": start_d.isoformat(),
                 "end": end_d.isoformat(),
-                "days": len(rp),
+                "days": len(dates),
                 "weight_coverage_pct": w_cov * 100.0,
                 "return_pct": ret_pct,
                 "max_drawdown_pct": max_dd
@@ -1387,3 +1399,301 @@ class DataService:
         except Exception as e:
             print(f"Error calculating forecast risk contribution: {e}")
             return {"error": str(e)} 
+
+    def get_forecast_metrics(self, db: Session, username: str = "admin", 
+                           conf_level: float = 0.95) -> Dict[str, Any]:
+        """Get forecast metrics for all portfolio tickers"""
+        try:
+            # Get portfolio tickers
+            tickers = self.get_user_portfolio_tickers(db, username)
+            if not tickers:
+                return {"error": "No portfolio tickers found"}
+            
+            # Get shares map
+            user_id = db.query(User.id).filter(User.username == username).scalar()
+            if not user_id:
+                return {"error": "User not found"}
+            
+            shares_map = {
+                p.ticker_symbol: p.shares
+                for p in db.query(Portfolio).filter(Portfolio.user_id == user_id).all()
+            }
+            
+            metrics_data = []
+            
+            for ticker in tickers:
+                # Get historical data
+                dates, closes = self._get_close_series(db, ticker)
+                if len(closes) < 252:  # min rok historii
+                    continue
+                
+                # Calculate returns
+                returns = np.diff(np.log(closes))
+                if len(returns) < 252:
+                    continue
+                
+                # Calculate forecast volatilities
+                ewma5 = forecast_sigma(returns, "EWMA (5D)") * 100
+                ewma20 = forecast_sigma(returns, "EWMA (20D)") * 100
+                garch_vol = forecast_sigma(returns, "GARCH") * 100
+                egarch_vol = forecast_sigma(returns, "EGARCH") * 100
+                
+                # Calculate basic stats for VaR/CVaR
+                stats = basic_stats(returns)
+                sigma_d = stats["std_daily"]
+                mu_d = stats["mean_daily"]
+                
+                # Calculate VaR/CVaR
+                var_pct, cvar_pct = var_cvar(sigma_d, mu_d, conf_level)
+                
+                # Calculate market value and dollar amounts
+                last_price = closes[-1]
+                shares = shares_map.get(ticker, 0)
+                mv = shares * last_price
+                var_usd = var_pct / 100 * mv
+                cvar_usd = cvar_pct / 100 * mv
+                
+                metrics_data.append({
+                    "ticker": ticker,
+                    "ewma5_pct": round(ewma5, 2),
+                    "ewma20_pct": round(ewma20, 2),
+                    "garch_vol_pct": round(garch_vol, 2),
+                    "egarch_vol_pct": round(egarch_vol, 2),
+                    "var_pct": round(var_pct, 2),
+                    "cvar_pct": round(cvar_pct, 2),
+                    "var_usd": round(var_usd, 0),
+                    "cvar_usd": round(cvar_usd, 0)
+                })
+            
+            # Sort by ticker name
+            metrics_data.sort(key=lambda x: x["ticker"])
+            
+            return {
+                "metrics": metrics_data,
+                "conf_level": conf_level
+            }
+            
+        except Exception as e:
+            print(f"Error calculating forecast metrics: {e}")
+            return {"error": str(e)}
+
+    def get_rolling_forecast(self, db: Session, tickers: List[str], model: str, 
+                           window: int, username: str = "admin") -> List[Dict[str, Any]]:
+        """
+        Zwraca listę słowników: {date, ticker, vol_pct}
+        – gotowe do wykresu liniowego.
+        """
+        try:
+            if not tickers:
+                return []
+            
+            # --- 1. Przygotuj zwroty ---
+            lookback = 3*365      # 3 lata – wystarczy dla 252-rolling
+            ret_map = self._get_return_series_map(db, tickers, lookback_days=lookback)
+
+            # --- 2. Linie dla pojedynczych tickerów ---
+            out = []
+            for tkr in tickers:
+                if tkr == "PORTFOLIO":
+                    continue
+                dates, rets = ret_map.get(tkr, ([], np.array([])))
+                if len(rets) < window:          # za mało danych
+                    continue
+                for i in range(window, len(rets)+1):
+                    σ = forecast_sigma(rets[i-window:i], model) * 100
+                    out.append({
+                        "date":   dates[i-1].isoformat(),
+                        "ticker": tkr,
+                        "vol_pct": round(float(σ), 4)
+                    })
+
+            # --- 3. Linia „PORTFOLIO" (jeśli chcą) ---
+            if "PORTFOLIO" in tickers:
+                conc = self.get_concentration_risk_data(db, username)
+                if "error" not in conc and conc["portfolio_data"]:
+                    w_map = {p["ticker"]: p["weight_frac"] for p in conc["portfolio_data"]}
+                    active = list(w_map.keys())
+                    # uzupełnij ret_map, jeśli brak któregoś aktywnego tickera
+                    if any(a not in ret_map for a in active):
+                        ret_map.update(self._get_return_series_map(db, active, lookback_days=lookback))
+
+                    dates, R, active_aligned = self._intersect_and_stack(ret_map, active)
+                    if len(dates) >= window:
+                        w = np.array([w_map[x] for x in active_aligned])
+                        for i in range(window, len(dates)+1):
+                            rp = R[i-window:i] @ w
+                            σ = forecast_sigma(rp, model) * 100
+                            out.append({
+                                "date":   dates[i-1].isoformat(),
+                                "ticker": "PORTFOLIO",
+                                "vol_pct": round(float(σ), 4)
+                            })
+
+            # sort (frontend nie musi nic grzebać)
+            out.sort(key=lambda d: (d["date"], d["ticker"]))
+            return out
+            
+        except Exception as e:
+            print(f"Error calculating rolling forecast: {e}")
+            return []
+
+    def get_latest_factor_exposures(self, db: Session, username: str = "admin") -> Dict[str, Any]:
+        """
+        Zwraca macierz β (ticker × factor) oraz listę dat, 
+        wybierając NAJNOWSZY wpis dla każdej pary (ticker,factor).
+        """
+        try:
+            data = self.get_factor_exposure_data(db, username)
+            exposures = data["factor_exposures"]      # ~100 k wierszy
+
+            # 1) upakuj tylko to co potrzebne - oszczędność RAM
+            latest_map: Dict[tuple, tuple] = {}
+            for row in exposures:
+                key = (row["ticker"], row["factor"])
+                # jeśli widzimy nowszą datę → podmień
+                if key not in latest_map or row["date"] > latest_map[key][0]:
+                    latest_map[key] = (row["date"], row["beta"])
+
+            # --- pivot na potrzeby tabeli ---
+            factors = data["available_factors"]
+            tickers = data["available_tickers"] + ["PORTFOLIO"]
+
+            # 2) portfelowe bety - ważona suma wszystkich spółek użytkownika
+            port_betas = {f: 0.0 for f in factors}
+            try:
+                # Pobierz portfolio użytkownika z wagami
+                conc = self.get_concentration_risk_data(db, username)
+                if "error" not in conc and conc["portfolio_data"]:
+                    w_map = {p["ticker"]: p["weight_frac"] for p in conc["portfolio_data"]}
+                    
+                    # Oblicz ważoną sumę β dla każdego czynnika (bez normalizacji)
+                    for factor in factors:
+                        for ticker, weight in w_map.items():
+                            if (ticker, factor) in latest_map:
+                                beta = latest_map[(ticker, factor)][1]  # tuple[date, beta]
+                                port_betas[factor] += weight * beta
+            except Exception as e:
+                print(f"Error calculating portfolio betas: {e}")
+                pass
+
+            # 3) ułóż końcową listę
+            table = []
+            for t in tickers:
+                row = {"ticker": t}
+                for f in factors:
+                    if t == "PORTFOLIO":
+                        row[f] = round(port_betas[f], 2)
+                    else:
+                        beta = latest_map.get((t, f), (None, 0.0))[1]  # tuple[date, beta]
+                        row[f] = round(beta, 2)
+                table.append(row)
+
+            return {
+                "as_of": max(d for d, _ in latest_map.values()) if latest_map else "",
+                "factors": factors,
+                "data": table
+            }
+            
+        except Exception as e:
+            print(f"Error getting latest factor exposures: {e}")
+            return {"error": str(e)}
+
+    def get_portfolio_summary(self, db: Session, username: str = "admin") -> Dict[str, Any]:
+        """
+        Zwraca agregowane dane dla Portfolio Summary dashboard.
+        Łączy dane z risk_scoring, concentration_risk, forecast_metrics i forecast_risk_contribution.
+        """
+        try:
+            # 1) Risk Scoring
+            risk_data = self.get_risk_scoring(db, username)
+            if "error" in risk_data:
+                return {"error": risk_data["error"]}
+            
+            # 2) Concentration Risk
+            conc_data = self.get_concentration_risk_data(db, username)
+            if "error" in conc_data:
+                return {"error": conc_data["error"]}
+            
+            # 3) Forecast Risk Contribution (EGARCH)
+            forecast_contribution = self.get_forecast_risk_contribution(db, username, vol_model="EGARCH")
+            if "error" in forecast_contribution:
+                return {"error": forecast_contribution["error"]}
+            
+            # 4) Forecast Metrics (dla CVaR)
+            forecast_metrics = self.get_forecast_metrics(db, username)
+            if "error" in forecast_metrics:
+                return {"error": forecast_metrics["error"]}
+            
+            # 5) Agregacja CVaR
+            total_cvar_usd = sum(item.get("cvar_usd", 0) for item in forecast_metrics.get("metrics", []))
+            total_market_value = conc_data.get("total_market_value", 1)
+            total_cvar_pct = (total_cvar_usd / total_market_value * 100) if total_market_value > 0 else 0
+            
+            # 6) Risk Level mapping with validation
+            overall_score = risk_data.get("component_scores", {}).get("overall", 0) * 100
+            
+            # Sanity check: ensure overall score is in valid range
+            if not (0.0 <= overall_score <= 100.0):
+                print(f"Warning: Overall score out of range: {overall_score}, clipping to [0,100]")
+                overall_score = max(0, min(overall_score, 100))
+            
+            if overall_score <= 33:
+                risk_level = "LOW"
+            elif overall_score <= 66:
+                risk_level = "MEDIUM"
+            else:
+                risk_level = "HIGH"
+            
+            # 7) Highest Risk Component
+            risk_contribution = risk_data.get("risk_contribution_pct", {})
+            highest_risk = max(risk_contribution.items(), key=lambda x: x[1]) if risk_contribution else ("", 0)
+            high_risk_components = sum(1 for v in risk_contribution.values() if v > 25)
+            
+            # 8) Portfolio Positions dla wykresu
+            portfolio_positions = conc_data.get("portfolio_data", [])
+            
+            # Validation and flags
+            flags = {}
+            volatility_egarch = forecast_contribution.get("portfolio_vol", 0)
+            
+            # Check for suspicious values
+            if volatility_egarch > 3.0:  # > 300% annualized
+                flags["high_vol"] = True
+                print(f"Warning: EGARCH volatility {volatility_egarch*100:.1f}% > 300%")
+            
+            if overall_score > 1.0:
+                flags["high_risk_score"] = True
+                print(f"Warning: Risk score {overall_score:.1f}% > 100%")
+            
+            if total_cvar_pct < -10.0:  # < -10%
+                flags["high_cvar"] = True
+                print(f"Warning: CVaR {total_cvar_pct:.1f}% < -10%")
+            
+            return {
+                "risk_score": {
+                    "overall_score": round(overall_score, 1),
+                    "risk_level": risk_level,
+                    "highest_risk_component": highest_risk[0],
+                    "highest_risk_percentage": round(highest_risk[1], 1),
+                    "high_risk_components_count": high_risk_components
+                },
+                "portfolio_overview": {
+                    "total_market_value": conc_data.get("total_market_value", 0),
+                    "total_positions": len(portfolio_positions),
+                    "largest_position": round(conc_data.get("concentration_metrics", {}).get("largest_position", 0), 1),
+                    "top_3_concentration": round(conc_data.get("concentration_metrics", {}).get("top_3_concentration", 0), 1),
+                    "volatility_egarch": round(volatility_egarch, 1),
+                    "cvar_percentage": round(total_cvar_pct, 1),
+                    "cvar_usd": round(total_cvar_usd, 0),
+                    "top_risk_contributor": {
+                        "ticker": forecast_contribution.get("tickers", ["N/A"])[0] if forecast_contribution.get("tickers") else "N/A",
+                        "vol_contribution_pct": forecast_contribution.get("marginal_rc_pct", [0.0])[0] if forecast_contribution.get("marginal_rc_pct") else 0.0
+                    }
+                },
+                "portfolio_positions": portfolio_positions,
+                "flags": flags
+            }
+            
+        except Exception as e:
+            print(f"Error getting portfolio summary: {e}")
+            return {"error": str(e)}

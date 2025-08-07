@@ -11,6 +11,7 @@ import {
   ArcElement,
 } from 'chart.js';
 import apiService, { ForecastRiskContributionResponse } from '../services/api';
+import ForecastMetricsPage from './ForecastMetricsPage';
 import './ForecastRiskPage.css';
 
 ChartJS.register(
@@ -23,11 +24,14 @@ ChartJS.register(
   ArcElement
 );
 
+type TabType = 'metrics' | 'contribution';
+
 const ForecastRiskPage: React.FC = () => {
   const [data, setData] = useState<ForecastRiskContributionResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [selectedModel, setSelectedModel] = useState<string>('EWMA (5D)');
+  const [activeTab, setActiveTab] = useState<TabType>('metrics');
 
   const fetchForecastRiskData = useCallback(async () => {
     try {
@@ -304,25 +308,45 @@ const ForecastRiskPage: React.FC = () => {
 
   return (
     <div className="forecast-risk-page">
-      <div className="section-header">
-        <h2>Forecast Risk Contribution</h2>
-        <div className="dropdown-container">
-          <label>Select Model for Risk Contribution:</label>
-          <select 
-            className="model-dropdown"
-            value={selectedModel}
-            onChange={(e) => setSelectedModel(e.target.value)}
-          >
-            <option value="EWMA (5D)">EWMA (5D)</option>
-            <option value="EWMA (30D)">EWMA (30D)</option>
-            <option value="EWMA (200D)">EWMA (200D)</option>
-            <option value="Garch Volatility">Garch Volatility</option>
-            <option value="E-Garch Volatility">E-Garch Volatility</option>
-          </select>
-        </div>
+      {/* Sub-navigation */}
+      <div className="sub-nav">
+        <button 
+          className={`sub-nav-item ${activeTab === 'metrics' ? 'active' : ''}`}
+          onClick={() => setActiveTab('metrics')}
+        >
+          Forecast Metrics
+        </button>
+        <button 
+          className={`sub-nav-item ${activeTab === 'contribution' ? 'active' : ''}`}
+          onClick={() => setActiveTab('contribution')}
+        >
+          Contribution
+        </button>
       </div>
 
-      <div className="portfolio-summary">
+      {activeTab === 'metrics' && <ForecastMetricsPage />}
+
+      {activeTab === 'contribution' && (
+        <>
+          <div className="section-header">
+            <h2>Forecast Risk Contribution</h2>
+            <div className="dropdown-container">
+              <label>Select Model for Risk Contribution:</label>
+              <select 
+                className="model-dropdown"
+                value={selectedModel}
+                onChange={(e) => setSelectedModel(e.target.value)}
+              >
+                <option value="EWMA (5D)">EWMA (5D)</option>
+                <option value="EWMA (30D)">EWMA (30D)</option>
+                <option value="EWMA (200D)">EWMA (200D)</option>
+                <option value="Garch Volatility">Garch Volatility</option>
+                <option value="E-Garch Volatility">E-Garch Volatility</option>
+              </select>
+            </div>
+          </div>
+
+      <div className="forecast-summary">
         <div className="summary-item">
           <span className="label">Portfolio Volatility:</span>
           <span className="value">{(data.portfolio_vol * 100).toFixed(2)}%</span>
@@ -356,6 +380,8 @@ const ForecastRiskPage: React.FC = () => {
           </div>
         </div>
       </div>
+        </>
+      )}
     </div>
   );
 };

@@ -1,0 +1,339 @@
+.introduction-page {
+  padding: clamp(20px, 5vw, 40px);
+  background-color: #0a0a0a;
+  min-height: 100vh;
+  color: #ffffff;
+  box-sizing: border-box;
+  width: 100%;
+  margin: 0;
+}
+
+.introduction-container {
+  max-width: 1200px;
+  margin: 0 auto;
+  background: transparent;
+  overflow: hidden;
+}
+
+.introduction-title {
+  color: #FF6B6B;
+  margin: 0 0 clamp(40px, 8vw, 80px) 0;
+  padding: 0;
+  text-align: center;
+  font-size: clamp(28px, 5vw, 48px);
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 2px;
+  position: relative;
+}
+
+.introduction-title::after {
+  content: '';
+  position: absolute;
+  bottom: -15px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 100px;
+  height: 3px;
+  background: linear-gradient(90deg, transparent, #FF6B6B, transparent);
+}
+
+.introduction-content {
+  padding: 0;
+}
+
+.introduction-description {
+  font-size: 1.2rem;
+  line-height: 1.8;
+  color: #cccccc;
+  text-align: center;
+  margin-bottom: clamp(50px, 10vw, 100px);
+  max-width: 900px;
+  margin-left: auto;
+  margin-right: auto;
+  font-weight: 300;
+}
+
+.sections-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(350px, 1fr));
+  gap: clamp(30px, 6vw, 50px);
+  margin-bottom: clamp(60px, 12vw, 120px);
+}
+
+.section-card {
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 107, 107, 0.2);
+  border-radius: 12px;
+  padding: clamp(25px, 5vw, 35px);
+  transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+  position: relative;
+  overflow: hidden;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.2);
+  height: fit-content;
+}
+
+.section-card::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 2px;
+  background: linear-gradient(90deg, #FF6B6B, #ff8a8a);
+  transform: scaleX(1);
+}
+
+.section-title {
+  color: #FF6B6B;
+  font-size: clamp(20px, 3.5vw, 28px);
+  font-weight: 700;
+  margin: 0 0 25px 0;
+  text-transform: uppercase;
+  letter-spacing: 1.5px;
+  text-align: center;
+  position: relative;
+}
+
+.section-title::after {
+  content: '';
+  position: absolute;
+  bottom: -8px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 60px;
+  height: 2px;
+  background: #FF6B6B;
+}
+
+.section-description {
+  color: #cccccc;
+  line-height: 1.6;
+  margin-bottom: 20px;
+  font-size: 1rem;
+  text-align: left;
+  font-weight: 300;
+}
+
+.section-metrics {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  text-align: left;
+}
+
+.metric {
+  color: #888888;
+  font-size: 0.9rem;
+  padding: 6px 0;
+  line-height: 1.4;
+  position: relative;
+  padding-left: 18px;
+}
+
+.metric::before {
+  content: '▸';
+  position: absolute;
+  left: 0;
+  color: #FF6B6B;
+  font-weight: bold;
+}
+
+.methodology-section {
+  background: rgba(255, 255, 255, 0.02);
+  border: 1px solid rgba(255, 107, 107, 0.1);
+  border-radius: 12px;
+  padding: clamp(40px, 8vw, 60px);
+  margin: clamp(60px, 12vw, 120px) 0;
+  text-align: center;
+  max-width: 900px;
+  margin-left: auto;
+  margin-right: auto;
+  position: relative;
+  overflow: hidden;
+}
+
+.methodology-section::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 2px;
+  background: linear-gradient(90deg, #FF6B6B, #ff8a8a);
+}
+
+.methodology-title {
+  color: #FF6B6B;
+  font-size: clamp(24px, 4vw, 32px);
+  font-weight: 700;
+  margin: 0 0 30px 0;
+  text-transform: uppercase;
+  letter-spacing: 1.5px;
+}
+
+.methodology-description {
+  color: #cccccc;
+  line-height: 1.8;
+  margin-bottom: 30px;
+  font-size: 1.2rem;
+  font-weight: 300;
+}
+
+.methodology-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+  gap: 20px;
+}
+
+.methodology-list li {
+  background: rgba(255, 255, 255, 0.03);
+  margin: 0;
+  padding: 20px;
+  border-radius: 8px;
+  border-left: 4px solid #FF6B6B;
+  color: #cccccc;
+  line-height: 1.6;
+  font-weight: 300;
+  transition: all 0.3s ease;
+}
+
+.methodology-list li:hover {
+  background: rgba(255, 255, 255, 0.08);
+  transform: translateX(3px);
+}
+
+.methodology-list li strong {
+  color: #FF6B6B;
+  font-weight: 600;
+}
+
+.interpretation-section {
+  background: rgba(255, 255, 255, 0.02);
+  border: 1px solid rgba(255, 107, 107, 0.1);
+  border-radius: 12px;
+  padding: clamp(40px, 8vw, 60px);
+  margin-top: clamp(60px, 12vw, 120px);
+  position: relative;
+  overflow: hidden;
+}
+
+.interpretation-section::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 2px;
+  background: linear-gradient(90deg, #FF6B6B, #ff8a8a);
+}
+
+.interpretation-title {
+  color: #FF6B6B;
+  font-size: clamp(24px, 4vw, 32px);
+  font-weight: 700;
+  margin: 0 0 40px 0;
+  text-align: center;
+  text-transform: uppercase;
+  letter-spacing: 1.5px;
+}
+
+.interpretation-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: 25px;
+}
+
+.interpretation-item {
+  background: rgba(255, 255, 255, 0.03);
+  padding: 25px;
+  border-radius: 8px;
+  border-left: 4px solid #FF6B6B;
+  transition: all 0.3s ease;
+}
+
+.interpretation-item:hover {
+  background: rgba(255, 255, 255, 0.08);
+  transform: translateY(-2px);
+}
+
+.interpretation-item h4 {
+  color: #FF6B6B;
+  margin: 0 0 15px 0;
+  font-size: 1.2rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+}
+
+.interpretation-item p {
+  color: #cccccc;
+  line-height: 1.7;
+  margin: 0;
+  font-size: 1rem;
+  font-weight: 300;
+}
+
+/* Responsive design */
+@media (max-width: 1024px) {
+  .sections-grid {
+    grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+  }
+  
+  .methodology-list {
+    grid-template-columns: 1fr;
+  }
+  
+  .interpretation-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 768px) {
+  .introduction-title {
+    font-size: clamp(20px, 4vw, 28px);
+    letter-spacing: 1px;
+  }
+  
+  .introduction-description {
+    font-size: 1.1rem;
+  }
+  
+  .sections-grid {
+    grid-template-columns: 1fr;
+    gap: clamp(20px, 4vw, 30px);
+  }
+  
+  .section-card {
+    padding: clamp(25px, 5vw, 35px);
+  }
+  
+  .methodology-section,
+  .interpretation-section {
+    padding: clamp(25px, 5vw, 35px);
+  }
+}
+
+@media (max-width: 480px) {
+  .introduction-page {
+    padding: clamp(15px, 4vw, 25px);
+  }
+  
+  .introduction-title {
+    font-size: clamp(18px, 4vw, 24px);
+  }
+  
+  .section-card {
+    padding: clamp(20px, 4vw, 25px);
+  }
+  
+
+  
+  .methodology-list li,
+  .interpretation-item {
+    padding: 20px;
+  }
+}
