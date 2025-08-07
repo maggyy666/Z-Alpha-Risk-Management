@@ -124,6 +124,15 @@ export interface StressTestingResponse {
   };
 }
 
+export interface ForecastRiskContributionResponse {
+  tickers: string[];
+  marginal_rc_pct: number[];
+  total_rc_pct: number[];
+  weights_pct: number[];
+  portfolio_vol: number;
+  vol_model: string;
+}
+
 class ApiService {
   async getVolatilityData(forecastModel: string = 'EWMA (5D)', username: string = "admin"): Promise<VolatilityData> {
     try {
@@ -181,6 +190,18 @@ class ApiService {
       return response.data;
     } catch (error) {
       console.error('Error fetching stress testing data:', error);
+      throw error;
+    }
+  }
+
+  async getForecastRiskContributionData(volModel: string = 'EWMA (5D)', username: string = "admin"): Promise<ForecastRiskContributionResponse> {
+    try {
+      const response = await api.get('/forecast-risk-contribution', {
+        params: { vol_model: volModel, username }
+      });
+      return response.data;
+    } catch (error) {
+      console.error('Error fetching forecast risk contribution data:', error);
       throw error;
     }
   }
