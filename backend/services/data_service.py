@@ -6,6 +6,10 @@ from database.models.portfolio import Portfolio
 from database.models.ticker_data import TickerData
 from services.ibkr_service import IBKRService
 from datetime import datetime, timedelta
+from quant.volatility import forecast_sigma, log_returns
+from quant.risk import clamp, build_cov, risk_contribution
+import threading
+import time
 
 # Risk Scoring Configuration
 NORMALIZATION = {
@@ -51,6 +55,53 @@ class DataService:
         # Stałe tickery które zawsze będą pobierane z IBKR
         self.STATIC_TICKERS = ['SPY', 'MTUM', 'IWM', 'VLUE', 'QUAL']
         
+        # Cache system for expensive operations
+        self._cache = {}
+        self._cache_timestamps = {}
+        self._cache_lock = threading.Lock()
+        self.CACHE_TTL = 300  # 5 minutes cache TTL
+        
+    def _get_cache_key(self, method: str, username: str, **kwargs) -> str:
+        """Generate cache key for method call"""
+        key_parts = [method, username]
+        for k, v in sorted(kwargs.items()):
+            key_parts.append(f"{k}:{v}")
+        return "|".join(key_parts)
+    
+    def _get_from_cache(self, key: str) -> Optional[Any]:
+        """Get data from cache if valid"""
+        with self._cache_lock:
+            if key in self._cache:
+                timestamp = self._cache_timestamps.get(key, 0)
+                if time.time() - timestamp < self.CACHE_TTL:
+                    return self._cache[key]
+                else:
+                    # Remove expired cache
+                    del self._cache[key]
+                    if key in self._cache_timestamps:
+                        del self._cache_timestamps[key]
+        return None
+    
+    def _set_cache(self, key: str, data: Any) -> None:
+        """Set data in cache"""
+        with self._cache_lock:
+            self._cache[key] = data
+            self._cache_timestamps[key] = time.time()
+    
+    def _clear_cache(self, pattern: str = None) -> None:
+        """Clear cache entries matching pattern"""
+        with self._cache_lock:
+            if pattern:
+                keys_to_remove = [k for k in self._cache.keys() if pattern in k]
+            else:
+                keys_to_remove = list(self._cache.keys())
+            
+            for key in keys_to_remove:
+                if key in self._cache:
+                    del self._cache[key]
+                if key in self._cache_timestamps:
+                    del self._cache_timestamps[key]
+        
     def get_all_tickers(self, db: Session, username: str = "admin") -> List[str]:
         """Get all tickers: user portfolio + static tickers"""
         portfolio_tickers = self.get_user_portfolio_tickers(db, username)
@@ -75,9 +126,7 @@ class DataService:
             return True
         return False
         
-    def _lambda_from_half_life(self, h: int) -> float:
-        """Calculate λ from half-life: λ = 2^(-1/h)"""
-        return float(np.exp(-np.log(2) / max(1, h)))
+    # _lambda_from_half_life moved to backend.quant.volatility
         
     def get_user_portfolio_tickers(self, db: Session, username: str = "admin") -> List[str]:
         """Get ticker symbols from user's portfolio"""
@@ -190,9 +239,9 @@ class DataService:
             mean_annual = mean_daily * 252
             std_annual = std_daily * np.sqrt(252)
             
-            # Calculate forecast volatility
+            # Calculate forecast volatility using new math module
             print(f"🔍 Calculating {forecast_model} volatility for returns shape: {returns.shape}")
-            forecast_vol = self._calculate_forecast_volatility(returns, forecast_model)
+            forecast_vol = forecast_sigma(returns, forecast_model) * 100  # Convert to percentage
             print(f"📊 {symbol}: Calculated volatility: {forecast_vol:.2f}%")
             
             # Calculate Sharpe ratio
@@ -216,159 +265,110 @@ class DataService:
             print(f"❌ Error calculating metrics for {symbol}: {e}")
             return {}
     
-    def _calculate_forecast_volatility(self, returns: np.ndarray, model: str) -> float:
-        """Calculate forecast volatility using different models"""
-        if len(returns) == 0:
-            return 0.0
-        
-        print(f"🔍 Calculating {model} volatility for returns shape: {returns.shape}")
-        
-        try:
-            name = model.upper()
-            if name.startswith('EWMA'):
-                if '5D' in name:
-                    lam = self._lambda_from_half_life(5)  # λ ≈ 0.8706
-                elif '30D' in name:
-                    lam = self._lambda_from_half_life(30)  # λ ≈ 0.9772
-                elif '200D' in name:
-                    lam = self._lambda_from_half_life(200)  # λ ≈ 0.9965
-                else:
-                    lam = 0.94  # fallback
-                return self._ewma_volatility(returns, lambda_param=lam)
-            elif 'GARCH' in name and 'E' not in name:
-                return self._garch_volatility(returns)
-            elif 'E-GARCH' in name or 'EGARCH' in name:
-                return self._egarch_volatility(returns)
-            else:
-                # Default to simple historical volatility
-                return np.std(returns, ddof=1) * np.sqrt(252) * 100
-            
-        except Exception as e:
-            print(f"❌ Error in {model}: {e}")
-            return np.std(returns, ddof=1) * np.sqrt(252) * 100
-    
-    def _ewma_volatility(self, returns: np.ndarray, lambda_param: float = 0.94) -> float:
-        """EWMA (RiskMetrics): vol w % rocznie z λ"""
-        if len(returns) < 2:
-            return 0.0
-        
-        # Użyj podanego λ
-        lam = lambda_param
-        var = float(returns[0] ** 2)
-        for r in returns[1:]:
-            var = lam * var + (1.0 - lam) * (float(r) ** 2)
-        sigma_daily = np.sqrt(var)
-        sigma_annual_pct = sigma_daily * np.sqrt(252.0) * 100.0
-        return float(sigma_annual_pct)
-
-    def _garch_volatility(self, returns: np.ndarray) -> float:
-        """Simple GARCH(1,1) volatility forecast - fixed parameters (not calibrated)"""
-        if len(returns) < 100:  # Zwiększone z 50 na 100
-            return np.std(returns, ddof=1) * np.sqrt(252) * 100
-
-        # Fixed parameters (α + β < 1 for stationarity)
-        omega = 0.000001
-        alpha = 0.1
-        beta = 0.8
-
-        # Użyj pierwszych 100 obserwacji do inicjalizacji
-        var = np.var(returns[:100])
-        for i in range(100, len(returns)):  # Zwiększone z 50 na 100
-            var = omega + alpha * returns[i-1]**2 + beta * var
-        return np.sqrt(var * 252) * 100
-
-    def _egarch_volatility(self, returns: np.ndarray) -> float:
-        """Simple EGARCH volatility forecast - fixed parameters (not calibrated)"""
-        if len(returns) < 100:  # Zwiększone z 50 na 100
-            return np.std(returns, ddof=1) * np.sqrt(252) * 100
-
-        # Fixed parameters
-        omega = -0.1
-        alpha = 0.1
-        gamma = 0.1
-        beta = 0.9
-
-        # Użyj pierwszych 100 obserwacji do inicjalizacji
-        log_var = np.log(np.var(returns[:100]))
-        for i in range(100, len(returns)):  # Zwiększone z 50 na 100
-            z = returns[i-1] / np.sqrt(np.exp(log_var))
-            log_var = omega + alpha * abs(z) + gamma * z + beta * log_var
-        return np.sqrt(np.exp(log_var) * 252) * 100
+    # _calculate_forecast_volatility, _ewma_volatility, _garch_volatility, _egarch_volatility moved to backend.quant.volatility
 
     def get_portfolio_volatility_data(self, db: Session, username: str = "admin",
                                       forecast_model: str = 'EWMA (5D)',
                                       vol_floor_annual_pct: float = 8.0,
                                       risk_free_annual: float = 0.0) -> List[Dict[str, Any]]:
-        """Get volatility data for user's portfolio tickers + static tickers"""
-        portfolio_data = []
+        """Get volatility data for user's portfolio tickers + static tickers with caching"""
+        try:
+            # Check cache first
+            cache_key = self._get_cache_key("portfolio_volatility_data", username, 
+                                          forecast_model=forecast_model, 
+                                          vol_floor=vol_floor_annual_pct,
+                                          risk_free=risk_free_annual)
+            cached_data = self._get_from_cache(cache_key)
+            if cached_data:
+                print(f"Using cached portfolio volatility data for user: {username}")
+                return cached_data
+            
+            print(f"Getting portfolio volatility data for user: {username}")
+            
+            portfolio_data = []
 
-        # Get all tickers: user portfolio + static tickers
-        all_tickers = self.get_all_tickers(db, username)
-        if not all_tickers:
-            print(f"❌ No tickers found for user {username}")
-            return []
+            # Get all tickers: user portfolio + static tickers
+            all_tickers = self.get_all_tickers(db, username)
+            if not all_tickers:
+                print(f"No tickers found for user {username}")
+                result = []
+                self._set_cache(cache_key, result)
+                return result
 
-        # Get portfolio items with shares info (only for user's portfolio)
-        user = db.query(User).filter(User.username == username).first()
-        portfolio_items = db.query(Portfolio).filter(Portfolio.user_id == user.id).all()
-        shares_map = {item.ticker_symbol: item.shares for item in portfolio_items}
+            # Get portfolio items with shares info (only for user's portfolio)
+            user = db.query(User).filter(User.username == username).first()
+            portfolio_items = db.query(Portfolio).filter(Portfolio.user_id == user.id).all()
+            shares_map = {item.ticker_symbol: item.shares for item in portfolio_items}
 
-        # 1) Zbierz metryki dla wszystkich tickerów
-        for symbol in all_tickers:
-            print(f"🔍 Processing {symbol}...")
-            m = self.calculate_volatility_metrics(db, symbol, forecast_model, risk_free_annual)
-            print(f"🔍 {symbol} metrics: {m}")
-            if m:
-                # Dla statycznych tickerów używamy domyślnej liczby shares
-                shares = shares_map.get(symbol, 1000) if symbol in shares_map else 1000
-                portfolio_data.append({
-                    'symbol': symbol,
-                    'forecast_volatility_pct': float(m.get('volatility_pct', 0.0)),
-                    'last_price': float(m.get('last_price', 0.0)),
-                    'sharpe_ratio': float(m.get('sharpe_ratio', 0.0)),
-                    'shares': shares,
-                    'is_static': symbol in self.STATIC_TICKERS
-                })
-            else:
-                print(f"❌ No metrics for {symbol}")
+            # 1) Zbierz metryki dla wszystkich tickerów
+            for symbol in all_tickers:
+                print(f"Processing {symbol}...")
+                m = self.calculate_volatility_metrics(db, symbol, forecast_model, risk_free_annual)
+                print(f"{symbol} metrics: {m}")
+                if m:
+                    # Dla statycznych tickerów używamy domyślnej liczby shares
+                    shares = shares_map.get(symbol, 1000) if symbol in shares_map else 1000
+                    portfolio_data.append({
+                        'symbol': symbol,
+                        'forecast_volatility_pct': float(m.get('volatility_pct', 0.0)),
+                        'last_price': float(m.get('last_price', 0.0)),
+                        'sharpe_ratio': float(m.get('sharpe_ratio', 0.0)),
+                        'shares': shares,
+                        'is_static': symbol in self.STATIC_TICKERS
+                    })
+                else:
+                    print(f"No metrics for {symbol}")
 
-        if not portfolio_data:
-            return []
+            if not portfolio_data:
+                result = []
+                self._set_cache(cache_key, result)
+                return result
 
-        # 2) Current MV (przed liczeniem wag)
-        for item in portfolio_data:
-            lp = item['last_price']
-            shares = item['shares']
-            item['current_mv'] = float(lp) * float(shares)
+            # 2) Current MV (przed liczeniem wag)
+            for item in portfolio_data:
+                lp = item['last_price']
+                shares = item['shares']
+                item['current_mv'] = float(lp) * float(shares)
 
-        total_portfolio_value = float(sum(d['current_mv'] for d in portfolio_data)) if portfolio_data else 0.0
-        if total_portfolio_value <= 0:
+            total_portfolio_value = float(sum(d['current_mv'] for d in portfolio_data)) if portfolio_data else 0.0
+            if total_portfolio_value <= 0:
+                result = portfolio_data
+                self._set_cache(cache_key, result)
+                return result
+
+            # 3) Current weights (po policzeniu totalu)
+            for item in portfolio_data:
+                item['current_weight_pct'] = 100.0 * item['current_mv'] / total_portfolio_value
+
+            # 4) Inverse-vol weights – vol jako ułamek + floor
+            vols_frac = [
+                max(d['forecast_volatility_pct'] / 100.0, vol_floor_annual_pct / 100.0)
+                for d in portfolio_data
+            ]
+            inv = [1.0 / v for v in vols_frac]
+            denom = float(sum(inv)) if inv else 1.0
+
+            for item, inv_i in zip(portfolio_data, inv):
+                item['adj_volatility_weight_pct'] = 100.0 * inv_i / denom
+
+            # 5) Target MV i delty
+            for item in portfolio_data:
+                target_w = item['adj_volatility_weight_pct'] / 100.0
+                item['target_mv'] = total_portfolio_value * target_w
+                item['delta_mv'] = item['target_mv'] - item['current_mv']
+                lp = item['last_price']
+                item['delta_shares'] = int(np.floor(item['delta_mv'] / lp)) if lp > 0 else 0
+
+            # Cache the result
+            self._set_cache(cache_key, portfolio_data)
+            
             return portfolio_data
-
-        # 3) Current weights (po policzeniu totalu)
-        for item in portfolio_data:
-            item['current_weight_pct'] = 100.0 * item['current_mv'] / total_portfolio_value
-
-        # 4) Inverse-vol weights – vol jako ułamek + floor
-        vols_frac = [
-            max(d['forecast_volatility_pct'] / 100.0, vol_floor_annual_pct / 100.0)
-            for d in portfolio_data
-        ]
-        inv = [1.0 / v for v in vols_frac]
-        denom = float(sum(inv)) if inv else 1.0
-
-        for item, inv_i in zip(portfolio_data, inv):
-            item['adj_volatility_weight_pct'] = 100.0 * inv_i / denom
-
-        # 5) Target MV i delty
-        for item in portfolio_data:
-            target_w = item['adj_volatility_weight_pct'] / 100.0
-            item['target_mv'] = total_portfolio_value * target_w
-            item['delta_mv'] = item['target_mv'] - item['current_mv']
-            lp = item['last_price']
-            item['delta_shares'] = int(np.floor(item['delta_mv'] / lp)) if lp > 0 else 0
-
-        return portfolio_data
+            
+        except Exception as e:
+            print(f"Error getting portfolio volatility data: {e}")
+            error_result = []
+            self._set_cache(cache_key, error_result)
+            return error_result
 
     def inject_sample_data(self, db: Session, symbol: str, seed: Optional[int] = None) -> bool:
         """Inject sample historical data for a ticker from 2016 to 2025"""
@@ -456,17 +456,26 @@ class DataService:
         return ret_dates, rets
 
     def get_factor_exposure_data(self, db: Session, username: str = "admin") -> Dict[str, Any]:
-        """Get factor exposure data for portfolio analysis"""
+        """Get factor exposure data for portfolio analysis with caching"""
         try:
-            print(f"🔍 Getting factor exposure data for user: {username}")
+            # Check cache first
+            cache_key = self._get_cache_key("factor_exposure_data", username)
+            cached_data = self._get_from_cache(cache_key)
+            if cached_data:
+                print(f"Using cached factor exposure data for user: {username}")
+                return cached_data
+            
+            print(f"Getting factor exposure data for user: {username}")
             
             # Get all tickers: user portfolio + static tickers
             all_tickers = self.get_all_tickers(db, username)
-            print(f"📊 All tickers: {all_tickers}")
+            print(f"All tickers: {all_tickers}")
             
             if not all_tickers:
-                print("❌ No tickers found")
-                return {"factor_exposures": [], "r2_data": [], "available_factors": [], "available_tickers": []}
+                print("No tickers found")
+                result = {"factor_exposures": [], "r2_data": [], "available_factors": [], "available_tickers": []}
+                self._set_cache(cache_key, result)
+                return result
 
             # Available factors
             available_factors = ["MARKET", "MOMENTUM", "SIZE", "VALUE", "QUALITY"]
@@ -805,32 +814,50 @@ class DataService:
                                     "beta": round(beta, 3)
                                 })
             
-            print(f"✅ Generated {len(factor_exposures)} factor exposures and {len(r2_data)} R² records")
+            print(f"Generated {len(factor_exposures)} factor exposures and {len(r2_data)} R² records")
             
-            return {
+            result = {
                 "factor_exposures": factor_exposures,
                 "r2_data": r2_data,
                 "available_factors": available_factors,
                 "available_tickers": all_tickers
             }
             
+            # Cache the result
+            self._set_cache(cache_key, result)
+            
+            return result
+            
         except Exception as e:
             print(f"Error getting factor exposure data: {e}")
-            return {"factor_exposures": [], "r2_data": [], "available_factors": [], "available_tickers": []} 
+            error_result = {"factor_exposures": [], "r2_data": [], "available_factors": [], "available_tickers": []}
+            self._set_cache(cache_key, error_result)
+            return error_result 
 
     def get_concentration_risk_data(self, db: Session, username: str = "admin") -> Dict[str, Any]:
-        """Get concentration risk data for portfolio analysis"""
+        """Get concentration risk data for portfolio analysis with caching"""
         try:
-            print(f"🔍 Getting concentration risk data for user: {username}")
+            # Check cache first
+            cache_key = self._get_cache_key("concentration_risk_data", username)
+            cached_data = self._get_from_cache(cache_key)
+            if cached_data:
+                print(f"Using cached concentration risk data for user: {username}")
+                return cached_data
+            
+            print(f"Getting concentration risk data for user: {username}")
             
             # Get user's portfolio with shares
             user = db.query(User).filter(User.username == username).first()
             if not user:
-                return {"error": "User not found"}
+                result = {"error": "User not found"}
+                self._set_cache(cache_key, result)
+                return result
             
             portfolio_items = db.query(Portfolio).filter(Portfolio.user_id == user.id).all()
             if not portfolio_items:
-                return {"error": "No portfolio found"}
+                result = {"error": "No portfolio found"}
+                self._set_cache(cache_key, result)
+                return result
             
             # Get current prices and calculate market values
             portfolio_data = []
@@ -917,9 +944,9 @@ class DataService:
             sector_concentration['hhi'] = hhi_sec
             sector_concentration['effective_sectors'] = 1.0/hhi_sec if hhi_sec>0 else 0.0
             
-            print(f"✅ Calculated concentration metrics for {len(portfolio_data)} positions")
+            print(f"Calculated concentration metrics for {len(portfolio_data)} positions")
             
-            return {
+            result = {
                 "portfolio_data": portfolio_data,  # zawiera 'weight' (%) i 'weight_frac'
                 "concentration_metrics": {
                     "largest_position": round(largest_position, 1),
@@ -933,9 +960,16 @@ class DataService:
                 "total_market_value": total_mv
             }
             
+            # Cache the result
+            self._set_cache(cache_key, result)
+            
+            return result
+            
         except Exception as e:
-            print(f"❌ Error calculating concentration risk: {e}")
-            return {"error": str(e)}
+            print(f"Error calculating concentration risk: {e}")
+            error_result = {"error": str(e)}
+            self._set_cache(cache_key, error_result)
+            return error_result
 
     def _get_return_series_map(self, db: Session, symbols: List[str], lookback_days: int = 120):
         """Zwraca dict: symbol -> (dates, returns) z ostatnich ~lookback dni. Prosto i szybko."""
@@ -1007,7 +1041,7 @@ class DataService:
         w = w / w.sum()  # renormalizuj
         
         # portfelowe zwroty przy stałych wagach (snapshot) 
-        R = self._clamp(R, STRESS_LIMITS["clamp_return_abs"])  # spójność z regime/scenariuszami
+        R = clamp(R, STRESS_LIMITS["clamp_return_abs"])  # spójność z regime/scenariuszami
         rp = (R @ w)  # T x 1
         T = len(rp)
         # przytnij do 60dni
@@ -1191,10 +1225,7 @@ class DataService:
         rd, rets = self._log_returns_from_series(dts, closes)
         return rd, rets
 
-    def _clamp(self, arr: np.ndarray, lim: float):
-        if arr.size == 0: 
-            return arr
-        return np.clip(arr, -abs(lim), abs(lim))
+        # _clamp moved to backend.quant.risk
 
     def _portfolio_snapshot(self, db: Session, username: str = "admin"):
         """Zwraca listę pozycji (ticker, weight_frac)."""
@@ -1231,7 +1262,7 @@ class DataService:
         w = np.array([w_map[s] for s in active], dtype=float)
         w = w / w.sum()  # renormalizuj
 
-        R = self._clamp(R, STRESS_LIMITS["clamp_return_abs"])
+        R = clamp(R, STRESS_LIMITS["clamp_return_abs"])
         rp = R @ w
         window = min(STRESS_LIMITS["lookback_regime_days"], len(rp))
         rp = rp[-window:]
@@ -1323,7 +1354,7 @@ class DataService:
             w = np.array([w_map[t] for t in active], dtype=float)
             w = w / w.sum()
 
-            R = self._clamp(R, STRESS_LIMITS["clamp_return_abs"])
+            R = clamp(R, STRESS_LIMITS["clamp_return_abs"])
             rp = R @ w
 
             # wynik i DD
@@ -1358,3 +1389,136 @@ class DataService:
             "market_regime": regime,
             "scenarios": scenarios
         } 
+
+    def build_covariance_matrix(self, db: Session, tickers: List[str], vol_model: str = 'EWMA (5D)') -> np.ndarray:
+        """Build covariance matrix Σ = D ρ D where D = diag(σ) and ρ is correlation matrix"""
+        if not tickers:
+            return np.empty((0, 0))
+        
+        # Get volatility forecasts for each ticker
+        vol_vec = []
+        for ticker in tickers:
+            metrics = self.calculate_volatility_metrics(db, ticker, vol_model)
+            vol = metrics.get('volatility_pct', 8.0) / 100.0  # Convert to fraction
+            vol_vec.append(max(vol, 0.005))  # Floor at 0.5%
+        
+        vol_vec = np.array(vol_vec)
+        D = np.diag(vol_vec)  # D = diag(σ)
+        
+        # Get historical returns for correlation calculation
+        ret_map = self._get_return_series_map(db, tickers, lookback_days=252)  # 1 year
+        dates, R, active = self._intersect_and_stack(ret_map, tickers)
+        
+        if R.size == 0 or len(dates) < 60:
+            # Fallback to diagonal correlation if insufficient data
+            print("⚠️ Insufficient data for correlation, using diagonal matrix")
+            n = len(tickers)
+            corr_matrix = np.eye(n)
+        else:
+            # Calculate EWMA correlation matrix
+            print(f"📊 Calculating EWMA correlation for {len(active)} tickers with {len(dates)} observations")
+            
+            # Use EWMA with λ = 0.94 (RiskMetrics)
+            lambda_param = 0.94
+            n_assets = R.shape[1]
+            corr_matrix = np.eye(n_assets)
+            
+            if len(dates) > 30:  # Need minimum data
+                # Initialize with sample correlation
+                sample_corr = np.corrcoef(R.T)
+                sample_corr = np.where(np.isfinite(sample_corr), sample_corr, 0.0)
+                sample_corr = np.where(np.eye(n_assets) == 1, 1.0, sample_corr)
+                
+                # EWMA correlation update
+                for t in range(30, len(dates)):
+                    # Standardize returns
+                    std_returns = R[t] / np.sqrt(np.var(R[t], ddof=1))
+                    std_returns = np.where(np.isfinite(std_returns), std_returns, 0.0)
+                    
+                    # Outer product for correlation update
+                    outer_prod = np.outer(std_returns, std_returns)
+                    
+                    # EWMA update
+                    corr_matrix = lambda_param * corr_matrix + (1 - lambda_param) * outer_prod
+                
+                # Ensure diagonal is 1 and matrix is symmetric
+                corr_matrix = np.where(np.eye(n_assets) == 1, 1.0, corr_matrix)
+                corr_matrix = (corr_matrix + corr_matrix.T) / 2  # Symmetrize
+                
+                # Ensure positive definiteness (clamp eigenvalues)
+                eigenvals, eigenvecs = np.linalg.eigh(corr_matrix)
+                eigenvals = np.maximum(eigenvals, 1e-6)  # Floor at small positive value
+                corr_matrix = eigenvecs @ np.diag(eigenvals) @ eigenvecs.T
+                
+                # Re-normalize diagonal to 1
+                diag_sqrt = np.sqrt(np.diag(corr_matrix))
+                corr_matrix = corr_matrix / np.outer(diag_sqrt, diag_sqrt)
+            else:
+                print("⚠️ Not enough data for EWMA correlation, using sample correlation")
+                corr_matrix = np.corrcoef(R.T)
+                corr_matrix = np.where(np.isfinite(corr_matrix), corr_matrix, 0.0)
+                corr_matrix = np.where(np.eye(n_assets) == 1, 1.0, corr_matrix)
+        
+        # Build covariance matrix using quant.risk
+        return build_cov(vol_vec, corr_matrix)
+
+    # calculate_risk_contribution moved to quant.risk
+
+    def get_forecast_risk_contribution(self, db: Session, username: str = "admin", 
+                                      vol_model: str = 'EWMA (5D)') -> Dict[str, Any]:
+        """Get Forecast Risk Contribution data for portfolio"""
+        try:
+            # Get portfolio data
+            conc = self.get_concentration_risk_data(db, username)
+            if "error" in conc:
+                return {"error": conc["error"]}
+            
+            portfolio_data = conc["portfolio_data"]
+            if not portfolio_data:
+                return {"error": "No portfolio data"}
+            
+            # Extract tickers and weights
+            tickers = [item['ticker'] for item in portfolio_data]
+            weights = [item['weight_frac'] for item in portfolio_data]  # Already 0-1
+            
+            # Build covariance matrix
+            cov_matrix = self.build_covariance_matrix(db, tickers, vol_model)
+            if cov_matrix.size == 0:
+                return {"error": "Failed to build covariance matrix"}
+            
+            # Calculate risk contributions using quant.risk
+            try:
+                mrc, pct_rc, sigma_p = risk_contribution(weights, cov_matrix)
+                risk_data = {"marginal_rc": mrc, "total_rc_pct": pct_rc, "portfolio_vol": sigma_p}
+            except ValueError as e:
+                return {"error": str(e)}
+            
+            # Prepare response data
+            marginal_rc = risk_data["marginal_rc"]
+            total_rc_pct = risk_data["total_rc_pct"]
+            
+            # Create data for charts
+            chart_data = []
+            for i, ticker in enumerate(tickers):
+                chart_data.append({
+                    "ticker": ticker,
+                    "marginal_rc_pct": marginal_rc[i] * 100,  # Convert to percentage
+                    "total_rc_pct": total_rc_pct[i],
+                    "weight_pct": weights[i] * 100
+                })
+            
+            # Sort by marginal risk contribution (descending)
+            chart_data.sort(key=lambda x: x["marginal_rc_pct"], reverse=True)
+            
+            return {
+                "tickers": [item["ticker"] for item in chart_data],
+                "marginal_rc_pct": [item["marginal_rc_pct"] for item in chart_data],
+                "total_rc_pct": [item["total_rc_pct"] for item in chart_data],
+                "weights_pct": [item["weight_pct"] for item in chart_data],
+                "portfolio_vol": risk_data["portfolio_vol"],
+                "vol_model": vol_model
+            }
+            
+        except Exception as e:
+            print(f"Error calculating forecast risk contribution: {e}")
+            return {"error": str(e)} 
