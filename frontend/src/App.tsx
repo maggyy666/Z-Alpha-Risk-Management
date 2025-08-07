@@ -6,6 +6,7 @@ import VolatilitySizingPage from './pages/VolatilitySizingPage';
 import FactorExposurePage from './pages/FactorExposurePage';
 import ConcentrationRiskPage from './pages/ConcentrationRiskPage';
 import StressTestingPage from './pages/StressTestingPage';
+import ForecastRiskPage from './pages/ForecastRiskPage';
 
 function App() {
   return (
@@ -31,6 +32,11 @@ function App() {
         <Route path="/stress-testing" element={
           <DashboardLayout>
             <StressTestingPage />
+          </DashboardLayout>
+        } />
+        <Route path="/forecast-risk" element={
+          <DashboardLayout>
+            <ForecastRiskPage />
           </DashboardLayout>
         } />
       </Routes>
