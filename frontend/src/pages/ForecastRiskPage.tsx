@@ -94,6 +94,14 @@ const ForecastRiskPage: React.FC = () => {
     };
   };
 
+  // Calculate dynamic height based on number of tickers
+  const getChartHeight = () => {
+    if (!data || !data.tickers) return 300;
+    const tickerCount = data.tickers.length;
+    // Base height + additional height per ticker, but with reasonable limits
+    return Math.max(250, Math.min(600, 200 + tickerCount * 25));
+  };
+
   const chartOptions = {
     indexAxis: 'y' as const,
     responsive: true,
@@ -332,7 +340,7 @@ const ForecastRiskPage: React.FC = () => {
       <div className="charts-container">
         <div className="chart-section">
           <h3>Marginal Risk Contribution</h3>
-          <div className="chart-container">
+          <div className="chart-container" style={{ height: `${getChartHeight()}px` }}>
             {createMarginalRiskChartData() && (
               <Bar data={createMarginalRiskChartData()!} options={chartOptions} />
             )}
@@ -341,7 +349,7 @@ const ForecastRiskPage: React.FC = () => {
 
         <div className="chart-section">
           <h3>Forecast Risk Contribution</h3>
-          <div className="chart-container">
+          <div className="chart-container" style={{ height: `${Math.min(400, getChartHeight())}px` }}>
             {createTotalRiskChartData() && (
               <Doughnut data={createTotalRiskChartData()!} options={doughnutOptions} />
             )}
