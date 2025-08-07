@@ -135,10 +135,34 @@ def stress_testing(username: str = "admin", db: Session = Depends(get_db)):
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
+@app.get("/forecast-risk-contribution")
+def get_forecast_risk_contribution(
+    vol_model: str = 'EWMA (5D)',
+    username: str = "admin",
+    db: Session = Depends(get_db)
+):
+    """Get Forecast Risk Contribution data for portfolio"""
+    try:
+        data = data_service.get_forecast_risk_contribution(db, username, vol_model)
+        if "error" in data:
+            raise HTTPException(status_code=400, detail=data["error"])
+        return data
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
 @app.get("/health")
 def health_check():
     """Health check endpoint"""
     return {"status": "healthy"}
+
+@app.post("/clear-cache")
+def clear_cache(pattern: str = None):
+    """Clear cache entries matching pattern"""
+    try:
+        data_service._clear_cache(pattern)
+        return {"message": f"Cache cleared for pattern: {pattern or 'all'}"}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
 if __name__ == "__main__":
     uvicorn.run(app, host="0.0.0.0", port=8000) 
