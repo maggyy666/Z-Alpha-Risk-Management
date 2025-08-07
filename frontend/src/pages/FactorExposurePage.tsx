@@ -96,7 +96,7 @@ const FactorExposurePage: React.FC = () => {
     try {
       setLoading(true);
       console.log('Fetching factor exposure data...');
-      const data = await apiService.getFactorExposureData("admin"); // Można zmienić na dynamiczne
+      const data = await apiService.getFactorExposureData("admin");
       console.log('Received data:', data);
       console.log('Available tickers:', data.available_tickers);
       console.log('Available factors:', data.available_factors);
@@ -133,7 +133,7 @@ const FactorExposurePage: React.FC = () => {
     } finally {
       setLoading(false);
     }
-  }, [selectedTickers.length, selectedFactors.length]);
+  }, []); // Usunięte zależności - dane ładują się tylko raz
 
   useEffect(() => {
     fetchFactorExposureData();
