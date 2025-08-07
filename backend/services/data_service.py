@@ -6,8 +6,18 @@ from database.models.portfolio import Portfolio
 from database.models.ticker_data import TickerData
 from services.ibkr_service import IBKRService
 from datetime import datetime, timedelta
-from quant.volatility import forecast_sigma, log_returns
+from quant.volatility import forecast_sigma, log_returns, annualized_vol
 from quant.risk import clamp, build_cov, risk_contribution
+from quant.linear import ols_beta
+from quant.cov import ewma_corr
+from quant.drawdown import drawdown
+from quant.regime import regime_metrics
+from quant.scoring import risk_mix
+from quant.scenario import scenario_pnl
+from quant.concentration import concentration_metrics
+from quant.weights import inverse_vol_allocation
+from quant.correlation import avg_and_high_corr
+from quant.returns import stack_common_returns
 import threading
 import time
 
@@ -340,16 +350,12 @@ class DataService:
             for item in portfolio_data:
                 item['current_weight_pct'] = 100.0 * item['current_mv'] / total_portfolio_value
 
-            # 4) Inverse-vol weights – vol jako ułamek + floor
-            vols_frac = [
-                max(d['forecast_volatility_pct'] / 100.0, vol_floor_annual_pct / 100.0)
-                for d in portfolio_data
-            ]
-            inv = [1.0 / v for v in vols_frac]
-            denom = float(sum(inv)) if inv else 1.0
-
-            for item, inv_i in zip(portfolio_data, inv):
-                item['adj_volatility_weight_pct'] = 100.0 * inv_i / denom
+            # 4) Inverse-vol weights
+            vols = np.array([d['forecast_volatility_pct'] for d in portfolio_data])
+            adj_weights = inverse_vol_allocation(vols, vol_floor_annual_pct)
+            
+            for item, adj_weight in zip(portfolio_data, adj_weights):
+                item['adj_volatility_weight_pct'] = adj_weight * 100.0
 
             # 5) Target MV i delty
             for item in portfolio_data:
@@ -784,13 +790,21 @@ class DataService:
                             
                             try:
                                 # OLS regression
-                                beta = np.linalg.lstsq(x_with_const, y, rcond=None)[0][1]
+                                beta, r2 = ols_beta(y, x)
                                 
                                 factor_exposures.append({
                                     "date": date.isoformat(),
                                     "ticker": ticker,
                                     "factor": factor,
                                     "beta": round(beta, 3)
+                                })
+                                
+                                # Add R² data
+                                r2_data.append({
+                                    "date": date.isoformat(),
+                                    "ticker": ticker,
+                                    "factor": factor,
+                                    "r2": round(r2, 3)
                                 })
                             except:
                                 # Fallback to simulated beta
@@ -899,13 +913,8 @@ class DataService:
             portfolio_data.sort(key=lambda x: x['weight'], reverse=True)
             
             # 3) KPI koncentracji
-            w_frac = [it['weight_frac'] for it in portfolio_data]
-            largest_position = portfolio_data[0]['weight'] if portfolio_data else 0.0
-            top_3_concentration = sum(it['weight'] for it in portfolio_data[:3])
-            top_5_concentration = sum(it['weight'] for it in portfolio_data[:5])
-            top_10_concentration = sum(it['weight'] for it in portfolio_data[:10])
-            hhi = sum(w*w for w in w_frac)                         # ✅ na ułamkach (0-1)
-            effective_positions = 1.0/hhi if hhi > 0 else 0.0      # ✅
+            w_frac = np.array([it['weight_frac'] for it in portfolio_data])
+            largest_position, top3, top5, top10, hhi, effective_positions = concentration_metrics(w_frac)
             
             # Mock sector and market cap data (wymuszony fallback)
             sector_data = {
@@ -949,10 +958,10 @@ class DataService:
             result = {
                 "portfolio_data": portfolio_data,  # zawiera 'weight' (%) i 'weight_frac'
                 "concentration_metrics": {
-                    "largest_position": round(largest_position, 1),
-                    "top_3_concentration": round(top_3_concentration, 1),
-                    "top_5_concentration": round(top_5_concentration, 1),
-                    "top_10_concentration": round(top_10_concentration, 1),
+                    "largest_position": round(largest_position * 100, 1),  # Convert to percentage
+                    "top_3_concentration": round(top3 * 100, 1),
+                    "top_5_concentration": round(top5 * 100, 1),
+                    "top_10_concentration": round(top10 * 100, 1),
                     "herfindahl_index": round(hhi, 4),              # 0-1
                     "effective_positions": round(effective_positions, 1)
                 },
@@ -988,30 +997,7 @@ class DataService:
 
     def _intersect_and_stack(self, ret_map: Dict[str, Any], symbols: List[str]):
         """Wspólne daty i macierz R [T x N] w kolejności symbols."""
-        if not symbols: 
-            return [], np.empty((0,0)), []
-        
-        # znajdź aktywne symbole (z danymi)
-        active = [s for s in symbols if s in ret_map and len(ret_map[s][0]) > 0]
-        if not active:
-            return [], np.empty((0,0)), []
-        
-        # zbierz zbiory dat
-        sets = [set(ret_map[s][0]) for s in active]
-        if not sets:
-            return [], np.empty((0,0)), []
-        common = sorted(list(set.intersection(*sets)))
-        if not common:
-            return [], np.empty((0,0)), []
-        
-        # zmapuj data->idx dla każdego symbolu
-        mats = []
-        for s in active:
-            dts, rets = ret_map[s]
-            idx = {d:i for i,d in enumerate(dts)}
-            mats.append(np.array([rets[idx[d]] for d in common], dtype=float))
-        R = np.column_stack(mats)  # T x N
-        return common, R, active
+        return stack_common_returns(ret_map, symbols)
 
     def get_risk_scoring(self, db: Session, username: str = "admin") -> Dict[str, Any]:
         """MVP risk scoring: szybko i bez spiny."""
@@ -1063,20 +1049,11 @@ class DataService:
             r_spy = np.array([r_spy_full[spy_idx[d]] for d in dates_mkt], dtype=float)
         rp_win = np.array([rp[idx_port[d]] for d in dates_mkt], dtype=float)
 
-        # helper OLS beta
-        def beta_ols(y, x):
-            X = np.column_stack([np.ones(len(x)), x])
-            try:
-                b = np.linalg.lstsq(X, y, rcond=None)[0]
-                return float(b[1])
-            except:
-                return 0.0
-
         # 4) metryki surowe
         # vol ann
-        sigma_ann = float(np.std(rp_win, ddof=1) * np.sqrt(252))
+        sigma_ann = annualized_vol(rp_win)
         # market beta
-        beta_mkt = beta_ols(rp_win, r_spy)
+        beta_mkt = ols_beta(rp_win, r_spy)[0]
 
         # factors alignment
         betas = {}
@@ -1091,75 +1068,39 @@ class DataService:
             rs = np.array([r_spy[dates_mkt.index(d)] for d in dates_fac], dtype=float)
             rp_fac = np.array([rp_win[dates_mkt.index(d)] for d in dates_fac], dtype=float)
             f_mn = rf - rs
-            betas[fac] = beta_ols(rp_fac, f_mn)
+            betas[fac] = ols_beta(rp_fac, f_mn)[0]
 
         # correlations (NaN-safe, drop zero-variance columns)
         R_sub = R[-window:, :]
-        var_mask = np.var(R_sub, axis=0) > 1e-12
-        R_sub = R_sub[:, var_mask]
-        avg_corr = 0.0; high_pairs = 0; pairs = 0
-        if R_sub.shape[1] >= 2:
-            C = np.corrcoef(R_sub, rowvar=False)
-            C = np.where(np.isfinite(C), C, 0.0)
-            N = C.shape[0]
-            vals = []
-            for i in range(N):
-                for j in range(i+1, N):
-                    c = C[i,j]
-                    vals.append(c)
-                    if c > 0.7: high_pairs += 1
-            if vals:
-                avg_corr = float(np.mean(vals))
-                pairs = len(vals)
+        avg_corr, pairs, high_pairs = avg_and_high_corr(R_sub, threshold=0.7)
 
         # max drawdown on rp_win
-        cum = np.exp(np.cumsum(rp_win))  # log -> poziom indeksu
-        peak = np.maximum.accumulate(cum)
-        dd = cum/peak - 1.0
-        max_dd = float(dd.min()) if dd.size else 0.0  # ujemne
+        _, max_dd = drawdown(rp_win)
 
         # 5) concentration (HHI i Neff)
         hhi = float(conc["concentration_metrics"]["herfindahl_index"])  # już w [0..1]
         neff = float(conc["concentration_metrics"]["effective_positions"])
 
         # 6) skoring (0..1)
-        def clip01(x): 
-            return float(max(0.0, min(1.0, x)))
-        concentration_score = clip01((hhi - NORMALIZATION["HHI_LOW"]) / (NORMALIZATION["HHI_HIGH"] - NORMALIZATION["HHI_LOW"]))
-        volatility_score    = clip01(sigma_ann / NORMALIZATION["VOL_MAX"])
-        market_score        = clip01(abs(beta_mkt) / NORMALIZATION["BETA_ABS_MAX"])
-        factor_score        = clip01(sum(abs(betas[k]) for k in betas) / NORMALIZATION["FACTOR_L1_MAX"])
-        correlation_score   = clip01(avg_corr)  # 0..1
-        stress_score        = clip01(abs(beta_mkt) * 0.05 / NORMALIZATION["STRESS_5PCT_FULLSCORE"])
-
+        raw_metrics = {
+            "hhi": hhi,
+            "vol_ann_pct": sigma_ann * 100,
+            "beta_market": beta_mkt,
+            "avg_pair_corr": avg_corr,
+            "max_drawdown_pct": max_dd * 100,
+            "factor_l1": sum(abs(betas[k]) for k in betas)
+        }
+        
         WEIGHTS = {
-            "CONCENTRATION": 0.30,
-            "VOLATILITY":    0.25,
-            "FACTOR":        0.20,
-            "CORRELATION":   0.15,
-            "MARKET":        0.10,
-            "STRESS":        0.00,
+            "concentration": 0.30,
+            "volatility":    0.25,
+            "factor":        0.20,
+            "correlation":   0.15,
+            "market":        0.10,
+            "stress":        0.00,
         }
-
-        scores = {
-            "concentration": concentration_score,
-            "volatility":    volatility_score,
-            "market":        market_score,
-            "factor":        factor_score,
-            "correlation":   correlation_score,
-            "stress":        stress_score,
-        }
-        weights = {
-            "concentration": WEIGHTS["CONCENTRATION"],
-            "volatility":    WEIGHTS["VOLATILITY"],
-            "market":        WEIGHTS["MARKET"],
-            "factor":        WEIGHTS["FACTOR"],
-            "correlation":   WEIGHTS["CORRELATION"],
-            "stress":        WEIGHTS["STRESS"],
-        }
-        mix = {k: weights[k]*scores[k] for k in scores}
-        s = sum(mix.values()) or 1.0
-        contrib_pct = {k: 100.0*mix[k]/s for k in mix}
+        
+        scores, contrib_pct = risk_mix(raw_metrics, NORMALIZATION, WEIGHTS)
 
         # 7) alerty „jak na screenie"
         alerts = []
@@ -1267,40 +1208,8 @@ class DataService:
         window = min(STRESS_LIMITS["lookback_regime_days"], len(rp))
         rp = rp[-window:]
 
-        # vol
-        vol_ann = float(np.std(rp, ddof=1) * np.sqrt(252))
-        # momentum (20d)
-        mwin = min(STRESS_LIMITS["momentum_window_days"], len(rp))
-        mom = float(np.exp(np.sum(rp[-mwin:])) - 1.0)
-        # correlation
-        R_sub = R[-window:, :]
-        var_mask = np.var(R_sub, axis=0) > 1e-12
-        R_sub = R_sub[:, var_mask]
-        avg_corr = 0.0
-        if R_sub.shape[1] >= 2:
-            C = np.corrcoef(R_sub, rowvar=False)
-            C = np.where(np.isfinite(C), C, 0.0)
-            vals = [C[i,j] for i in range(C.shape[0]) for j in range(i+1, C.shape[0])]
-            if vals:
-                avg_corr = float(np.mean(vals))
-
-        # proste etykiety reżimu (strojenie do gustu)
-        if vol_ann > REGIME_THRESH["crisis_vol"] and avg_corr > 0.6 and mom < 0:
-            label = "Crisis"
-        elif vol_ann > REGIME_THRESH["cautious_vol"] or avg_corr > REGIME_THRESH["cautious_corr"]:
-            label = "Cautious"
-        elif mom > REGIME_THRESH["bull_mom"] and avg_corr < REGIME_THRESH["bull_corr"] and vol_ann < REGIME_THRESH["bull_vol"]:
-            label = "Bullish"
-        else:
-            label = "Normal"
-
-        # radar – znormalizuj do 0..1 „żeby ładnie wyglądało"
-        def clip01(x): return float(max(0.0, min(1.0, x)))
-        radar = {
-            "volatility":  clip01(vol_ann / 0.40),
-            "correlation": clip01(avg_corr),            # corr naturalnie [−1,1], tu przycinamy do [0,1]
-            "momentum":    clip01((mom + 0.10) / 0.20)  # −10% .. +10% mapowane na 0..1
-        }
+        # Calculate regime metrics
+        vol_ann, avg_corr, mom, radar, label = regime_metrics(R, w, REGIME_THRESH)
 
         return {
             "label": label,
@@ -1357,12 +1266,8 @@ class DataService:
             R = clamp(R, STRESS_LIMITS["clamp_return_abs"])
             rp = R @ w
 
-            # wynik i DD
-            pnl = float(np.exp(np.sum(rp)) - 1.0)
-            cum = np.exp(np.cumsum(rp))  # log -> poziom indeksu
-            peak = np.maximum.accumulate(cum)
-            dd = cum/peak - 1.0
-            max_dd = float(dd.min()) if dd.size else 0.0
+            # Calculate scenario PnL and drawdown
+            ret_pct, max_dd = scenario_pnl(R, w)
 
             analyzed.append({
                 "name": name,
@@ -1370,8 +1275,8 @@ class DataService:
                 "end": end_d.isoformat(),
                 "days": len(rp),
                 "weight_coverage_pct": w_cov * 100.0,
-                "return_pct": pnl * 100.0,
-                "max_drawdown_pct": max_dd * 100.0
+                "return_pct": ret_pct,
+                "max_drawdown_pct": max_dd
             })
 
         return {
@@ -1416,48 +1321,8 @@ class DataService:
             corr_matrix = np.eye(n)
         else:
             # Calculate EWMA correlation matrix
-            print(f"📊 Calculating EWMA correlation for {len(active)} tickers with {len(dates)} observations")
-            
-            # Use EWMA with λ = 0.94 (RiskMetrics)
-            lambda_param = 0.94
-            n_assets = R.shape[1]
-            corr_matrix = np.eye(n_assets)
-            
-            if len(dates) > 30:  # Need minimum data
-                # Initialize with sample correlation
-                sample_corr = np.corrcoef(R.T)
-                sample_corr = np.where(np.isfinite(sample_corr), sample_corr, 0.0)
-                sample_corr = np.where(np.eye(n_assets) == 1, 1.0, sample_corr)
-                
-                # EWMA correlation update
-                for t in range(30, len(dates)):
-                    # Standardize returns
-                    std_returns = R[t] / np.sqrt(np.var(R[t], ddof=1))
-                    std_returns = np.where(np.isfinite(std_returns), std_returns, 0.0)
-                    
-                    # Outer product for correlation update
-                    outer_prod = np.outer(std_returns, std_returns)
-                    
-                    # EWMA update
-                    corr_matrix = lambda_param * corr_matrix + (1 - lambda_param) * outer_prod
-                
-                # Ensure diagonal is 1 and matrix is symmetric
-                corr_matrix = np.where(np.eye(n_assets) == 1, 1.0, corr_matrix)
-                corr_matrix = (corr_matrix + corr_matrix.T) / 2  # Symmetrize
-                
-                # Ensure positive definiteness (clamp eigenvalues)
-                eigenvals, eigenvecs = np.linalg.eigh(corr_matrix)
-                eigenvals = np.maximum(eigenvals, 1e-6)  # Floor at small positive value
-                corr_matrix = eigenvecs @ np.diag(eigenvals) @ eigenvecs.T
-                
-                # Re-normalize diagonal to 1
-                diag_sqrt = np.sqrt(np.diag(corr_matrix))
-                corr_matrix = corr_matrix / np.outer(diag_sqrt, diag_sqrt)
-            else:
-                print("⚠️ Not enough data for EWMA correlation, using sample correlation")
-                corr_matrix = np.corrcoef(R.T)
-                corr_matrix = np.where(np.isfinite(corr_matrix), corr_matrix, 0.0)
-                corr_matrix = np.where(np.eye(n_assets) == 1, 1.0, corr_matrix)
+            print(f"Calculating EWMA correlation for {len(active)} tickers with {len(dates)} observations")
+            corr_matrix = ewma_corr(R, lam=0.94)
         
         # Build covariance matrix using quant.risk
         return build_cov(vol_vec, corr_matrix)
