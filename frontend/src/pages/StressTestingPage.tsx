@@ -14,6 +14,7 @@ import {
   Filler,
 } from 'chart.js';
 import apiService, { StressTestingResponse } from '../services/api';
+import { useSession } from '../contexts/SessionContext';
 import './StressTestingPage.css';
 
 ChartJS.register(
@@ -34,6 +35,7 @@ const StressTestingPage: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [showExcluded, setShowExcluded] = useState(false);
+  const { getCurrentUsername } = useSession();
 
   useEffect(() => {
     fetchStressTestingData();
@@ -42,7 +44,8 @@ const StressTestingPage: React.FC = () => {
   const fetchStressTestingData = async () => {
     try {
       setLoading(true);
-      const response = await apiService.getStressTestingData("admin");
+      const username = getCurrentUsername();
+      const response = await apiService.getStressTestingData(username);
       setData(response);
       setError(null);
     } catch (err) {

@@ -11,6 +11,7 @@ import {
   Legend,
 } from 'chart.js';
 import apiService, { RealizedMetricsResponse, RollingMetricsResponse } from '../services/api';
+import { useSession } from '../contexts/SessionContext';
 import SelectableTags from '../components/SelectableTags';
 import './RealizedRiskPage.css';
 
@@ -29,16 +30,18 @@ const RealizedRiskPage: React.FC = () => {
   const [rollingData, setRollingData] = useState<RollingMetricsResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const { getCurrentUsername } = useSession();
   
   // Rolling metrics controls
   const [selectedMetric, setSelectedMetric] = useState<string>("vol");
   const [selectedTimeFrame, setSelectedTimeFrame] = useState<number>(21);
-  const [selectedTickers, setSelectedTickers] = useState<string[]>(["PORTFOLIO"]);
+  const [selectedTickers, setSelectedTickers] = useState<string[]>(["PORTFOLIO", "GOOGL"]);
 
   const fetchRealizedData = useCallback(async () => {
     try {
       setLoading(true);
-      const response = await apiService.getRealizedMetrics("admin");
+      const username = getCurrentUsername();
+      const response = await apiService.getRealizedMetrics(username);
       setRealizedData(response);
       setError(null);
     } catch (err) {
@@ -47,21 +50,22 @@ const RealizedRiskPage: React.FC = () => {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [getCurrentUsername]);
 
   const fetchRollingData = useCallback(async () => {
     try {
+      const username = getCurrentUsername();
       const response = await apiService.getRollingMetrics(
         selectedMetric,
         selectedTimeFrame,
-        selectedTickers[0] || "PORTFOLIO",
-        "admin"
+        selectedTickers.length > 0 ? selectedTickers : ["PORTFOLIO"],
+        username
       );
       setRollingData(response);
     } catch (err) {
       console.error('Error fetching rolling metrics:', err);
     }
-  }, [selectedMetric, selectedTimeFrame, selectedTickers]);
+  }, [selectedMetric, selectedTimeFrame, selectedTickers, getCurrentUsername]);
 
   useEffect(() => {
     fetchRealizedData();
@@ -93,9 +97,9 @@ const RealizedRiskPage: React.FC = () => {
   };
 
   const createRollingChartData = () => {
-    if (!rollingData) return null;
+    if (!rollingData || !rollingData.datasets || rollingData.datasets.length === 0) return null;
 
-    // Większa paleta kolorów dla lepszego rozróżnienia (jak w Forecast Metrics)
+    // Większa paleta kolorów dla lepszego rozróżnienia
     const colors = [
       '#4FC3F7', // Jasny niebieski
       '#FF6B6B', // Czerwony
@@ -111,29 +115,30 @@ const RealizedRiskPage: React.FC = () => {
       '#F8C471'  // Pomarańczowy
     ];
 
-    // Format labels - lepsze etykiety osi X
-    const labels = rollingData.dates.map((date, index) => {
+    // Użyj dat z pierwszego datasetu (wszystkie powinny mieć te same daty)
+    const firstDataset = rollingData.datasets[0];
+    const labels = firstDataset.dates.map((date, index) => {
       const dateObj = new Date(date);
       const year = dateObj.getFullYear();
       const month = dateObj.getMonth();
       const day = dateObj.getDate();
       
-      // Pokaż pełną datę co 3 miesiące
-      if (index === 0 || index === rollingData.dates.length - 1 || index % 90 === 0) {
+      // Pokaż pełną datę co 3 miesiące (jak w Factor Exposure)
+      if (index === 0 || index === firstDataset.dates.length - 1 || index % 90 === 0) {
         const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 
                            'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
         return `${monthNames[month]} ${year}`;
       }
       
-      // Pokaż miesiąc co miesiąc
+      // Pokaż miesiąc co miesiąc (jak w Factor Exposure)
       if (index % 30 === 0) {
         const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 
                            'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
         return monthNames[month];
       }
       
-      // Pokaż rok na początku każdego roku
-      if (index > 0 && new Date(rollingData.dates[index - 1]).getFullYear() !== year) {
+      // Pokaż rok na początku każdego roku (jak w Factor Exposure)
+      if (index > 0 && new Date(firstDataset.dates[index - 1]).getFullYear() !== year) {
         return year.toString();
       }
       
@@ -142,23 +147,21 @@ const RealizedRiskPage: React.FC = () => {
 
     return {
       labels,
-      datasets: [
-        {
-          label: `Ticker - ${rollingData.ticker}`,
-          data: rollingData.values,
-          borderColor: colors[0], // Użyj pierwszego koloru dla pojedynczej linii
-          backgroundColor: 'transparent',
-          borderWidth: 1.5, // Cieńsze linie dla lepszej czytelności
-          fill: false,
-          tension: 0.1, // Delikatne wygładzenie
-          borderDash: [], // Linia ciągła
-          pointRadius: 0, // Ukryj punkty dla lepszej czytelności
-          pointHoverRadius: 4, // Pokaż punkty tylko przy hover
-          pointHoverBackgroundColor: colors[0],
-          pointHoverBorderColor: '#ffffff',
-          pointHoverBorderWidth: 2
-        },
-      ],
+      datasets: rollingData.datasets.map((dataset, index) => ({
+        label: dataset.ticker,
+        data: dataset.values,
+        borderColor: colors[index % colors.length],
+        backgroundColor: 'transparent',
+        borderWidth: 1.5,
+        fill: false,
+        tension: 0.1,
+        borderDash: [],
+        pointRadius: 0,
+        pointHoverRadius: 4,
+        pointHoverBackgroundColor: colors[index % colors.length],
+        pointHoverBorderColor: '#ffffff',
+        pointHoverBorderWidth: 2
+      })),
     };
   };
 
@@ -330,32 +333,32 @@ const RealizedRiskPage: React.FC = () => {
                 <tr key={index}>
                   <td className="ticker-cell">{metric.ticker}</td>
                   <td className={metric.ann_return_pct >= 0 ? 'positive' : 'negative'}>
-                    {metric.ann_return_pct.toFixed(1)}
+                    {metric.ann_return_pct?.toFixed(1) || '0.0'}
                   </td>
-                  <td>{metric.ann_volatility_pct.toFixed(1)}</td>
-                  <td className={metric.sharpe >= 1 ? 'positive' : 'neutral'}>
-                    {metric.sharpe.toFixed(2)}
+                  <td>{metric.volatility_pct?.toFixed(1) || '0.0'}</td>
+                  <td className={metric.sharpe_ratio >= 1 ? 'positive' : 'neutral'}>
+                    {metric.sharpe_ratio?.toFixed(2) || '0.00'}
                   </td>
-                  <td className={metric.sortino >= 1 ? 'positive' : 'neutral'}>
-                    {metric.sortino.toFixed(2)}
+                  <td className={metric.sortino_ratio >= 1 ? 'positive' : 'neutral'}>
+                    {metric.sortino_ratio?.toFixed(2) || '0.00'}
                   </td>
-                  <td>{metric.skew.toFixed(1)}</td>
-                  <td>{metric.kurtosis.toFixed(0)}</td>
-                  <td className="negative">{metric.max_drawdown_pct.toFixed(1)}</td>
-                  <td className="negative">{metric.var_95_pct.toFixed(1)}</td>
-                  <td className="negative">{metric.cvar_95_pct.toFixed(1)}</td>
-                  <td>{metric.hit_ratio_pct.toFixed(0)}</td>
-                  <td>{metric.beta_ndx.toFixed(2)}</td>
-                  <td>{metric.beta_spy.toFixed(2)}</td>
+                  <td>{metric.skewness?.toFixed(1) || '0.0'}</td>
+                  <td>{metric.kurtosis?.toFixed(0) || '0'}</td>
+                  <td className="negative">{metric.max_drawdown_pct?.toFixed(1) || '0.0'}</td>
+                  <td className="negative">{metric.var_95_pct?.toFixed(1) || '0.0'}</td>
+                  <td className="negative">{metric.cvar_95_pct?.toFixed(1) || '0.0'}</td>
+                  <td>{metric.hit_ratio_pct?.toFixed(0) || '0'}</td>
+                  <td>{metric.beta_ndx?.toFixed(2) || '0.00'}</td>
+                  <td>{metric.beta_spy?.toFixed(2) || '0.00'}</td>
                   <td className={metric.up_capture_ndx_pct >= 100 ? 'positive' : 'neutral'}>
-                    {metric.up_capture_ndx_pct.toFixed(0)}
+                    {metric.up_capture_ndx_pct?.toFixed(0) || '0'}
                   </td>
                   <td className={metric.down_capture_ndx_pct <= 100 ? 'positive' : 'negative'}>
-                    {metric.down_capture_ndx_pct.toFixed(0)}
+                    {metric.down_capture_ndx_pct?.toFixed(0) || '0'}
                   </td>
-                  <td>{metric.tracking_error_pct.toFixed(1)}</td>
+                  <td>{metric.tracking_error_pct?.toFixed(1) || '0.0'}</td>
                   <td className={metric.information_ratio >= 0.5 ? 'positive' : 'neutral'}>
-                    {metric.information_ratio.toFixed(2)}
+                    {metric.information_ratio?.toFixed(2) || '0.00'}
                   </td>
                 </tr>
               ))}
@@ -405,7 +408,10 @@ const RealizedRiskPage: React.FC = () => {
             <SelectableTags
               title="Select Tickers"
               selectedItems={selectedTickers}
-              availableItems={["PORTFOLIO", "AMD", "GOOGL", "META", "TSLA", "APP", "DOMO", "SGOV", "RDDT", "ULTY", "BULL", "BRK-B", "QQQM", "SNOW", "SMCI"]}
+              availableItems={[
+                "PORTFOLIO",
+                ...(realizedData?.metrics?.map(metric => metric.ticker).filter(ticker => ticker !== "PORTFOLIO") || [])
+              ]}
               onSelectionChange={setSelectedTickers}
               placeholder="Add ticker"
             />

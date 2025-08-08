@@ -188,10 +188,10 @@ export interface RealizedMetricsResponse {
   metrics: Array<{
     ticker: string;
     ann_return_pct: number;
-    ann_volatility_pct: number;
-    sharpe: number;
-    sortino: number;
-    skew: number;
+    volatility_pct: number;
+    sharpe_ratio: number;
+    sortino_ratio: number;
+    skewness: number;
     kurtosis: number;
     max_drawdown_pct: number;
     var_95_pct: number;
@@ -207,9 +207,11 @@ export interface RealizedMetricsResponse {
 }
 
 export interface RollingMetricsResponse {
-  dates: string[];
-  values: number[];
-  ticker: string;
+  datasets: Array<{
+    ticker: string;
+    dates: string[];
+    values: number[];
+  }>;
   metric: string;
   window: number;
 }
@@ -259,6 +261,23 @@ export interface LiquidityAlertsResponse {
     severity: string;
     text: string;
   }>;
+}
+
+export interface SessionResponse {
+  logged_in: boolean;
+  username?: string;
+  email?: string;
+}
+
+export interface LoginRequest {
+  username: string;
+  password: string;
+}
+
+export interface LoginResponse {
+  success: boolean;
+  message: string;
+  username?: string;
 }
 
 export interface PortfolioSummaryResponse {
@@ -438,12 +457,17 @@ class ApiService {
   async getRollingMetrics(
     metric: string = "vol",
     window: number = 21,
-    ticker: string = "PORTFOLIO",
+    tickers: string[] = ["PORTFOLIO"],
     username: string = "admin"
   ): Promise<RollingMetricsResponse> {
     try {
-      const response = await api.get('/rolling-metrics', {
-        params: { metric, window, ticker, username }
+      const response = await api.get('/rolling-metric', {
+        params: { 
+          metric, 
+          window, 
+          tickers: tickers.join(','), 
+          username 
+        }
       });
       return response.data;
     } catch (error) {
@@ -504,6 +528,26 @@ class ApiService {
       return response.data;
     } catch (error) {
       console.error(`Error fetching data for ${symbol}:`, error);
+      throw error;
+    }
+  }
+
+  async getSession(username: string = 'admin'): Promise<SessionResponse> {
+    try {
+      const response = await api.get(`/session?username=${username}`);
+      return response.data;
+    } catch (error) {
+      console.error('Session error:', error);
+      throw error;
+    }
+  }
+
+  async login(credentials: LoginRequest): Promise<LoginResponse> {
+    try {
+      const response = await api.post('/login', credentials);
+      return response.data;
+    } catch (error) {
+      console.error('Login error:', error);
       throw error;
     }
   }

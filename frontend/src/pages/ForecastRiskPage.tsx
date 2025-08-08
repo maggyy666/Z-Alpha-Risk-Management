@@ -11,6 +11,7 @@ import {
   ArcElement,
 } from 'chart.js';
 import apiService, { ForecastRiskContributionResponse } from '../services/api';
+import { useSession } from '../contexts/SessionContext';
 import ForecastMetricsPage from './ForecastMetricsPage';
 import './ForecastRiskPage.css';
 
@@ -32,11 +33,13 @@ const ForecastRiskPage: React.FC = () => {
   const [error, setError] = useState<string | null>(null);
   const [selectedModel, setSelectedModel] = useState<string>('EWMA (5D)');
   const [activeTab, setActiveTab] = useState<TabType>('metrics');
+  const { getCurrentUsername } = useSession();
 
   const fetchForecastRiskData = useCallback(async () => {
     try {
       setLoading(true);
-      const response = await apiService.getForecastRiskContributionData(selectedModel, "admin");
+      const username = getCurrentUsername();
+      const response = await apiService.getForecastRiskContributionData(selectedModel, username);
       setData(response);
       setError(null);
     } catch (err) {
@@ -45,7 +48,7 @@ const ForecastRiskPage: React.FC = () => {
     } finally {
       setLoading(false);
     }
-  }, [selectedModel]);
+  }, [selectedModel, getCurrentUsername]);
 
   useEffect(() => {
     fetchForecastRiskData();

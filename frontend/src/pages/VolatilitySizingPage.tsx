@@ -1,19 +1,22 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import apiService, { PortfolioData } from '../services/api';
 import VolatilityDonutChart from '../components/VolatilityDonutChart';
+import { useSession } from '../contexts/SessionContext';
 import './VolatilitySizingPage.css';
 
 const VolatilitySizingPage: React.FC = () => {
   const [portfolioData, setPortfolioData] = useState<PortfolioData[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const { getCurrentUsername } = useSession();
 
   const [selectedModel, setSelectedModel] = useState<string>('EWMA (5D)');
 
   const fetchVolatilityData = useCallback(async () => {
     try {
       setLoading(true);
-      const data = await apiService.getVolatilityData(selectedModel, "admin"); // Można zmienić na dynamiczne
+      const username = getCurrentUsername();
+      const data = await apiService.getVolatilityData(selectedModel, username);
       setPortfolioData(data.portfolio_data);
       setError(null);
     } catch (err) {
@@ -22,7 +25,7 @@ const VolatilitySizingPage: React.FC = () => {
     } finally {
       setLoading(false);
     }
-  }, [selectedModel]);
+  }, [selectedModel, getCurrentUsername]);
 
   useEffect(() => {
     fetchVolatilityData();
