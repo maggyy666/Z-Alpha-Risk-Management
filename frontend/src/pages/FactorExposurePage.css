@@ -142,6 +142,8 @@
   margin-bottom: 30px;
   border-bottom: 1px solid #333;
   padding-bottom: 10px;
+  justify-content: center;
+  align-items: center;
 }
 
 .sub-nav-item {

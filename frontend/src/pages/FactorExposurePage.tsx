@@ -13,7 +13,7 @@ import {
 } from 'chart.js';
 import apiService from '../services/api';
 import SelectableTags from '../components/SelectableTags';
-import DateRangeSelector, { DateRange } from '../components/DateRangeSelector';
+
 import './FactorExposurePage.css';
 
 ChartJS.register(
@@ -224,8 +224,7 @@ const FactorExposurePage: React.FC = () => {
   const [selectedTickers, setSelectedTickers] = useState<string[]>([]);
   const [selectedTickersR2, setSelectedTickersR2] = useState<string[]>([]);
 
-  // Date range state
-  const [selectedDateRange, setSelectedDateRange] = useState<DateRange>('1Y');
+  // Date range state - removed, using common date range from backend
   
   // Chart density control
   const [chartDensity, setChartDensity] = useState<'high' | 'medium' | 'low'>('medium');
@@ -243,36 +242,7 @@ const FactorExposurePage: React.FC = () => {
 
 
 
-  const getDateRangeFilter = (range: DateRange) => {
-    const now = new Date();
-    const startDate = new Date();
-    
-    switch (range) {
-      case 'YTD':
-        startDate.setMonth(0, 1); // 1 stycznia tego roku
-        break;
-      case '1Y':
-        startDate.setFullYear(now.getFullYear() - 1);
-        break;
-      case '3Y':
-        startDate.setFullYear(now.getFullYear() - 3);
-        break;
-      case '5Y':
-        startDate.setFullYear(now.getFullYear() - 5);
-        break;
-      case 'All':
-        return () => true; // Wszystkie daty
-      default:
-        startDate.setFullYear(now.getFullYear() - 1);
-    }
-    
-    return (date: string) => new Date(date) >= startDate;
-  };
-
-  const filterDataByDateRange = (data: FactorExposureData[], range: DateRange) => {
-    const filterFn = getDateRangeFilter(range);
-    return data.filter(item => filterFn(item.date));
-  };
+  // Date range filtering removed - using common date range from backend
 
   const getAggregationStep = () => {
     switch (chartDensity) {
@@ -382,10 +352,9 @@ const FactorExposurePage: React.FC = () => {
     const factorExposures: FactorExposureData[] = [];
     const r2Data: FactorExposureData[] = [];
 
-    // Use real data from backend with date filtering
+    // Use real data from backend - no date filtering needed
     if (factorData.factor_exposures) {
-      const filteredFactorExposures = filterDataByDateRange(factorData.factor_exposures, selectedDateRange);
-      filteredFactorExposures.forEach((item: any) => {
+      factorData.factor_exposures.forEach((item: any) => {
         if (selectedFactors.includes(item.factor) && selectedTickers.includes(item.ticker)) {
           factorExposures.push(item);
         }
@@ -393,8 +362,7 @@ const FactorExposurePage: React.FC = () => {
     }
 
     if (factorData.r2_data) {
-      const filteredR2Data = filterDataByDateRange(factorData.r2_data, selectedDateRange);
-      filteredR2Data.forEach((item: any) => {
+      factorData.r2_data.forEach((item: any) => {
         if (selectedTickersR2.includes(item.ticker)) {
           r2Data.push(item);
         }
@@ -479,24 +447,30 @@ const FactorExposurePage: React.FC = () => {
       }
     }
 
-    // Format labels - inteligentne etykiety osi X
+    // Format labels - lepsze etykiety osi X
     const labels = displayDates.map((date, index) => {
       const dateObj = new Date(date);
       const year = dateObj.getFullYear();
       const month = dateObj.getMonth();
+      const day = dateObj.getDate();
       
-      // Pokaż rok tylko na początku każdego roku lub co 2-3 lata
-      if (index === 0 || 
-          (index > 0 && new Date(allDates[index - 1]).getFullYear() !== year) ||
-          year % 2 === 0) {
-        return year.toString();
+      // Pokaż pełną datę co 3 miesiące
+      if (index === 0 || index === displayDates.length - 1 || index % 90 === 0) {
+        const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 
+                           'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+        return `${monthNames[month]} ${year}`;
       }
       
-      // W pozostałych przypadkach pokazuj tylko miesiące co kilka miesięcy
-      if (index % 30 === 0) { // Co ~miesiąc
+      // Pokaż miesiąc co miesiąc
+      if (index % 30 === 0) {
         const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 
                            'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
         return monthNames[month];
+      }
+      
+      // Pokaż rok na początku każdego roku
+      if (index > 0 && new Date(displayDates[index - 1]).getFullYear() !== year) {
+        return year.toString();
       }
       
       return ''; // Puste etykiety dla większości punktów
@@ -578,24 +552,30 @@ const FactorExposurePage: React.FC = () => {
       }
     }
 
-    // Format labels - inteligentne etykiety osi X
+    // Format labels - lepsze etykiety osi X
     const labels = displayDates.map((date, index) => {
       const dateObj = new Date(date);
       const year = dateObj.getFullYear();
       const month = dateObj.getMonth();
+      const day = dateObj.getDate();
       
-      // Pokaż rok tylko na początku każdego roku lub co 2-3 lata
-      if (index === 0 || 
-          (index > 0 && new Date(allDates[index - 1]).getFullYear() !== year) ||
-          year % 2 === 0) {
-        return year.toString();
+      // Pokaż pełną datę co 3 miesiące
+      if (index === 0 || index === displayDates.length - 1 || index % 90 === 0) {
+        const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 
+                           'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+        return `${monthNames[month]} ${year}`;
       }
       
-      // W pozostałych przypadkach pokazuj tylko miesiące co kilka miesięcy
-      if (index % 30 === 0) { // Co ~miesiąc
+      // Pokaż miesiąc co miesiąc
+      if (index % 30 === 0) {
         const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 
                            'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
         return monthNames[month];
+      }
+      
+      // Pokaż rok na początku każdego roku
+      if (index > 0 && new Date(displayDates[index - 1]).getFullYear() !== year) {
+        return year.toString();
       }
       
       return ''; // Puste etykiety dla większości punktów
@@ -764,10 +744,6 @@ const FactorExposurePage: React.FC = () => {
                   </select>
                 </div>
               </div>
-              <DateRangeSelector 
-                selectedRange={selectedDateRange}
-                onRangeChange={setSelectedDateRange}
-              />
             </div>
             <div className="chart-container">
               <Line data={createFactorExposureChartData()} options={{ ...chartOptions, scales: { ...chartOptions.scales, y: { ...chartOptions.scales.y } } }} />
@@ -791,10 +767,6 @@ const FactorExposurePage: React.FC = () => {
                   </div>
                 </div>
               </div>
-              <DateRangeSelector 
-                selectedRange={selectedDateRange}
-                onRangeChange={setSelectedDateRange}
-              />
             </div>
             <div className="chart-container">
               <Line data={createR2ChartData()} options={{ ...chartOptions, scales: { ...chartOptions.scales, y: { ...chartOptions.scales.y } } }} />

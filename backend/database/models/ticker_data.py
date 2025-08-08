@@ -12,6 +12,8 @@ class TickerData(Base):
     close_price = Column(Float)
     high_price = Column(Float)
     low_price = Column(Float)
+    bid_price = Column(Float)  # Bid price from IBKR
+    ask_price = Column(Float)  # Ask price from IBKR
     volume = Column(Integer)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     
