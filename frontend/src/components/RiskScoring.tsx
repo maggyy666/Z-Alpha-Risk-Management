@@ -70,7 +70,7 @@ const RiskScoring: React.FC = () => {
     // Create gradient colors based on weight values
     const colors = weights.map(w => {
       const intensity = Math.min(255, Math.max(50, 255 - (w * 100 * 5)));
-      return `rgba(54, 162, 235, ${0.3 + (w * 0.7)})`;
+      return `rgba(255, 107, 107, ${0.3 + (w * 0.7)})`;
     });
 
     return {
@@ -80,7 +80,7 @@ const RiskScoring: React.FC = () => {
           label: 'Weight',
           data: weights.map(w => w * 100), // Convert to percentage
           backgroundColor: colors,
-          borderColor: 'rgba(54, 162, 235, 1)',
+          borderColor: 'rgba(255, 107, 107, 1)',
           borderWidth: 1,
         },
       ],
@@ -95,14 +95,14 @@ const RiskScoring: React.FC = () => {
     );
     const values = Object.values(data.risk_contribution_pct);
 
-    // Colors matching the image: light blue, green, red, pink, blue
+    // Colors for pie chart - different colors for better distinction
     const colors = [
-      '#36A2EB', // Factor Risk - light blue
-      '#4BC0C0', // Stress Test - light green  
-      '#4BC0C0', // Market Risk - green
-      '#FF6384', // Correlation - red
-      '#FF6384', // Volatility - pink
-      '#36A2EB'  // Concentration - blue
+      '#4FC3F7', // Factor Risk - light blue
+      '#66BB6A', // Stress Test - green  
+      '#FFB74D', // Market Risk - orange
+      '#AB47BC', // Correlation - purple
+      '#26A69A', // Volatility - teal
+      '#EF5350'  // Concentration - red
     ];
 
     return {
@@ -118,11 +118,36 @@ const RiskScoring: React.FC = () => {
     };
   };
 
+  const getRecommendationColor = (text: string) => {
+    const lowerText = text.toLowerCase();
+    if (lowerText.includes('high') || lowerText.includes('severe')) {
+      return '#ff6b6b'; // Red
+    } else if (lowerText.includes('medium') || lowerText.includes('moderate')) {
+      return '#ffa726'; // Orange
+    } else if (lowerText.includes('low') || lowerText.includes('minor')) {
+      return '#66bb6a'; // Green
+    }
+    return '#ff6b6b'; // Default red
+  };
+
   const chartOptions = {
     responsive: true,
     maintainAspectRatio: false,
     indexAxis: 'y' as const, // Horizontal bar chart
     plugins: {
+      title: {
+        display: true,
+        text: 'Risk Score Weights',
+        color: '#ffffff',
+        font: {
+          size: 16,
+          weight: 'bold' as const
+        },
+        padding: {
+          top: 10,
+          bottom: 20
+        }
+      },
       legend: { 
         display: false,
         position: 'top' as const,
@@ -179,6 +204,19 @@ const RiskScoring: React.FC = () => {
     responsive: true,
     maintainAspectRatio: false,
     plugins: {
+      title: {
+        display: true,
+        text: 'Risk Contribution by Component',
+        color: '#ffffff',
+        font: {
+          size: 16,
+          weight: 'bold' as const
+        },
+        padding: {
+          top: 10,
+          bottom: 20
+        }
+      },
       legend: { 
         position: 'bottom' as const,
         labels: { 
@@ -238,65 +276,78 @@ const RiskScoring: React.FC = () => {
         <h2>Risk Scoring</h2>
       </div>
 
-      <div className="charts-container">
-        <div className="chart-section">
-          <h3>Risk Score Weights</h3>
-          <div className="chart-container">
-            {createScoreWeightsChartData() && (
-              <Bar data={createScoreWeightsChartData()!} options={chartOptions} />
-            )}
-          </div>
-        </div>
-
-        <div className="chart-section">
-          <h3>Risk Contribution by Component</h3>
-          <div className="chart-container">
-            {createContributionChartData() && (
-              <Doughnut data={createContributionChartData()!} options={doughnutOptions} />
-            )}
-          </div>
-        </div>
-      </div>
-
-      <div className="alerts-section">
-        <h3>Risk Alerts</h3>
-        {data.alerts.length > 0 ? (
-          <>
-            <div className="alerts-banner">
-              <span className="banner-text">MEDIUM RISK ALERTS</span>
+      <div className="risk-scoring-container">
+        <div className="charts-container">
+          <div className="chart-section">
+            <div className="chart-container">
+              {createScoreWeightsChartData() && (
+                <Bar data={createScoreWeightsChartData()!} options={chartOptions} />
+              )}
             </div>
-            <div className="alerts-container">
-              {data.alerts.map((alert, index) => (
-                <div key={index} className={`alert-item ${alert.severity.toLowerCase()}`}>
-                  <div className="alert-text">{alert.text}</div>
-                  <div className="alert-chevron">▼</div>
+          </div>
+
+          <div className="chart-section">
+            <div className="chart-container">
+              {createContributionChartData() && (
+                <Doughnut data={createContributionChartData()!} options={doughnutOptions} />
+              )}
+            </div>
+          </div>
+        </div>
+
+        <div className="alerts-section">
+          <h3>Risk Alerts</h3>
+          {data.alerts.length > 0 ? (
+            <>
+              <div className="alerts-banner">
+                <span className="banner-text">MEDIUM RISK ALERTS</span>
+              </div>
+              <div className="alerts-container">
+                {data.alerts.map((alert, index) => (
+                  <div key={index} className={`alert-item ${alert.severity.toLowerCase()}`}>
+                    <div className="alert-text">{alert.text}</div>
+                    <div className="alert-chevron">▼</div>
+                  </div>
+                ))}
+              </div>
+            </>
+          ) : (
+            <div className="no-alerts">No risk alerts at this time.</div>
+          )}
+        </div>
+
+        <div className="recommendations-section">
+          <h3>Recommendations</h3>
+          {data.recommendations.length > 0 ? (
+            <div className="recommendations-container">
+              {data.recommendations.map((rec, index) => (
+                <div 
+                  key={index} 
+                  className="recommendation-item"
+                  style={{ 
+                    borderLeft: `4px solid ${getRecommendationColor(rec)}`,
+                    color: getRecommendationColor(rec),
+                    textShadow: `0 0 10px ${getRecommendationColor(rec)}40`
+                  }}
+                >
+                  {rec}
                 </div>
               ))}
             </div>
-          </>
-        ) : (
-          <div className="no-alerts">No risk alerts at this time.</div>
-        )}
+          ) : (
+            <div 
+              className="recommendation-item"
+              style={{ 
+                borderLeft: '4px solid #ffa726',
+                color: '#ffa726',
+                textShadow: '0 0 10px #ffa72640'
+              }}
+            >
+              MEDIUM Factor Risk: Review factor exposures and consider diversification
+            </div>
+          )}
+        </div>
       </div>
-
-      <div className="recommendations-section">
-        <h3>Recommendations</h3>
-        {data.recommendations.length > 0 ? (
-          <div className="recommendations-container">
-            {data.recommendations.map((rec, index) => (
-              <div key={index} className="recommendation-item">
-                {rec}
-              </div>
-            ))}
-          </div>
-        ) : (
-          <div className="recommendation-item">
-            MEDIUM Factor Risk: Review factor exposures and consider diversification
-          </div>
-        )}
-      </div>
-
-
     </div>
   );
 };

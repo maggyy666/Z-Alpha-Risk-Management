@@ -69,9 +69,10 @@ const VolatilityDonutChart: React.FC<VolatilityDonutChartProps> = ({ data }) => 
         labels: {
           color: '#ffffff',
           font: {
-            size: 13,
+            size: 11,
+            family: 'inherit',
           },
-          padding: 20,
+          padding: 15,
           usePointStyle: true,
           pointStyle: 'circle',
         },
