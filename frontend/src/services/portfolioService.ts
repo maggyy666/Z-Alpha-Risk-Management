@@ -122,7 +122,6 @@ class PortfolioService {
       items: [
         { ticker: 'AMD', shares: 1000, price: 190.30, market_value: 190300, weight: 12.1 },
         { ticker: 'APP', shares: 1000, price: 16.71, market_value: 16710, weight: 1.1 },
-        { ticker: 'BRK-B', shares: 1000, price: 46.49, market_value: 46490, weight: 2.9 },
         { ticker: 'BULL', shares: 1000, price: 108.22, market_value: 108220, weight: 6.9 },
         { ticker: 'DOMO', shares: 1000, price: 182.01, market_value: 182010, weight: 11.5 },
         { ticker: 'GOOGL', shares: 1000, price: 257.09, market_value: 257090, weight: 16.3 },
@@ -135,8 +134,8 @@ class PortfolioService {
         { ticker: 'TSLA', shares: 1000, price: 8.98, market_value: 8980, weight: 0.6 },
         { ticker: 'ULTY', shares: 1000, price: 241.20, market_value: 241200, weight: 15.3 }
       ],
-      total_market_value: 1576290,
-      total_shares: 14000
+      total_market_value: 1530800,
+      total_shares: 13000
     };
 
     // User portfolio (new data from image)

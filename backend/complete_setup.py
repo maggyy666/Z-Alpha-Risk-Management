@@ -44,7 +44,6 @@ def complete_setup():
         
         # Handle special symbols
         symbol_mapping = {
-            'BRK-B': 'BRK.B',  # Berkshire Hathaway
             'BULL': 'BULL',    # ETF
             'QQQM': 'QQQM',    # ETF
             'SGOV': 'SGOV',    # ETF

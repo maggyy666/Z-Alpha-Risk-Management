@@ -149,7 +149,7 @@ def get_default_portfolio(username: str) -> List[str]:
     """Get default portfolio for a user"""
     portfolios = {
         "admin": [
-            "AMD", "APP", "BRK-B", "BULL", "DOMO", "GOOGL", 
+            "AMD", "APP", "BULL", "DOMO", "GOOGL", 
             "META", "QQQM", "RDDT", "SGOV", "SMCI", "SNOW", 
             "TSLA", "ULTY"
         ],

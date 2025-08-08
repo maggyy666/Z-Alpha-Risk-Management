@@ -27,8 +27,15 @@ COPY backend/ ./backend/
 # Copy frontend code
 COPY frontend/ ./frontend/
 
+# Copy landing page code
+COPY landing/ ./landing/
+
 # Install frontend dependencies
 WORKDIR /app/frontend
+RUN npm install
+
+# Install landing page dependencies
+WORKDIR /app/landing
 RUN npm install
 
 # Create startup script
@@ -38,11 +45,13 @@ echo "Starting backend..."\n\
 cd /app/backend && python -m uvicorn api.main:app --host 0.0.0.0 --port 8000 &\n\
 echo "Starting frontend..."\n\
 cd /app/frontend && BROWSER=none npm start &\n\
-echo "Both services started, waiting..."\n\
+echo "Starting landing page..."\n\
+cd /app/landing && BROWSER=none npm start &\n\
+echo "All services started, waiting..."\n\
 wait' > /app/start.sh && chmod +x /app/start.sh
 
 # Expose ports
-EXPOSE 3000 8000
+EXPOSE 3000 3001 8000
 
 # Start both services
 CMD ["/app/start.sh"]

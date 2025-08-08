@@ -8,8 +8,38 @@ import sys
 import os
 import time
 import signal
-import requests
 import shutil
+
+# Import requests only when needed, using poetry environment
+def get_requests():
+    """Get requests module from poetry environment"""
+    try:
+        # Try to import from poetry environment
+        result = subprocess.run(
+            ["cd backend && poetry run python -c 'import requests; print(\"OK\")'"],
+            shell=True, capture_output=True, text=True
+        )
+        if result.returncode == 0:
+            # If poetry environment has requests, use it
+            import importlib.util
+            spec = importlib.util.spec_from_file_location(
+                "requests", 
+                subprocess.check_output(
+                    ["cd backend && poetry run python -c 'import requests; print(requests.__file__)'"],
+                    shell=True, text=True
+                ).strip()
+            )
+            requests = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(requests)
+            return requests
+        else:
+            # Fallback to system requests if available
+            import requests
+            return requests
+    except Exception:
+        # Final fallback
+        import requests
+        return requests
 
 def run_command(command, cwd=None, background=False):
     """Run a command and return the process"""
@@ -134,6 +164,7 @@ def check_docker_containers_running():
 def check_backend_ready():
     """Check if backend is ready"""
     print("Checking if backend is ready...")
+    requests = get_requests()
     for i in range(90):  # Wait up to 90 seconds for backend
         try:
             response = requests.get("http://localhost:8000/health", timeout=5)
