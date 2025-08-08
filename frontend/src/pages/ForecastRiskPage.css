@@ -10,35 +10,8 @@
   margin-bottom: 30px;
   border-bottom: 1px solid #333;
   padding-bottom: 10px;
-}
-
-.sub-nav-item {
-  background: none;
-  border: none;
-  color: #ffffff;
-  padding: 10px 20px;
-  cursor: pointer;
-  border-radius: 4px;
-  font-size: 14px;
-  transition: all 0.3s ease;
-}
-
-.sub-nav-item:hover {
-  background-color: #333;
-}
-
-.sub-nav-item.active {
-  background-color: #FF6B6B;
-  color: white;
-}
-
-/* Sub-navigation */
-.sub-nav {
-  display: flex;
-  gap: 10px;
-  margin-bottom: 30px;
-  border-bottom: 1px solid #333;
-  padding-bottom: 10px;
+  justify-content: center;
+  align-items: center;
 }
 
 .sub-nav-item {
@@ -80,24 +53,27 @@
 .dropdown-container {
   display: flex;
   flex-direction: column;
-  gap: clamp(5px, 1vw, 10px);
+  gap: clamp(3px, 0.8vw, 8px);
+  min-width: 200px;
 }
 
 .dropdown-container label {
-  font-size: clamp(0.8rem, 1.5vw, 1rem);
-  font-weight: 600;
+  font-size: clamp(0.7rem, 1.2vw, 0.9rem);
+  font-weight: 500;
   color: #cccccc;
+  margin-bottom: 2px;
 }
 
 .model-dropdown {
-  padding: clamp(8px, 1.5vw, 12px);
+  padding: clamp(6px, 1.2vw, 10px);
   border: 1px solid #333;
-  border-radius: clamp(4px, 0.8vw, 8px);
+  border-radius: clamp(3px, 0.6vw, 6px);
   background-color: #2a2a2a;
   color: #ffffff;
-  font-size: clamp(0.8rem, 1.5vw, 1rem);
+  font-size: clamp(0.7rem, 1.2vw, 0.9rem);
   cursor: pointer;
   transition: all 0.2s ease;
+  min-height: 32px;
 }
 
 .model-dropdown:hover {
@@ -205,7 +181,7 @@
 
 .error p {
   font-size: clamp(1rem, 2vw, 1.5rem);
-  color: #ff6b6b;
+  color: #ffffff;
   margin: 0;
 }
 
@@ -259,6 +235,19 @@
     min-width: 120px;
     max-width: 150px;
   }
+
+  .dropdown-container {
+    min-width: 150px;
+  }
+
+  .dropdown-container label {
+    font-size: clamp(0.6rem, 1vw, 0.8rem);
+  }
+
+  .model-dropdown {
+    font-size: clamp(0.6rem, 1vw, 0.8rem);
+    padding: clamp(4px, 1vw, 8px);
+  }
 }
 
 @media (max-width: 480px) {
@@ -281,5 +270,18 @@
   .summary-item {
     min-width: 100px;
     max-width: 120px;
+  }
+
+  .dropdown-container {
+    min-width: 120px;
+  }
+
+  .dropdown-container label {
+    font-size: clamp(0.5rem, 0.8vw, 0.7rem);
+  }
+
+  .model-dropdown {
+    font-size: clamp(0.5rem, 0.8vw, 0.7rem);
+    padding: clamp(3px, 0.8vw, 6px);
   }
 }
