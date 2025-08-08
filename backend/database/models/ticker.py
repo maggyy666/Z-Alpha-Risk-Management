@@ -17,4 +17,14 @@ class Ticker(Base):
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
     
     # Relationship
-    historical_data = relationship("HistoricalData", back_populates="ticker") 
+    historical_data = relationship("HistoricalData", back_populates="ticker")
+
+class TickerInfo(Base):
+    __tablename__ = "ticker_info"
+    
+    symbol = Column(String(10), primary_key=True, index=True)
+    industry = Column(String(100))
+    sector = Column(String(100))
+    market_cap = Column(Float)  # w USD
+    company_name = Column(String(200))
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now()) 
