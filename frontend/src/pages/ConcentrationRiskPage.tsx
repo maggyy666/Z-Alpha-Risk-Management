@@ -61,9 +61,9 @@ const ConcentrationRiskPage: React.FC = () => {
         {
           label: 'Position Weight (%)',
           data: top10Data.map(item => item.weight),
-          backgroundColor: 'rgba(54, 162, 235, 0.8)',
-          borderColor: 'rgba(54, 162, 235, 1)',
-          borderWidth: 1,
+          backgroundColor: 'rgba(255, 107, 107, 0.8)',
+          borderColor: 'rgba(255, 107, 107, 1)',
+          borderWidth: 2,
         },
       ],
     };
@@ -78,9 +78,9 @@ const ConcentrationRiskPage: React.FC = () => {
         {
           label: 'Sector Weight (%)',
           data: data.sector_concentration.weights,
-          backgroundColor: 'rgba(255, 99, 132, 0.8)',
-          borderColor: 'rgba(255, 99, 132, 1)',
-          borderWidth: 1,
+          backgroundColor: 'rgba(255, 107, 107, 0.8)',
+          borderColor: 'rgba(255, 107, 107, 1)',
+          borderWidth: 2,
         },
       ],
     };
@@ -96,11 +96,11 @@ const ConcentrationRiskPage: React.FC = () => {
     if (!data) return null;
 
     const colors = [
-      'rgba(54, 162, 235, 0.8)',   // Light Blue
-      'rgba(75, 192, 192, 0.8)',   // Dark Blue  
-      'rgba(255, 99, 132, 0.8)',   // Light Red/Pink
-      'rgba(255, 159, 64, 0.8)',   // Red
-      'rgba(75, 192, 192, 0.8)',   // Green
+      'rgba(255, 107, 107, 0.8)',   // Red
+      'rgba(255, 99, 132, 0.8)',    // Pink
+      'rgba(255, 159, 64, 0.8)',    // Orange
+      'rgba(255, 99, 71, 0.8)',     // Tomato
+      'rgba(220, 20, 60, 0.8)',     // Crimson
     ];
 
     return {
@@ -142,6 +142,73 @@ const ConcentrationRiskPage: React.FC = () => {
         positionList: tickers
       };
     }).sort((a, b) => b.weight - a.weight); // Sort by weight descending
+  };
+
+  const createMarketCapChartData = () => {
+    if (!data) return null;
+
+    return {
+      labels: data.market_cap_concentration.categories,
+      datasets: [
+        {
+          label: 'Market Cap Weight (%)',
+          data: data.market_cap_concentration.weights,
+          backgroundColor: 'rgba(255, 107, 107, 0.8)',
+          borderColor: 'rgba(255, 107, 107, 1)',
+          borderWidth: 2,
+        },
+      ],
+    };
+  };
+
+  const createMarketCapPieChartData = () => {
+    if (!data) return null;
+
+    const colors = [
+      'rgba(255, 107, 107, 0.8)',   // Red
+      'rgba(255, 99, 132, 0.8)',    // Pink
+      'rgba(255, 159, 64, 0.8)',    // Orange
+      'rgba(255, 99, 71, 0.8)',     // Tomato
+      'rgba(220, 20, 60, 0.8)',     // Crimson
+      'rgba(255, 140, 0, 0.8)',     // Dark Orange
+    ];
+
+    return {
+      labels: data.market_cap_concentration.categories,
+      datasets: [
+        {
+          data: data.market_cap_concentration.weights,
+          backgroundColor: colors.slice(0, data.market_cap_concentration.categories.length),
+          borderColor: colors.slice(0, data.market_cap_concentration.categories.length).map(color => color.replace('0.8', '1')),
+          borderWidth: 2,
+        },
+      ],
+    };
+  };
+
+  const createMarketCapBreakdownData = () => {
+    if (!data) return [];
+
+    return Object.keys(data.market_cap_concentration.details).map(category => {
+      const items = data.market_cap_concentration.details[category];
+      const totalWeight = items.reduce((sum, item) => sum + item.weight, 0);
+      const tickers = items.map(item => item.ticker).join(', ');
+      const avgMarketCap = items.reduce((sum, item) => sum + item.market_cap, 0) / items.length;
+      
+      return {
+        name: category,
+        weight: totalWeight,
+        positions: items.length,
+        positionList: tickers,
+        avgMarketCap: avgMarketCap
+      };
+    }).sort((a, b) => b.weight - a.weight); // Sort by weight descending
+  };
+
+  const getLargestMarketCapCategory = () => {
+    if (!data) return '';
+    const maxIndex = data.market_cap_concentration.weights.indexOf(Math.max(...data.market_cap_concentration.weights));
+    return data.market_cap_concentration.categories[maxIndex];
   };
 
   const chartOptions = {
@@ -284,74 +351,78 @@ const ConcentrationRiskPage: React.FC = () => {
       </div>
 
       {activeTab === 'position' && (
-        <div className="position-concentration">
-          {/* Concentration Metrics */}
-          <div className="metrics-grid">
-            <div className="metric-card">
-              <div className="metric-label">Largest Position</div>
-              <div className="metric-value">{data.concentration_metrics.largest_position}%</div>
+        <>
+          {/* Concentration Metrics - Free floating between sub-navbar and chart */}
+          <div className="position-metrics-grid">
+            <div className="position-metric-card">
+              <div className="position-metric-label">Largest Position</div>
+              <div className="position-metric-value">{data.concentration_metrics.largest_position}%</div>
             </div>
-            <div className="metric-card">
-              <div className="metric-label">Herfindahl Index</div>
-              <div className="metric-value">{data.concentration_metrics.herfindahl_index}</div>
+            <div className="position-metric-card">
+              <div className="position-metric-label">Herfindahl Index</div>
+              <div className="position-metric-value">{data.concentration_metrics.herfindahl_index}</div>
             </div>
-            <div className="metric-card">
-              <div className="metric-label">Effective Positions</div>
-              <div className="metric-value">{data.concentration_metrics.effective_positions}</div>
+            <div className="position-metric-card">
+              <div className="position-metric-label">Effective Positions</div>
+              <div className="position-metric-value">{data.concentration_metrics.effective_positions}</div>
             </div>
-            <div className="metric-card">
-              <div className="metric-label">Top 3 Concentration</div>
-              <div className="metric-value">{data.concentration_metrics.top_3_concentration}%</div>
+            <div className="position-metric-card">
+              <div className="position-metric-label">Top 3 Concentration</div>
+              <div className="position-metric-value">{data.concentration_metrics.top_3_concentration}%</div>
             </div>
-            <div className="metric-card">
-              <div className="metric-label">Top 5 Concentration</div>
-              <div className="metric-value">{data.concentration_metrics.top_5_concentration}%</div>
+            <div className="position-metric-card">
+              <div className="position-metric-label">Top 5 Concentration</div>
+              <div className="position-metric-value">{data.concentration_metrics.top_5_concentration}%</div>
             </div>
-            <div className="metric-card">
-              <div className="metric-label">Top 10 Concentration</div>
-              <div className="metric-value">{data.concentration_metrics.top_10_concentration}%</div>
-            </div>
-          </div>
-
-          {/* Position Weight Distribution Chart */}
-          <div className="chart-section">
-            <h3>Top 10 Position Weights</h3>
-            <div className="chart-container">
-              {createPositionWeightChartData() && (
-                <Bar data={createPositionWeightChartData()!} options={chartOptions} />
-              )}
+            <div className="position-metric-card">
+              <div className="position-metric-label">Top 10 Concentration</div>
+              <div className="position-metric-value">{data.concentration_metrics.top_10_concentration}%</div>
             </div>
           </div>
 
-          {/* Position Concentration Details Table */}
-          <div className="table-section">
-            <h3>Position Concentration Details</h3>
-            <div className="table-container">
-              <table className="concentration-table">
-                <thead>
-                  <tr>
-                    <th>Ticker</th>
-                    <th>Weight</th>
-                    <th>Market Value</th>
-                    <th>Sector</th>
-                    <th>Market Cap ($bn)</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {data.portfolio_data.map((item, index) => (
-                    <tr key={index}>
-                      <td>{item.ticker}</td>
-                      <td>{item.weight.toFixed(1)}%</td>
-                      <td>${item.market_value.toLocaleString()}</td>
-                      <td>{item.sector}</td>
-                      <td>{item.market_cap.toLocaleString()}</td>
+          <div className="position-concentration">
+            {/* Position Weight Distribution Chart */}
+            <div className="chart-section">
+              <h3>Top 10 Position Weights</h3>
+              <div className="chart-container">
+                {createPositionWeightChartData() && (
+                  <Bar data={createPositionWeightChartData()!} options={chartOptions} />
+                )}
+              </div>
+            </div>
+
+            {/* Position Concentration Details Table */}
+            <div className="table-section">
+              <h3>Position Concentration Details</h3>
+              <div className="table-container">
+                <table className="concentration-table">
+                  <thead>
+                    <tr>
+                      <th>Position</th>
+                      <th>Weight (%)</th>
+                      <th>Market Value</th>
+                      <th>Sector</th>
+                      <th>Industry</th>
+                      <th>Market Cap</th>
                     </tr>
-                  ))}
-                </tbody>
-              </table>
+                  </thead>
+                  <tbody>
+                    {data.portfolio_data.map((item, index) => (
+                      <tr key={index}>
+                        <td>{item.ticker}</td>
+                        <td>{item.weight.toFixed(1)}%</td>
+                        <td>${item.market_value.toLocaleString()}</td>
+                        <td>{item.sector}</td>
+                        <td>{item.industry}</td>
+                        <td>{item.market_cap.toLocaleString()}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
             </div>
           </div>
-        </div>
+        </>
       )}
 
       {activeTab === 'sector' && (
@@ -414,9 +485,60 @@ const ConcentrationRiskPage: React.FC = () => {
 
       {activeTab === 'market-cap' && (
         <div className="market-cap-concentration">
-          <div className="coming-soon">
-            <h3>Market Cap Concentration</h3>
-            <p>This feature will be implemented soon.</p>
+          {/* Market Cap Concentration Analysis */}
+          <div className="market-cap-analysis-section">
+            <h3>Market Cap Concentration Analysis</h3>
+            
+            {/* KPI Cards */}
+            <div className="metrics-grid">
+              <div className="metric-card">
+                <div className="metric-label">Largest Market Cap Category</div>
+                <div className="metric-value">{getLargestMarketCapCategory()}</div>
+              </div>
+              <div className="metric-card">
+                <div className="metric-label">Number of Market Cap Categories</div>
+                <div className="metric-value">{data.market_cap_concentration.categories.length}</div>
+              </div>
+            </div>
+          </div>
+
+          {/* Market Cap Allocation */}
+          <div className="chart-section">
+            <h3>Portfolio Market Cap Allocation</h3>
+            <div className="chart-container">
+              {createMarketCapPieChartData() && (
+                <Doughnut data={createMarketCapPieChartData()!} options={sectorPieChartOptions} />
+              )}
+            </div>
+          </div>
+
+          {/* Market Cap Breakdown Table */}
+          <div className="table-section">
+            <h3>Market Cap Breakdown</h3>
+            <div className="table-container">
+              <table className="concentration-table">
+                <thead>
+                  <tr>
+                    <th>Category</th>
+                    <th>Weight</th>
+                    <th>Positions</th>
+                    <th>Position List</th>
+                    <th>Average Market Cap</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {createMarketCapBreakdownData().map((category, index) => (
+                    <tr key={index}>
+                      <td>{category.name}</td>
+                      <td>{category.weight.toFixed(1)}%</td>
+                      <td>{category.positions}</td>
+                      <td>{category.positionList}</td>
+                      <td>${category.avgMarketCap.toLocaleString()}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
           </div>
         </div>
       )}
