@@ -8,7 +8,38 @@ from database.models.portfolio import Portfolio
 from database.models.ticker_data import TickerData
 # from services.ibkr_client_portal import PortfolioDataService  # Not needed for now
 from typing import List, Dict, Any
+from pydantic import BaseModel
 import uvicorn
+
+# Pydantic models for login
+class LoginRequest(BaseModel):
+    username: str
+    password: str
+
+class LoginResponse(BaseModel):
+    success: bool
+    message: str
+    username: str = None
+
+# Pydantic models for portfolio management
+class PortfolioRequest(BaseModel):
+    username: str
+    tickers: List[str]  # List of ticker symbols
+
+class PortfolioResponse(BaseModel):
+    success: bool
+    message: str
+    tickers: List[str] = []
+
+# Pydantic models for portfolio management
+class PortfolioRequest(BaseModel):
+    username: str
+    tickers: List[str]  # List of ticker symbols
+
+class PortfolioResponse(BaseModel):
+    success: bool
+    message: str
+    tickers: List[str] = []
 
 # Create tables
 Base.metadata.create_all(bind=engine)
@@ -18,7 +49,7 @@ app = FastAPI(title="IBKR Portfolio API", version="1.0.0")
 # Add CORS middleware
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000"],  # React app
+    allow_origins=["http://localhost:3000", "http://localhost:3001"],  # React app + Landing page
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -34,6 +65,38 @@ data_service = DataService()
 @app.get("/")
 def read_root():
     return {"message": "IBKR Portfolio API"}
+
+@app.post("/login", response_model=LoginResponse)
+def login(login_request: LoginRequest, db: Session = Depends(get_db)):
+    """Login endpoint for landing page"""
+    try:
+        # Check if user exists by username OR email
+        user = db.query(User).filter(
+            (User.username == login_request.username) | 
+            (User.email == login_request.username)
+        ).first()
+        
+        if not user:
+            return LoginResponse(
+                success=False,
+                message="Invalid email or password"
+            )
+        
+        # Check password (simple comparison for now)
+        if user.password != login_request.password:
+            return LoginResponse(
+                success=False,
+                message="Invalid email or password"
+            )
+        
+        return LoginResponse(
+            success=True,
+            message="Login successful",
+            username=user.username
+        )
+        
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
 @app.post("/initialize-portfolio")
 def initialize_portfolio(db: Session = Depends(get_db)):
@@ -213,7 +276,7 @@ def get_rolling_forecast(
             raise HTTPException(status_code=400, detail="No tickers specified")
         
         data = data_service.get_rolling_forecast(db, ticker_list, model, window, username)
-        return {"model": model, "window": window, "data": data}
+        return data
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -230,7 +293,7 @@ def get_latest_factor_exposures(username: str = "admin", db: Session = Depends(g
 
 @app.get("/portfolio-summary")
 def get_portfolio_summary(username: str = "admin", db: Session = Depends(get_db)):
-    """Get comprehensive portfolio summary data for dashboard"""
+    """Get portfolio summary data"""
     try:
         data = data_service.get_portfolio_summary(db, username)
         if "error" in data:
@@ -238,6 +301,50 @@ def get_portfolio_summary(username: str = "admin", db: Session = Depends(get_db)
         return data
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/realized-metrics")
+def get_realized_metrics(username: str = "admin", db: Session = Depends(get_db)):
+    """Get realized risk metrics for portfolio and individual tickers"""
+    try:
+        data = data_service.get_realized_metrics(db, username)
+        if "error" in data:
+            raise HTTPException(status_code=400, detail=data["error"])
+        return data
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/rolling-metrics")
+def get_rolling_metrics(
+    metric: str = "vol",
+    window: int = 21,
+    ticker: str = "PORTFOLIO",
+    username: str = "admin",
+    db: Session = Depends(get_db)
+):
+    """Get rolling metric data for charting"""
+    try:
+        data = data_service.get_rolling_metric(db, metric=metric, window=window, ticker=ticker, username=username)
+        if "error" in data:
+            raise HTTPException(status_code=400, detail=data["error"])
+        return data
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+# Liquidity endpoints
+@app.get("/liquidity-overview")
+def liquidity_overview(username: str = "admin", db: Session = Depends(get_db)):
+    """Get liquidity overview for portfolio"""
+    return data_service.get_liquidity_metrics(db, username)
+
+@app.get("/liquidity-volume-analysis")
+def liquidity_volume_analysis(username: str = "admin", db: Session = Depends(get_db)):
+    """Get liquidity volume analysis for portfolio"""
+    return data_service.get_volume_distribution(db, username)
+
+@app.get("/liquidity-alerts")
+def liquidity_alerts(username: str = "admin", db: Session = Depends(get_db)):
+    """Get liquidity alerts for portfolio"""
+    return data_service.get_liquidity_alerts(db, username)
 
 if __name__ == "__main__":
     uvicorn.run(app, host="0.0.0.0", port=8000) 
