@@ -2,6 +2,13 @@
   box-sizing: border-box;
 }
 
+/* Global form element styles */
+select, input {
+  height: clamp(32px, 5vw, 36px) !important;
+  min-height: clamp(32px, 5vw, 36px) !important;
+  line-height: clamp(32px, 5vw, 36px) !important;
+}
+
 body {
   margin: 0;
   padding: 0;
