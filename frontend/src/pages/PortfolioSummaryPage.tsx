@@ -10,6 +10,7 @@ import {
   Legend,
 } from 'chart.js';
 import apiService, { PortfolioSummaryResponse } from '../services/api';
+import { useSession } from '../contexts/SessionContext';
 import './PortfolioSummaryPage.css';
 
 ChartJS.register(
@@ -25,11 +26,13 @@ const PortfolioSummaryPage: React.FC = () => {
   const [data, setData] = useState<PortfolioSummaryResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const { getCurrentUsername } = useSession();
 
   const fetchPortfolioSummary = useCallback(async () => {
     try {
       setLoading(true);
-      const response = await apiService.getPortfolioSummary("admin");
+      const username = getCurrentUsername();
+      const response = await apiService.getPortfolioSummary(username);
       setData(response);
       setError(null);
       
@@ -45,7 +48,7 @@ const PortfolioSummaryPage: React.FC = () => {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [getCurrentUsername]);
 
   useEffect(() => {
     fetchPortfolioSummary();

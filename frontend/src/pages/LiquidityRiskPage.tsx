@@ -10,6 +10,7 @@ import {
   Legend,
 } from 'chart.js';
 import apiService, { LiquidityOverviewResponse } from '../services/api';
+import { useSession } from '../contexts/SessionContext';
 import './LiquidityRiskPage.css';
 
 ChartJS.register(
@@ -27,10 +28,13 @@ const LiquidityRiskPage: React.FC = () => {
   const [error, setError] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState('overview');
 
+  const { getCurrentUsername } = useSession();
+
   const fetchLiquidityData = useCallback(async () => {
     try {
       setLoading(true);
-      const response = await apiService.getLiquidityOverview("admin");
+      const username = getCurrentUsername();
+      const response = await apiService.getLiquidityOverview(username);
       setData(response);
       setError(null);
     } catch (err) {
@@ -39,7 +43,7 @@ const LiquidityRiskPage: React.FC = () => {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [getCurrentUsername]);
 
   useEffect(() => {
     fetchLiquidityData();

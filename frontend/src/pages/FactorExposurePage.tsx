@@ -12,6 +12,7 @@ import {
   Filler
 } from 'chart.js';
 import apiService from '../services/api';
+import { useSession } from '../contexts/SessionContext';
 import SelectableTags from '../components/SelectableTags';
 
 import './FactorExposurePage.css';
@@ -214,6 +215,7 @@ const FactorExposurePage: React.FC = () => {
   const [factorData, setFactorData] = useState<FactorExposureResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const { getCurrentUsername } = useSession();
   
   // Available options from portfolio
   const [availableTickers, setAvailableTickers] = useState<string[]>([]);
@@ -287,7 +289,8 @@ const FactorExposurePage: React.FC = () => {
     try {
       setLoading(true);
       console.log('Fetching factor exposure data...');
-      const data = await apiService.getFactorExposureData("admin");
+      const username = getCurrentUsername();
+      const data = await apiService.getFactorExposureData(username);
       console.log('Received data:', data);
       console.log('Available tickers:', data.available_tickers);
       console.log('Available factors:', data.available_factors);
@@ -302,8 +305,17 @@ const FactorExposurePage: React.FC = () => {
         setAvailableTickers(data.available_tickers);
         // Set default selections based on available data
         if (selectedTickers.length === 0 && data.available_tickers.length > 0) {
-          // Weź pierwsze dwa tickery z portfolio użytkownika
-          const defaultTickers = data.available_tickers.slice(0, 2);
+          // Prefer GOOGL and META as default tickers
+          const preferredTickers = ['GOOGL', 'META'];
+          const defaultTickers = preferredTickers.filter(ticker => 
+            data.available_tickers.includes(ticker)
+          );
+          
+          // If preferred tickers not available, fall back to first two
+          if (defaultTickers.length === 0) {
+            defaultTickers.push(...data.available_tickers.slice(0, 2));
+          }
+          
           setSelectedTickers(defaultTickers);
           setSelectedTickersR2(defaultTickers);
         }
@@ -375,6 +387,28 @@ const FactorExposurePage: React.FC = () => {
   const sampleData = generateSampleData();
 
   const createFactorExposureChartData = () => {
+    if (!factorData || !factorData.factor_exposures) return { labels: [], datasets: [] };
+    
+    // Get all unique dates for selected tickers and factors
+    const allTickers = selectedTickers;
+    const allFactors = selectedFactors;
+    let allDates: string[] = [];
+    
+    if (allTickers.length > 0 && allFactors.length > 0) {
+      // Collect all dates from all selected tickers and factors
+      for (const ticker of allTickers) {
+        for (const factor of allFactors) {
+          const tickerFactorDates = factorData.factor_exposures
+            .filter(d => d.ticker === ticker && d.factor === factor)
+            .map(d => d.date);
+          allDates = allDates.concat(tickerFactorDates);
+        }
+      }
+      
+      // Remove duplicates and sort
+      allDates = Array.from(new Set(allDates)).sort();
+    }
+    
     const datasets: any[] = [];
     // Większa paleta kolorów dla lepszego rozróżnienia
     const colors = [
@@ -394,27 +428,21 @@ const FactorExposurePage: React.FC = () => {
 
     selectedFactors.forEach((factor, factorIndex) => {
       selectedTickers.forEach((ticker, tickerIndex) => {
-        const data = sampleData.factorExposures
+        const data = factorData.factor_exposures
           .filter(d => d.factor === factor && d.ticker === ticker)
           .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
 
         if (data.length > 0) {
-          // Użyj wszystkich punktów danych, ale z lepszymi opcjami wyświetlania
+          // Użyj tylko wspólnych dat
           const colorIndex = (factorIndex * selectedTickers.length + tickerIndex) % colors.length;
           
-          // Agreguj dane na podstawie wybranej gęstości
-          let displayData = data;
-          if (chartDensity !== 'high') {
-            const step = chartDensity === 'medium' ? 7 : 14; // 7 dni dla medium, 14 dla low
-            displayData = [];
-            for (let i = 0; i < data.length; i += step) {
-              displayData.push(data[i]);
-            }
-          }
+          // Map data to common dates
+          const dataMap = new Map(data.map(d => [d.date, d.beta]));
+          const mappedData = allDates.map(date => dataMap.get(date) || null);
           
           datasets.push({
             label: `${factor}, ${ticker}`,
-            data: displayData.map(d => d.beta),
+            data: mappedData,
             borderColor: colors[colorIndex],
             backgroundColor: 'transparent',
             borderWidth: 1.5, // Cieńsze linie dla lepszej czytelności
@@ -431,31 +459,15 @@ const FactorExposurePage: React.FC = () => {
       });
     });
 
-    // Get unique dates for labels - wszystkie daty
-    const allDates = sampleData.factorExposures
-      .map(d => d.date)
-      .filter((date, index, arr) => arr.indexOf(date) === index)
-      .sort();
-
-    // Agreguj daty na podstawie wybranej gęstości
-    let displayDates = allDates;
-    if (chartDensity !== 'high') {
-      const step = chartDensity === 'medium' ? 7 : 14;
-      displayDates = [];
-      for (let i = 0; i < allDates.length; i += step) {
-        displayDates.push(allDates[i]);
-      }
-    }
-
     // Format labels - lepsze etykiety osi X
-    const labels = displayDates.map((date, index) => {
+    const labels = allDates.map((date, index) => {
       const dateObj = new Date(date);
       const year = dateObj.getFullYear();
       const month = dateObj.getMonth();
       const day = dateObj.getDate();
       
       // Pokaż pełną datę co 3 miesiące
-      if (index === 0 || index === displayDates.length - 1 || index % 90 === 0) {
+      if (index === 0 || index === allDates.length - 1 || index % 90 === 0) {
         const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 
                            'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
         return `${monthNames[month]} ${year}`;
@@ -469,7 +481,7 @@ const FactorExposurePage: React.FC = () => {
       }
       
       // Pokaż rok na początku każdego roku
-      if (index > 0 && new Date(displayDates[index - 1]).getFullYear() !== year) {
+      if (index > 0 && new Date(allDates[index - 1]).getFullYear() !== year) {
         return year.toString();
       }
       
@@ -483,6 +495,25 @@ const FactorExposurePage: React.FC = () => {
   };
 
   const createR2ChartData = () => {
+    if (!factorData || !factorData.r2_data) return { labels: [], datasets: [] };
+    
+    // Get all unique dates for selected tickers
+    const allTickers = selectedTickersR2;
+    let allDates: string[] = [];
+    
+    if (allTickers.length > 0) {
+      // Collect all dates from all selected tickers
+      for (const ticker of allTickers) {
+        const tickerDates = factorData.r2_data
+          .filter(d => d.ticker === ticker)
+          .map(d => d.date);
+        allDates = allDates.concat(tickerDates);
+      }
+      
+      // Remove duplicates and sort
+      allDates = Array.from(new Set(allDates)).sort();
+    }
+    
     const datasets: any[] = [];
     // Większa paleta kolorów dla R² chart
     const colors = [
@@ -501,27 +532,22 @@ const FactorExposurePage: React.FC = () => {
     ];
 
     selectedTickersR2.forEach((ticker, index) => {
-      const data = sampleData.r2Data
+      const data = factorData.r2_data
         .filter(d => d.ticker === ticker)
         .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
 
       if (data.length > 0) {
-        // Użyj wszystkich punktów danych z lepszymi opcjami wyświetlania
-        let displayData = data;
-        if (chartDensity !== 'high') {
-          const step = chartDensity === 'medium' ? 7 : 14;
-          displayData = [];
-          for (let i = 0; i < data.length; i += step) {
-            displayData.push(data[i]);
-          }
-        }
-        
+        // Użyj tylko wspólnych dat
         // Zastosuj wygładzanie tylko dla R²
-        const smoothedData = smoothR2Data(displayData, 7); // 7-dniowe wygładzanie
+        const smoothedData = smoothR2Data(data, 7); // 7-dniowe wygładzanie
+        
+        // Map data to common dates
+        const dataMap = new Map(smoothedData.map(d => [d.date, d.r2]));
+        const mappedData = allDates.map(date => dataMap.get(date) || null);
         
         datasets.push({
           label: ticker,
-          data: smoothedData.map(d => d.r2),
+          data: mappedData,
           borderColor: colors[index % colors.length],
           backgroundColor: 'transparent',
           borderWidth: 2, // Grubsze linie dla R² (łatwiejsze do śledzenia)
@@ -536,31 +562,15 @@ const FactorExposurePage: React.FC = () => {
       }
     });
 
-    // Get unique dates for labels - wszystkie daty
-    const allDates = sampleData.r2Data
-      .map(d => d.date)
-      .filter((date, index, arr) => arr.indexOf(date) === index)
-      .sort();
-
-    // Agreguj daty na podstawie wybranej gęstości
-    let displayDates = allDates;
-    if (chartDensity !== 'high') {
-      const step = chartDensity === 'medium' ? 7 : 14;
-      displayDates = [];
-      for (let i = 0; i < allDates.length; i += step) {
-        displayDates.push(allDates[i]);
-      }
-    }
-
     // Format labels - lepsze etykiety osi X
-    const labels = displayDates.map((date, index) => {
+    const labels = allDates.map((date, index) => {
       const dateObj = new Date(date);
       const year = dateObj.getFullYear();
       const month = dateObj.getMonth();
       const day = dateObj.getDate();
       
       // Pokaż pełną datę co 3 miesiące
-      if (index === 0 || index === displayDates.length - 1 || index % 90 === 0) {
+      if (index === 0 || index === allDates.length - 1 || index % 90 === 0) {
         const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 
                            'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
         return `${monthNames[month]} ${year}`;
@@ -574,7 +584,7 @@ const FactorExposurePage: React.FC = () => {
       }
       
       // Pokaż rok na początku każdego roku
-      if (index > 0 && new Date(displayDates[index - 1]).getFullYear() !== year) {
+      if (index > 0 && new Date(allDates[index - 1]).getFullYear() !== year) {
         return year.toString();
       }
       
@@ -623,16 +633,30 @@ const FactorExposurePage: React.FC = () => {
         padding: 10,
         callbacks: {
           title: function(context: any) {
-            const date = new Date(context[0].label);
-            return date.toLocaleDateString('en-US', { 
-              year: 'numeric', 
-              month: 'short', 
-              day: 'numeric' 
-            });
+            const label = context[0].label;
+            if (!label || label === '') {
+              return 'No date';
+            }
+            try {
+              const date = new Date(label);
+              if (isNaN(date.getTime())) {
+                return label; // Return original label if it's not a valid date
+              }
+              return date.toLocaleDateString('en-US', { 
+                year: 'numeric', 
+                month: 'short', 
+                day: 'numeric' 
+              });
+            } catch (e) {
+              return label; // Return original label if parsing fails
+            }
           },
           label: function(context: any) {
             const label = context.dataset.label || '';
             const value = context.parsed.y;
+            if (value === null || value === undefined) {
+              return `${label}: No data`;
+            }
             return `${label}: ${value.toFixed(3)}`;
           }
         }
@@ -731,18 +755,6 @@ const FactorExposurePage: React.FC = () => {
               <div className="controls">
                 <SelectableTags title="Select Factors" selectedItems={selectedFactors} availableItems={availableFactors} onSelectionChange={setSelectedFactors} placeholder="Add factor" />
                 <SelectableTags title="Select Tickers" selectedItems={selectedTickers} availableItems={availableTickers} onSelectionChange={setSelectedTickers} placeholder="Add ticker" />
-                <div className="control-group">
-                  <label>Chart Density</label>
-                  <select 
-                    value={chartDensity} 
-                    onChange={(e) => setChartDensity(e.target.value as 'high' | 'medium' | 'low')}
-                    className="density-select"
-                  >
-                    <option value="high">High (All Points)</option>
-                    <option value="medium">Medium (Weekly)</option>
-                    <option value="low">Low (Bi-weekly)</option>
-                  </select>
-                </div>
               </div>
             </div>
             <div className="chart-container">

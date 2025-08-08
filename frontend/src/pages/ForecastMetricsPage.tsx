@@ -11,6 +11,7 @@ import {
   Legend,
 } from 'chart.js';
 import apiService from '../services/api';
+import { useSession } from '../contexts/SessionContext';
 import SelectableTags from '../components/SelectableTags';
 import './ForecastMetricsPage.css';
 
@@ -59,6 +60,7 @@ const ForecastMetricsPage: React.FC = () => {
   const [rollingData, setRollingData] = useState<RollingForecastData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const { getCurrentUsername } = useSession();
   
   // Rolling forecast controls
   const [selectedModel, setSelectedModel] = useState<string>('EGARCH');
@@ -69,7 +71,8 @@ const ForecastMetricsPage: React.FC = () => {
   const fetchForecastMetrics = useCallback(async () => {
     try {
       setLoading(true);
-      const response = await apiService.getForecastMetrics("admin");
+      const username = getCurrentUsername();
+      const response = await apiService.getForecastMetrics(username);
       setMetricsData(response);
       setError(null);
     } catch (err) {
@@ -78,12 +81,13 @@ const ForecastMetricsPage: React.FC = () => {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [getCurrentUsername]);
 
   const fetchRollingForecast = useCallback(async () => {
     try {
       console.log('Fetching rolling forecast with:', { selectedModel, selectedWindow, selectedTickers });
-      const response = await apiService.getRollingForecast(selectedModel, selectedWindow, selectedTickers, "admin");
+      const username = getCurrentUsername();
+      const response = await apiService.getRollingForecast(selectedModel, selectedWindow, selectedTickers, username);
       console.log('Rolling forecast response:', response);
       
       // Debug: Print sample data values
@@ -100,7 +104,7 @@ const ForecastMetricsPage: React.FC = () => {
     } catch (err) {
       console.error('Error fetching rolling forecast:', err);
     }
-  }, [selectedModel, selectedWindow, selectedTickers]);
+  }, [selectedModel, selectedWindow, selectedTickers, getCurrentUsername]);
 
   useEffect(() => {
     fetchForecastMetrics();
@@ -169,32 +173,44 @@ const ForecastMetricsPage: React.FC = () => {
       pointHoverBorderWidth: 2
     }));
 
-    // Get unique dates for labels
-    const allDates = tickerData[Object.keys(tickerData)[0]]?.dates || [];
+    // Get common dates for all tickers
+    const allTickers = Object.keys(tickerData);
+    let commonDates: string[] = [];
+    
+    if (allTickers.length > 0) {
+      // Start with first ticker's dates
+      commonDates = tickerData[allTickers[0]].dates;
+      
+      // Find intersection with other tickers
+      for (let i = 1; i < allTickers.length; i++) {
+        const tickerDates = tickerData[allTickers[i]].dates;
+        commonDates = commonDates.filter(date => tickerDates.includes(date));
+      }
+    }
     
     // Format labels - lepsze etykiety osi X
-    const labels = allDates.map((date, index) => {
+    const labels = commonDates.map((date, index) => {
       const dateObj = new Date(date);
       const year = dateObj.getFullYear();
       const month = dateObj.getMonth();
       const day = dateObj.getDate();
       
-      // Pokaż pełną datę co 3 miesiące
-      if (index === 0 || index === allDates.length - 1 || index % 90 === 0) {
+      // Pokaż pełną datę co 3 miesiące (jak w Factor Exposure)
+      if (index === 0 || index === commonDates.length - 1 || index % 90 === 0) {
         const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 
                            'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
         return `${monthNames[month]} ${year}`;
       }
       
-      // Pokaż miesiąc co miesiąc
+      // Pokaż miesiąc co miesiąc (jak w Factor Exposure)
       if (index % 30 === 0) {
         const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 
                            'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
         return monthNames[month];
       }
       
-      // Pokaż rok na początku każdego roku
-      if (index > 0 && new Date(allDates[index - 1]).getFullYear() !== year) {
+      // Pokaż rok na początku każdego roku (jak w Factor Exposure)
+      if (index > 0 && new Date(commonDates[index - 1]).getFullYear() !== year) {
         return year.toString();
       }
       
