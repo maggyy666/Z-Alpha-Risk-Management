@@ -40,6 +40,12 @@ def risk_mix(raw_metrics: dict, normalization: dict, weights: dict) -> tuple[dic
     # Factor exposure metric
     factor_norm = raw_metrics.get("factor_l1", 0) / normalization["FACTOR_L1_MAX"]
     scores["factor_exposure"] = clip01(1 - factor_norm)  # Invert: lower exposure = better
+
+    # ─── Stress-test metric ────────────────────────────────────────────────
+    #  worst_loss_pct – dodatnia liczba % straty (np. 0.08 = -8 %)
+    worst_loss_pct = abs(raw_metrics.get("stress_loss_pct", 0.0))
+    stress_norm = worst_loss_pct / normalization["STRESS_5PCT_FULLSCORE"]
+    scores["stress"] = clip01(1 - stress_norm)          # Invert: mniejsza strata = lepiej
     
     # 2. Calculate weighted scores
     weighted_scores = {}
