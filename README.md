@@ -25,6 +25,11 @@ cd backend && poetry install && poetry run python setup_database.py && poetry ru
 cd frontend && npm install && npm start
 ```
 
+#### Frontend Setup on Port 3001 (Manual)
+```bash
+cd frontend && npm install && PORT=3001 npm start
+```
+
 #### Alternative: Separate Commands
 
 **Backend Setup**
@@ -44,6 +49,7 @@ npm start
 
 #### Access the Application
 - Frontend: http://localhost:3000
+- Frontend (Alt): http://localhost:3001
 - Backend API: http://localhost:8000
 - API Docs: http://localhost:8000/docs
 
@@ -62,5 +68,5 @@ npm start
 ## Troubleshooting
 
 - Make sure Docker Desktop is running (if using Docker)
-- Ports 3000 and 8000 must be free
+- Ports 3000, 3001 and 8000 must be free
 - If stuck, run: `docker compose down` then try again

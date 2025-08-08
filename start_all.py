@@ -254,7 +254,7 @@ def check_ports_available():
     """Check if required ports are available"""
     import socket
     
-    ports_to_check = [3000, 8000]
+    ports_to_check = [3000, 3001, 8000]
     unavailable_ports = []
     
     for port in ports_to_check:
@@ -353,6 +353,7 @@ def main():
         print("EVERYTHING IS RUNNING!")
         print("=" * 60)
         print("\nFrontend: http://localhost:3000")
+        print("Frontend (Alt): http://localhost:3001")
         print("Backend: http://localhost:8000")
         print("API Docs: http://localhost:8000/docs")
         print("\nPress Ctrl+C to stop everything")

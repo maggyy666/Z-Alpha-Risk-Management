@@ -62,8 +62,19 @@ const LoginPage: React.FC = () => {
       });
       
       if (response.success) {
+        // Save session to localStorage
+        const sessionData = {
+          username: response.username || formData.email,
+          email: formData.email,
+          logged_in: true
+        };
+        console.log('Saving session:', sessionData);
+        localStorage.setItem('zalpha_session', JSON.stringify(sessionData));
+        
+        console.log('Session saved, navigating to success');
         navigate('/success');
       } else {
+        console.log('Login failed:', response.message);
         setErrors({ general: response.message });
       }
     } catch (error) {

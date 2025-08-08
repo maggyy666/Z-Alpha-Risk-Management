@@ -1,6 +1,6 @@
 .login-page {
   min-height: 100vh;
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  background: #f8f9fa;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -23,8 +23,8 @@
 
 .back-button {
   background: transparent;
-  color: white;
-  border: 2px solid rgba(255, 255, 255, 0.3);
+  color: #666;
+  border: 2px solid #dee2e6;
   padding: 10px 20px;
   border-radius: 8px;
   font-size: 14px;
@@ -33,14 +33,15 @@
 }
 
 .back-button:hover {
-  background: rgba(255, 255, 255, 0.1);
-  border-color: rgba(255, 255, 255, 0.5);
+  background: #e9ecef;
+  border-color: #adb5bd;
+  color: #333;
 }
 
 .login-header .logo h1 {
   font-size: 24px;
   font-weight: 700;
-  color: white;
+  color: #333;
   margin: 0;
 }
 
@@ -52,11 +53,10 @@
 }
 
 .login-form-wrapper {
-  background: rgba(255, 255, 255, 0.95);
+  background: white;
   padding: 50px;
-  border-radius: 20px;
-  box-shadow: 0 20px 40px rgba(0, 0, 0, 0.1);
-  backdrop-filter: blur(10px);
+  border-radius: 12px;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.1);
   width: 100%;
   max-width: 450px;
   text-align: center;
@@ -81,7 +81,7 @@
 
 .login-button {
   width: 100%;
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  background: #1a73e8;
   color: white;
   border: none;
   padding: 15px;
@@ -91,12 +91,11 @@
   cursor: pointer;
   transition: all 0.3s ease;
   margin-top: 20px;
-  box-shadow: 0 4px 15px rgba(102, 126, 234, 0.4);
 }
 
 .login-button:hover:not(:disabled) {
+  background: #1557b0;
   transform: translateY(-2px);
-  box-shadow: 0 6px 20px rgba(102, 126, 234, 0.6);
 }
 
 .login-button:disabled {
@@ -116,20 +115,10 @@
   font-size: 14px;
 }
 
-.login-footer a {
-  color: #667eea;
-  text-decoration: none;
-  font-weight: 600;
-}
-
-.login-footer a:hover {
-  text-decoration: underline;
-}
-
 .link-button {
   background: none;
   border: none;
-  color: #667eea;
+  color: #1a73e8;
   text-decoration: none;
   font-weight: 600;
   cursor: pointer;

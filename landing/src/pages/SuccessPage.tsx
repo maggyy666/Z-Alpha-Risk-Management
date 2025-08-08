@@ -1,17 +1,27 @@
 import React, { useEffect, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useLocation } from 'react-router-dom';
 import './SuccessPage.css';
 
 const SuccessPage: React.FC = () => {
   const navigate = useNavigate();
+  const location = useLocation();
   const [countdown, setCountdown] = useState(5);
+
+  // Get session data from URL params or localStorage
+  const sessionData = localStorage.getItem('zalpha_session');
 
   useEffect(() => {
     const timer = setInterval(() => {
       setCountdown(prev => {
         if (prev <= 1) {
-          // Redirect to main app
-          window.location.href = 'http://localhost:3000/introduction';
+          // Redirect to main app with session data
+          if (sessionData) {
+            const session = JSON.parse(sessionData);
+            const redirectUrl = `http://localhost:3000/introduction?session=${encodeURIComponent(JSON.stringify(session))}`;
+            window.location.href = redirectUrl;
+          } else {
+            window.location.href = 'http://localhost:3000/introduction';
+          }
           return 0;
         }
         return prev - 1;
@@ -19,10 +29,16 @@ const SuccessPage: React.FC = () => {
     }, 1000);
 
     return () => clearInterval(timer);
-  }, []);
+  }, [sessionData]);
 
   const handleRedirectNow = () => {
-    window.location.href = 'http://localhost:3000/introduction';
+    if (sessionData) {
+      const session = JSON.parse(sessionData);
+      const redirectUrl = `http://localhost:3000/introduction?session=${encodeURIComponent(JSON.stringify(session))}`;
+      window.location.href = redirectUrl;
+    } else {
+      window.location.href = 'http://localhost:3000/introduction';
+    }
   };
 
   return (
