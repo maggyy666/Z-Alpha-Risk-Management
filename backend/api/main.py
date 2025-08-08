@@ -94,6 +94,28 @@ def login(login_request: LoginRequest, db: Session = Depends(get_db)):
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
+@app.get("/session", response_model=SessionResponse)
+def get_session(username: str = "admin", db: Session = Depends(get_db)):
+    """Get current session info"""
+    try:
+        user = db.query(User).filter(User.username == username).first()
+        
+        if not user:
+            return SessionResponse(
+                logged_in=False,
+                username=None,
+                email=None
+            )
+        
+        return SessionResponse(
+            logged_in=True,
+            username=user.username,
+            email=user.email
+        )
+        
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
 @app.post("/initialize-portfolio")
 def initialize_portfolio(db: Session = Depends(get_db)):
     """Initialize portfolio with sample data for admin user"""
@@ -298,6 +320,44 @@ def get_portfolio_summary(username: str = "admin", db: Session = Depends(get_db)
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
+@app.get("/user-portfolio/{username}")
+def get_user_portfolio(username: str, db: Session = Depends(get_db)):
+    """Get user's portfolio data"""
+    try:
+        # Get portfolio from database
+        portfolio_items = db.query(Portfolio).filter(Portfolio.user_id == username).all()
+        
+        # Get ticker info for each item
+        portfolio_data = []
+        total_market_value = 0
+        
+        for item in portfolio_items:
+            ticker_info = db.query(TickerInfo).filter(TickerInfo.symbol == item.ticker_symbol).first()
+            ticker_data = db.query(TickerData).filter(TickerData.ticker_symbol == item.ticker_symbol).order_by(TickerData.date.desc()).first()
+            
+            if ticker_data:
+                market_value = ticker_data.close_price * 1000  # Assuming 1000 shares
+                total_market_value += market_value
+                
+                portfolio_data.append({
+                    "ticker": item.ticker_symbol,
+                    "shares": 1000,
+                    "price": ticker_data.close_price,
+                    "market_value": market_value,
+                    "sector": ticker_info.sector if ticker_info else "Unknown",
+                    "industry": ticker_info.industry if ticker_info else "Unknown"
+                })
+        
+        return {
+            "username": username,
+            "portfolio_items": portfolio_data,
+            "total_market_value": total_market_value,
+            "total_positions": len(portfolio_data)
+        }
+        
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
 @app.get("/realized-metrics")
 def get_realized_metrics(username: str = "admin", db: Session = Depends(get_db)):
     """Get realized risk metrics for portfolio and individual tickers"""
@@ -309,17 +369,19 @@ def get_realized_metrics(username: str = "admin", db: Session = Depends(get_db))
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
-@app.get("/rolling-metrics")
+@app.get("/rolling-metric")
 def get_rolling_metrics(
     metric: str = "vol",
     window: int = 21,
-    ticker: str = "PORTFOLIO",
+    tickers: str = "PORTFOLIO",
     username: str = "admin",
     db: Session = Depends(get_db)
 ):
     """Get rolling metric data for charting"""
     try:
-        data = data_service.get_rolling_metric(db, metric=metric, window=window, ticker=ticker, username=username)
+        # Parse tickers from comma-separated string
+        ticker_list = [t.strip() for t in tickers.split(',') if t.strip()]
+        data = data_service.get_rolling_metric(db, metric=metric, window=window, tickers=ticker_list, username=username)
         if "error" in data:
             raise HTTPException(status_code=400, detail=data["error"])
         return data

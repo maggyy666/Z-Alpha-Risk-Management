@@ -1,7 +1,7 @@
 import numpy as np
 from typing import Dict, List, Tuple, Any
 
-def stack_common_returns(ret_map: Dict[str, Tuple[List, np.ndarray]], symbols: List[str]) -> Tuple[List, np.ndarray, List[str]]:
+def stack_common_returns(ret_map: Dict[str, Tuple[List, np.ndarray]], symbols: List[str], min_obs: int = 30) -> Tuple[List, np.ndarray, List[str]]:
     """
     Stack common returns from return map into matrix
     Returns: (common_dates, returns_matrix, active_symbols)
@@ -9,8 +9,14 @@ def stack_common_returns(ret_map: Dict[str, Tuple[List, np.ndarray]], symbols: L
     if not symbols:
         return [], np.empty((0, 0)), []
     
+    # 1. Odfiltruj puste / zbyt krótkie serie
+    ok = [s for s in symbols if s in ret_map and len(ret_map[s][1]) >= min_obs]
+    if len(ok) < 2:
+        print(f"Warning: Only {len(ok)} tickers have sufficient data (min_obs={min_obs})")
+        return [], np.empty((0, 0)), []
+    
     # Find active symbols (with data)
-    active = [s for s in symbols if s in ret_map and len(ret_map[s][0]) > 0]
+    active = ok
     if not active:
         return [], np.empty((0, 0)), []
     
@@ -22,6 +28,7 @@ def stack_common_returns(ret_map: Dict[str, Tuple[List, np.ndarray]], symbols: L
     # Find common dates
     common = sorted(list(set.intersection(*sets)))
     if not common:
+        print(f"Warning: No common dates found for {active}")
         return [], np.empty((0, 0)), []
     
     # Map date->idx for each symbol

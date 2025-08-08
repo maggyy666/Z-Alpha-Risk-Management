@@ -4,6 +4,7 @@ services:
     container_name: Z-Alpha-Securities
     ports:
       - "3000:3000"
+      - "3001:3001"
       - "8000:8000"
     volumes:
       - ./backend/portfolio.db:/app/backend/portfolio.db
