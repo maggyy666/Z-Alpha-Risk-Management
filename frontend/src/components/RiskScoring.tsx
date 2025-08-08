@@ -11,6 +11,7 @@ import {
   ArcElement,
 } from 'chart.js';
 import apiService, { RiskScoringResponse } from '../services/api';
+import { useSession } from '../contexts/SessionContext';
 import './RiskScoring.css';
 
 ChartJS.register(
@@ -27,15 +28,17 @@ const RiskScoring: React.FC = () => {
   const [data, setData] = useState<RiskScoringResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const { getCurrentUsername } = useSession();
 
   useEffect(() => {
     fetchRiskScoringData();
-  }, []);
+  }, [getCurrentUsername]);
 
   const fetchRiskScoringData = async () => {
     try {
       setLoading(true);
-      const response = await apiService.getRiskScoringData("admin");
+      const username = getCurrentUsername();
+      const response = await apiService.getRiskScoringData(username);
       setData(response);
       setError(null);
     } catch (err) {

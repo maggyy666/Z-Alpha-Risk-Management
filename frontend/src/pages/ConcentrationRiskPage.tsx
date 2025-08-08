@@ -11,6 +11,7 @@ import {
   ArcElement,
 } from 'chart.js';
 import apiService, { ConcentrationRiskResponse } from '../services/api';
+import { useSession } from '../contexts/SessionContext';
 import RiskScoring from '../components/RiskScoring';
 import './ConcentrationRiskPage.css';
 
@@ -31,11 +32,13 @@ const ConcentrationRiskPage: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<TabType>('position');
+  const { getCurrentUsername } = useSession();
 
   const fetchConcentrationData = async () => {
     try {
       setLoading(true);
-      const response = await apiService.getConcentrationRiskData("admin");
+      const username = getCurrentUsername();
+      const response = await apiService.getConcentrationRiskData(username);
       setData(response);
       setError(null);
     } catch (err) {
@@ -48,7 +51,7 @@ const ConcentrationRiskPage: React.FC = () => {
 
   useEffect(() => {
     fetchConcentrationData();
-  }, []);
+  }, [getCurrentUsername]);
 
   const createPositionWeightChartData = () => {
     if (!data) return null;

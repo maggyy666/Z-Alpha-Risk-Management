@@ -1,5 +1,6 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { Link, useLocation } from 'react-router-dom';
+import { useSession } from '../contexts/SessionContext';
 import Footer from './Footer';
 import './DashboardLayout.css';
 
@@ -9,10 +10,40 @@ interface DashboardLayoutProps {
 
 const DashboardLayout: React.FC<DashboardLayoutProps> = ({ children }) => {
   const location = useLocation();
+  const { session, logout } = useSession();
+  const [showDropdown, setShowDropdown] = useState(false);
+
+  // Close dropdown when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      const target = event.target as Element;
+      if (!target.closest('.user-info')) {
+        setShowDropdown(false);
+      }
+    };
+
+    if (showDropdown) {
+      document.addEventListener('mousedown', handleClickOutside);
+    }
+
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+    };
+  }, [showDropdown]);
 
   const isActive = (path: string) => {
     return location.pathname === path;
   };
+
+  const handleLogout = () => {
+    logout();
+  };
+
+  const toggleDropdown = () => {
+    setShowDropdown(!showDropdown);
+  };
+
+
 
   return (
     <div className="dashboard-layout">
@@ -30,8 +61,22 @@ const DashboardLayout: React.FC<DashboardLayoutProps> = ({ children }) => {
             </div>
           </div>
           <div className="user-info">
-            <span className="logged-in-label">Logged in:</span>
-            <span className="username">admin</span>
+            <div className="user-button-container">
+              <button className="user-button" onClick={toggleDropdown}>
+                <span className="logged-in-label">Logged in:</span>
+                            <span className="username">
+              {session?.username || 'admin'}
+            </span>
+                <span className="dropdown-arrow">▼</span>
+              </button>
+              {showDropdown && (
+                <div className="user-dropdown">
+                  <button className="dropdown-item" onClick={handleLogout}>
+                    Logout
+                  </button>
+                </div>
+              )}
+            </div>
           </div>
         </div>
         

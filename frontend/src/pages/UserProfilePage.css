@@ -140,12 +140,12 @@
 }
 
 .compliance-badge {
-  padding: 4px 12px;
+  padding: 4px 8px;
   border-radius: 20px;
-  font-size: 0.75rem;
+  font-size: 0.65rem;
   font-weight: 600;
   text-transform: uppercase;
-  letter-spacing: 0.5px;
+  letter-spacing: 0.3px;
   border: 1px solid;
 }
 
