@@ -1,6 +1,8 @@
 import React from 'react';
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
 import './App.css';
+import { SessionProvider } from './contexts/SessionContext';
+import ProtectedRoute from './components/ProtectedRoute';
 import DashboardLayout from './components/DashboardLayout';
 import IntroductionPage from './pages/IntroductionPage';
 import PortfolioSummaryPage from './pages/PortfolioSummaryPage';
@@ -15,63 +17,85 @@ import LiquidityRiskPage from './pages/LiquidityRiskPage';
 
 function App() {
   return (
-    <Router>
-      <div className="App">
-              <Routes>
+    <SessionProvider>
+      <Router>
+        <div className="App">
+          <Routes>
         <Route path="/" element={<Navigate to="/introduction" replace />} />
         <Route path="/introduction" element={
-          <DashboardLayout>
-            <IntroductionPage />
-          </DashboardLayout>
+          <ProtectedRoute>
+            <DashboardLayout>
+              <IntroductionPage />
+            </DashboardLayout>
+          </ProtectedRoute>
         } />
         <Route path="/portfolio-summary" element={
-          <DashboardLayout>
-            <PortfolioSummaryPage />
-          </DashboardLayout>
+          <ProtectedRoute>
+            <DashboardLayout>
+              <PortfolioSummaryPage />
+            </DashboardLayout>
+          </ProtectedRoute>
         } />
         <Route path="/realized-risk" element={
-          <DashboardLayout>
-            <RealizedRiskPage />
-          </DashboardLayout>
+          <ProtectedRoute>
+            <DashboardLayout>
+              <RealizedRiskPage />
+            </DashboardLayout>
+          </ProtectedRoute>
         } />
         <Route path="/volatility-sizing" element={
-          <DashboardLayout>
-            <VolatilitySizingPage />
-          </DashboardLayout>
+          <ProtectedRoute>
+            <DashboardLayout>
+              <VolatilitySizingPage />
+            </DashboardLayout>
+          </ProtectedRoute>
         } />
         <Route path="/factor-exposure" element={
-          <DashboardLayout>
-            <FactorExposurePage />
-          </DashboardLayout>
+          <ProtectedRoute>
+            <DashboardLayout>
+              <FactorExposurePage />
+            </DashboardLayout>
+          </ProtectedRoute>
         } />
         <Route path="/concentration-risk" element={
-          <DashboardLayout>
-            <ConcentrationRiskPage />
-          </DashboardLayout>
+          <ProtectedRoute>
+            <DashboardLayout>
+              <ConcentrationRiskPage />
+            </DashboardLayout>
+          </ProtectedRoute>
         } />
         <Route path="/stress-testing" element={
-          <DashboardLayout>
-            <StressTestingPage />
-          </DashboardLayout>
+          <ProtectedRoute>
+            <DashboardLayout>
+              <StressTestingPage />
+            </DashboardLayout>
+          </ProtectedRoute>
         } />
         <Route path="/forecast-risk" element={
-          <DashboardLayout>
-            <ForecastRiskPage />
-          </DashboardLayout>
+          <ProtectedRoute>
+            <DashboardLayout>
+              <ForecastRiskPage />
+            </DashboardLayout>
+          </ProtectedRoute>
         } />
         <Route path="/liquidity-risk" element={
-          <DashboardLayout>
-            <LiquidityRiskPage />
-          </DashboardLayout>
+          <ProtectedRoute>
+            <DashboardLayout>
+              <LiquidityRiskPage />
+            </DashboardLayout>
+          </ProtectedRoute>
         } />
         <Route path="/user-profile" element={
-          <DashboardLayout>
-            <UserProfilePage />
-          </DashboardLayout>
+          <ProtectedRoute>
+            <DashboardLayout>
+              <UserProfilePage />
+            </DashboardLayout>
+          </ProtectedRoute>
         } />
-      </Routes>
-      </div>
-    </Router>
+          </Routes>
+        </div>
+      </Router>
+    </SessionProvider>
   );
 }
 
