@@ -10,6 +10,8 @@ import ConcentrationRiskPage from './pages/ConcentrationRiskPage';
 import StressTestingPage from './pages/StressTestingPage';
 import ForecastRiskPage from './pages/ForecastRiskPage';
 import UserProfilePage from './pages/UserProfilePage';
+import RealizedRiskPage from './pages/RealizedRiskPage';
+import LiquidityRiskPage from './pages/LiquidityRiskPage';
 
 function App() {
   return (
@@ -25,6 +27,11 @@ function App() {
         <Route path="/portfolio-summary" element={
           <DashboardLayout>
             <PortfolioSummaryPage />
+          </DashboardLayout>
+        } />
+        <Route path="/realized-risk" element={
+          <DashboardLayout>
+            <RealizedRiskPage />
           </DashboardLayout>
         } />
         <Route path="/volatility-sizing" element={
@@ -50,6 +57,11 @@ function App() {
         <Route path="/forecast-risk" element={
           <DashboardLayout>
             <ForecastRiskPage />
+          </DashboardLayout>
+        } />
+        <Route path="/liquidity-risk" element={
+          <DashboardLayout>
+            <LiquidityRiskPage />
           </DashboardLayout>
         } />
         <Route path="/user-profile" element={

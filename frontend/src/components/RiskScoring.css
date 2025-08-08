@@ -21,25 +21,36 @@
   letter-spacing: 0.5px;
 }
 
+.risk-scoring-container {
+  background-color: #1a1a1a;
+  border: 1px solid #333;
+  border-radius: 8px;
+  padding: clamp(10px, 2vw, 15px);
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+}
+
 .charts-container {
   display: grid;
   grid-template-columns: 1fr 1fr;
-  gap: clamp(20px, 4vw, 30px);
-  margin-bottom: clamp(25px, 5vw, 40px);
+  gap: clamp(5px, 1vw, 8px);
+  margin-bottom: clamp(5px, 1vw, 8px);
   align-items: start;
 }
 
 .chart-section {
   background-color: #1a1a1a;
   border-radius: clamp(6px, 1.5vw, 10px);
-  padding: clamp(15px, 3vw, 25px);
+  padding: clamp(3px, 0.5vw, 5px);
   border: 1px solid #333;
 }
 
 .chart-section h3 {
   font-size: clamp(14px, 2.5vw, 18px);
   font-weight: 600;
-  margin: 0 0 clamp(15px, 3vw, 20px) 0;
+  margin: 0 0 clamp(5px, 1vw, 8px) 0;
   color: #ffffff;
   text-transform: uppercase;
   letter-spacing: 0.5px;
@@ -55,9 +66,9 @@
 .metrics-section {
   background-color: #1a1a1a;
   border-radius: clamp(6px, 1.5vw, 10px);
-  padding: clamp(15px, 3vw, 25px);
+  padding: clamp(10px, 2vw, 15px);
   border: 1px solid #333;
-  margin-bottom: clamp(20px, 4vw, 30px);
+  margin-bottom: clamp(5px, 1vw, 8px);
 }
 
 .alerts-section h3,
@@ -65,14 +76,14 @@
 .metrics-section h3 {
   font-size: clamp(14px, 2.5vw, 18px);
   font-weight: 600;
-  margin: 0 0 clamp(15px, 3vw, 20px) 0;
+  margin: 0 0 clamp(8px, 1.5vw, 12px) 0;
   color: #ffffff;
   text-transform: uppercase;
   letter-spacing: 0.5px;
 }
 
 .alerts-banner {
-  background: linear-gradient(135deg, #4A90E2, #357ABD);
+  background: linear-gradient(135deg, #ff6b6b, #ff4757);
   color: #ffffff;
   padding: clamp(12px, 2.5vw, 18px);
   border-radius: clamp(4px, 1vw, 6px);
@@ -108,15 +119,15 @@
 }
 
 .alert-item.high {
-  border-left: 4px solid #ff4444;
+  border-left: 4px solid #ff6b6b;
 }
 
 .alert-item.medium {
-  border-left: 4px solid #ffaa00;
+  border-left: 4px solid #ff6b6b;
 }
 
 .alert-item.low {
-  border-left: 4px solid #44ff44;
+  border-left: 4px solid #ff6b6b;
 }
 
 .alert-severity {
@@ -130,18 +141,18 @@
 }
 
 .alert-item.high .alert-severity {
-  background-color: #ff4444;
+  background-color: #ff6b6b;
   color: #ffffff;
 }
 
 .alert-item.medium .alert-severity {
-  background-color: #ffaa00;
-  color: #000000;
+  background-color: #ff6b6b;
+  color: #ffffff;
 }
 
 .alert-item.low .alert-severity {
-  background-color: #44ff44;
-  color: #000000;
+  background-color: #ff6b6b;
+  color: #ffffff;
 }
 
 .alert-text {
@@ -176,6 +187,13 @@
   font-size: clamp(12px, 1.8vw, 14px);
   line-height: 1.5;
   text-align: center;
+  transition: all 0.3s ease;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+}
+
+.recommendation-item:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4);
 }
 
 .metrics-grid {
