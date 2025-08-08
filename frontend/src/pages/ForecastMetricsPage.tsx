@@ -47,6 +47,11 @@ interface RollingForecastData {
   }>;
   model: string;
   window: number;
+  common_date_range?: {
+    start_date: string;
+    end_date: string;
+    total_days: number;
+  };
 }
 
 const ForecastMetricsPage: React.FC = () => {
@@ -77,7 +82,20 @@ const ForecastMetricsPage: React.FC = () => {
 
   const fetchRollingForecast = useCallback(async () => {
     try {
+      console.log('Fetching rolling forecast with:', { selectedModel, selectedWindow, selectedTickers });
       const response = await apiService.getRollingForecast(selectedModel, selectedWindow, selectedTickers, "admin");
+      console.log('Rolling forecast response:', response);
+      
+      // Debug: Print sample data values
+      if (response && response.data && response.data.length > 0) {
+        console.log('=== SAMPLE DATA FOR MODEL:', selectedModel, '===');
+        const sampleData = response.data.slice(0, 10); // First 10 entries
+        sampleData.forEach((item, index) => {
+          console.log(`${index + 1}. ${item.date} | ${item.ticker} | Vol: ${item.vol_pct.toFixed(2)}%`);
+        });
+        console.log('=== END SAMPLE DATA ===');
+      }
+      
       setRollingData(response);
     } catch (err) {
       console.error('Error fetching rolling forecast:', err);
@@ -95,6 +113,9 @@ const ForecastMetricsPage: React.FC = () => {
   const createRollingForecastChartData = () => {
     if (!rollingData) return null;
 
+    console.log('Creating chart data for model:', rollingData.model);
+    console.log('Total data points:', rollingData.data.length);
+
     // Group data by ticker
     const tickerData: { [key: string]: { dates: string[], vols: number[] } } = {};
     
@@ -104,6 +125,16 @@ const ForecastMetricsPage: React.FC = () => {
       }
       tickerData[item.ticker].dates.push(item.date);
       tickerData[item.ticker].vols.push(item.vol_pct);
+    });
+
+    // Debug: Print sample values for each ticker
+    Object.keys(tickerData).forEach(ticker => {
+      const data = tickerData[ticker];
+      console.log(`Ticker ${ticker}: ${data.vols.length} points`);
+      if (data.vols.length > 0) {
+        console.log(`  Sample vols: ${data.vols.slice(0, 5).map(v => v.toFixed(2)).join(', ')}...`);
+        console.log(`  Date range: ${data.dates[0]} to ${data.dates[data.dates.length - 1]}`);
+      }
     });
 
     // Większa paleta kolorów dla lepszego rozróżnienia (jak w Factor Exposure)
@@ -141,24 +172,30 @@ const ForecastMetricsPage: React.FC = () => {
     // Get unique dates for labels
     const allDates = tickerData[Object.keys(tickerData)[0]]?.dates || [];
     
-    // Format labels - inteligentne etykiety osi X (jak w Factor Exposure)
+    // Format labels - lepsze etykiety osi X
     const labels = allDates.map((date, index) => {
       const dateObj = new Date(date);
       const year = dateObj.getFullYear();
       const month = dateObj.getMonth();
+      const day = dateObj.getDate();
       
-      // Pokaż rok tylko na początku każdego roku lub co 2-3 lata
-      if (index === 0 || 
-          (index > 0 && new Date(allDates[index - 1]).getFullYear() !== year) ||
-          year % 2 === 0) {
-        return year.toString();
+      // Pokaż pełną datę co 3 miesiące
+      if (index === 0 || index === allDates.length - 1 || index % 90 === 0) {
+        const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 
+                           'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+        return `${monthNames[month]} ${year}`;
       }
       
-      // W pozostałych przypadkach pokazuj tylko miesiące co kilka miesięcy
-      if (index % 30 === 0) { // Co ~miesiąc
+      // Pokaż miesiąc co miesiąc
+      if (index % 30 === 0) {
         const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 
                            'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
         return monthNames[month];
+      }
+      
+      // Pokaż rok na początku każdego roku
+      if (index > 0 && new Date(allDates[index - 1]).getFullYear() !== year) {
+        return year.toString();
       }
       
       return ''; // Puste etykiety dla większości punktów
@@ -338,11 +375,12 @@ const ForecastMetricsPage: React.FC = () => {
         
         <div className="controls">
           <div className="control-group">
-            <label>Select Model:</label>
+            <label>SELECT MODEL:</label>
             <select 
               value={selectedModel}
               onChange={(e) => setSelectedModel(e.target.value)}
               className="model-select"
+              style={{ height: 'clamp(32px, 5vw, 36px)', minHeight: 'clamp(32px, 5vw, 36px)' }}
             >
               <option value="EWMA (5D)">EWMA (5D)</option>
               <option value="EWMA (30D)">EWMA (30D)</option>
@@ -353,7 +391,7 @@ const ForecastMetricsPage: React.FC = () => {
           </div>
           
           <div className="control-group">
-            <label>Select Time Frame:</label>
+            <label>SELECT TIME FRAME:</label>
             <input 
               type="number" 
               value={selectedWindow}
@@ -361,12 +399,13 @@ const ForecastMetricsPage: React.FC = () => {
               min="5"
               max="252"
               className="timeframe-input"
+              style={{ height: 'clamp(32px, 5vw, 36px)', minHeight: 'clamp(32px, 5vw, 36px)' }}
             />
           </div>
           
           <div className="control-group">
             <SelectableTags
-              title="Select Tickers"
+              title="SELECT TICKERS"
               selectedItems={selectedTickers}
               availableItems={availableTickers}
               onSelectionChange={setSelectedTickers}
@@ -375,9 +414,13 @@ const ForecastMetricsPage: React.FC = () => {
           </div>
         </div>
 
-        <div className="chart-container">
+        <div className="chart-container" style={{ width: '100%', height: '400px', minWidth: '100%' }}>
           {rollingData && createRollingForecastChartData() && (
-            <Line data={createRollingForecastChartData()!} options={chartOptions} />
+            <Line 
+              key={`${selectedModel}-${selectedWindow}-${selectedTickers.join(',')}`}
+              data={createRollingForecastChartData()!} 
+              options={chartOptions} 
+            />
           )}
         </div>
       </div>
