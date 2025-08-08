@@ -4,31 +4,47 @@ from scipy.stats import norm
 def basic_stats(returns: np.ndarray, risk_free_annual: float = 0.0) -> dict:
     """
     Calculate basic statistics from returns
-    Returns: dict with mean_daily, std_daily, std_annual, sharpe_ratio
+    Returns: dict with mean_daily, std_daily, std_annual, mean_annual, sharpe_ratio, sortino_ratio
     """
     if len(returns) < 2:
         return {
             "mean_daily": 0.0,
             "std_daily": 0.0,
             "std_annual": 0.0,
-            "sharpe_ratio": 0.0
+            "mean_annual": 0.0,
+            "sharpe_ratio": 0.0,
+            "sortino_ratio": 0.0
         }
     
     mean_daily = float(np.mean(returns))
     std_daily = float(np.std(returns, ddof=1))  # ddof=1 for estimation
     std_annual = std_daily * np.sqrt(252)
+    mean_annual = mean_daily * 252
     
     # Sharpe ratio
     if std_daily > 0:
-        sharpe_ratio = ((mean_daily * 252) - risk_free_annual) / std_annual
+        sharpe_ratio = (mean_annual - risk_free_annual) / std_annual
     else:
         sharpe_ratio = 0.0
+    
+    # Sortino ratio (using downside deviation)
+    negative_returns = returns[returns < 0]
+    if len(negative_returns) > 0:
+        downside_std = np.std(negative_returns, ddof=1) * np.sqrt(252)
+        if downside_std > 0:
+            sortino_ratio = (mean_annual - risk_free_annual) / downside_std
+        else:
+            sortino_ratio = 0.0
+    else:
+        sortino_ratio = 0.0
     
     return {
         "mean_daily": mean_daily,
         "std_daily": std_daily,
         "std_annual": std_annual,
-        "sharpe_ratio": sharpe_ratio
+        "mean_annual": mean_annual,
+        "sharpe_ratio": sharpe_ratio,
+        "sortino_ratio": sortino_ratio
     }
 
 
