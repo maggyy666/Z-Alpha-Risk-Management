@@ -31,15 +31,11 @@ class PortfolioResponse(BaseModel):
     message: str
     tickers: List[str] = []
 
-# Pydantic models for portfolio management
-class PortfolioRequest(BaseModel):
-    username: str
-    tickers: List[str]  # List of ticker symbols
-
-class PortfolioResponse(BaseModel):
-    success: bool
-    message: str
-    tickers: List[str] = []
+# Session management
+class SessionResponse(BaseModel):
+    logged_in: bool
+    username: str = None
+    email: str = None
 
 # Create tables
 Base.metadata.create_all(bind=engine)

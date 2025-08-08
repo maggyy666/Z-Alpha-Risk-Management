@@ -136,10 +136,8 @@ const VolatilitySizingPage: React.FC = () => {
             </tbody>
           </table>
         </div>
-      </div>
-      
-      <div className="chart-section">
-        <div className="chart-container">
+        
+        <div className="volatility-chart-container">
           <VolatilityDonutChart data={portfolioData} />
         </div>
       </div>

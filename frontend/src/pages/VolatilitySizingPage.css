@@ -227,23 +227,13 @@
   border-bottom: none;
 }
 
-.chart-section {
+.volatility-chart-container {
   margin-top: 30px;
-  margin-bottom: 50px;
-  background-color: transparent !important;
-  border: none !important;
-  box-shadow: none !important;
-}
-
-.chart-container {
   padding: 20px;
-  min-height: 300px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  background-color: transparent !important;
-  border: none !important;
-  box-shadow: none !important;
+  background-color: #1a1a1a;
+  border: 1px solid #333;
+  border-radius: 8px;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
 }
 
 .chart-placeholder {
@@ -269,7 +259,7 @@
   align-items: center;
   gap: 20px;
   padding: 40px;
-  color: #ff6b6b;
+  color: #ffffff;
   text-align: center;
 }
 
@@ -299,30 +289,32 @@
 
 .positive {
   color: #4caf50 !important;
-  font-weight: 700;
-  font-size: 0.95rem;
+  font-weight: 500;
+  font-size: 0.9rem;
+  font-family: inherit;
 }
 
 .negative {
   color: #f44336 !important;
-  font-weight: 700;
-  font-size: 0.95rem;
+  font-weight: 500;
+  font-size: 0.9rem;
+  font-family: inherit;
 }
 
 .volatility-table .percentage-column {
-  font-family: 'Courier New', monospace;
-  font-weight: 600;
-  font-size: 0.95rem;
+  font-family: inherit;
+  font-weight: 500;
+  font-size: 0.9rem;
 }
 
 .volatility-table .currency-column {
-  font-family: 'Courier New', monospace;
-  font-weight: 600;
-  font-size: 0.95rem;
+  font-family: inherit;
+  font-weight: 500;
+  font-size: 0.9rem;
 }
 
 .volatility-table .number-column {
-  font-family: 'Courier New', monospace;
-  font-weight: 600;
-  font-size: 0.95rem;
+  font-family: inherit;
+  font-weight: 500;
+  font-size: 0.9rem;
 } 

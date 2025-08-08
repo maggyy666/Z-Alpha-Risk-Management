@@ -49,6 +49,7 @@ export interface PortfolioItem {
   market_value: number;
   weight: number;
   sector: string;
+  industry: string;
   market_cap: number;
 }
 
@@ -68,10 +69,26 @@ export interface SectorConcentration {
   effective_sectors: number;
 }
 
+export interface MarketCapConcentration {
+  categories: string[];
+  weights: number[];
+  hhi: number;
+  effective_categories: number;
+  details: {
+    [category: string]: Array<{
+      ticker: string;
+      market_cap: number;
+      weight: number;
+      market_value: number;
+    }>;
+  };
+}
+
 export interface ConcentrationRiskResponse {
   portfolio_data: PortfolioItem[];
   concentration_metrics: ConcentrationMetrics;
   sector_concentration: SectorConcentration;
+  market_cap_concentration: MarketCapConcentration;
   total_market_value: number;
 }
 
@@ -164,6 +181,83 @@ export interface LatestFactorExposuresResponse {
   data: Array<{
     ticker: string;
     [key: string]: string | number;
+  }>;
+}
+
+export interface RealizedMetricsResponse {
+  metrics: Array<{
+    ticker: string;
+    ann_return_pct: number;
+    ann_volatility_pct: number;
+    sharpe: number;
+    sortino: number;
+    skew: number;
+    kurtosis: number;
+    max_drawdown_pct: number;
+    var_95_pct: number;
+    cvar_95_pct: number;
+    hit_ratio_pct: number;
+    beta_ndx: number;
+    beta_spy: number;
+    up_capture_ndx_pct: number;
+    down_capture_ndx_pct: number;
+    tracking_error_pct: number;
+    information_ratio: number;
+  }>;
+}
+
+export interface RollingMetricsResponse {
+  dates: string[];
+  values: number[];
+  ticker: string;
+  metric: string;
+  window: number;
+}
+
+export interface LiquidityOverviewResponse {
+  overview: {
+    overall_score: number;
+    risk_level: string;
+    estimated_liquidation_time: string;
+  };
+  distribution: {
+    "High Liquidity (8-10)": number;
+    "Medium Liquidity (5-8)": number;
+  };
+  volume_analysis: {
+    avg_volume_global: number;
+    total_portfolio_volume: number;
+    volume_weighted_avg: number;
+  };
+  position_details: Array<{
+    ticker: string;
+    shares: number;
+    market_value: number;
+    weight_pct: number;
+    avg_volume: number;
+    current_volume: number;
+    spread_pct: number;
+    volume_category: string;
+    volume_score: number;
+    liquidity_score: number;
+    liq_days: number;
+  }>;
+  alerts: Array<{
+    severity: string;
+    text: string;
+  }>;
+}
+
+export interface LiquidityVolumeAnalysisResponse {
+  avg_volume_global: number;
+  total_portfolio_volume: number;
+  volume_weighted_avg: number;
+}
+
+export interface LiquidityAlertsResponse {
+  alerts: Array<{
+    severity: string;
+    text: string;
   }>;
 }
 
@@ -325,6 +419,71 @@ class ApiService {
       return response.data;
     } catch (error) {
       console.error('Error fetching portfolio summary data:', error);
+      throw error;
+    }
+  }
+
+  async getRealizedMetrics(username: string = "admin"): Promise<RealizedMetricsResponse> {
+    try {
+      const response = await api.get('/realized-metrics', {
+        params: { username }
+      });
+      return response.data;
+    } catch (error) {
+      console.error('Error fetching realized metrics data:', error);
+      throw error;
+    }
+  }
+
+  async getRollingMetrics(
+    metric: string = "vol",
+    window: number = 21,
+    ticker: string = "PORTFOLIO",
+    username: string = "admin"
+  ): Promise<RollingMetricsResponse> {
+    try {
+      const response = await api.get('/rolling-metrics', {
+        params: { metric, window, ticker, username }
+      });
+      return response.data;
+    } catch (error) {
+      console.error('Error fetching rolling metrics data:', error);
+      throw error;
+    }
+  }
+
+  async getLiquidityOverview(username: string = "admin"): Promise<LiquidityOverviewResponse> {
+    try {
+      const response = await api.get('/liquidity-overview', {
+        params: { username }
+      });
+      return response.data;
+    } catch (error) {
+      console.error('Error fetching liquidity overview data:', error);
+      throw error;
+    }
+  }
+
+  async getLiquidityVolumeAnalysis(username: string = "admin"): Promise<LiquidityVolumeAnalysisResponse> {
+    try {
+      const response = await api.get('/liquidity-volume-analysis', {
+        params: { username }
+      });
+      return response.data;
+    } catch (error) {
+      console.error('Error fetching liquidity volume analysis data:', error);
+      throw error;
+    }
+  }
+
+  async getLiquidityAlerts(username: string = "admin"): Promise<LiquidityAlertsResponse> {
+    try {
+      const response = await api.get('/liquidity-alerts', {
+        params: { username }
+      });
+      return response.data;
+    } catch (error) {
+      console.error('Error fetching liquidity alerts data:', error);
       throw error;
     }
   }

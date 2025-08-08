@@ -98,8 +98,8 @@
 }
 
 .regime-status.crisis {
-  background-color: #F44336;
-  color: #ffffff;
+  background-color: #ffffff;
+  color: #000000;
 }
 
 .regime-status.bull {
@@ -146,6 +146,7 @@
   font-size: clamp(14px, 2vw, 16px);
   color: #ffffff;
   font-weight: 700;
+  text-shadow: none !important;
 }
 
 .radar-chart-container {
