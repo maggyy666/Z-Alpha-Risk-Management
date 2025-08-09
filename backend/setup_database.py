@@ -226,11 +226,11 @@ def generate_historical_data(db, data_service, tickers, data_type):
                 try:
                     info = data_service._ensure_ticker_info(db, ticker)
                     if info:
-        print(f"Ticker info for {ticker}: sector={info.sector}, industry={info.industry}")
+                        print(f"Ticker info for {ticker}: sector={info.sector}, industry={info.industry}")
                     else:
-                        print(f"⚠️ No ticker info for {ticker}")
+                        print(f"Warning: No ticker info for {ticker}")
                 except Exception as e:
-                    print(f"❌ Error ensuring ticker info for {ticker}: {e}")
+                    print(f"Error ensuring ticker info for {ticker}: {e}")
                 
             except Exception as e:
                 print(f"Error generating data for {ticker}: {e}")
@@ -247,15 +247,15 @@ def fetch_fundamental_data(db, data_service, tickers):
     
     try:
         # Connect once for all tickers
-        print("🔌 Connecting to IBKR...")
+        print("Connecting to IBKR...")
         if not data_service.ibkr_service.connect():
-            print("❌ Failed to connect to IBKR - skipping fundamental data")
+            print("Failed to connect to IBKR - skipping fundamental data")
             return False
         
         success_count = 0
         for ticker in tickers:
             try:
-                print(f"🔍 Fetching data for {ticker}...")
+                print(f"Fetching data for {ticker}...")
                 
                 # Single request per ticker - get fundamental data
                 fundamental_data = data_service.ibkr_service.get_fundamentals(ticker)
@@ -267,21 +267,21 @@ def fetch_fundamental_data(db, data_service, tickers):
                     success_count += 1
                     print(f"Successfully processed {ticker}")
                 else:
-                    print(f"❌ Failed to process {ticker}")
+                    print(f"Failed to process {ticker}")
                     
             except Exception as e:
-                print(f"❌ Error processing {ticker}: {e}")
+                print(f"Error processing {ticker}: {e}")
                 continue
         
         print(f"Successfully processed {success_count}/{len(tickers)} tickers")
         return True
         
     except Exception as e:
-        print(f"❌ Error in fetch_fundamental_data: {e}")
+        print(f"Error in fetch_fundamental_data: {e}")
         return False
     finally:
         data_service.ibkr_service.disconnect()
-        print("🔌 Disconnected from IBKR")
+        print("Disconnected from IBKR")
 
 def show_database_summary(db, admin_user):
     """Show database summary"""
@@ -381,7 +381,7 @@ def setup_database():
         
         # Step 13: Fetch fundamental data for all tickers
         if not fetch_fundamental_data(db, data_service, list(all_tickers)):
-            print("⚠️ Warning: Some fundamental data may be missing")
+            print("Warning: Some fundamental data may be missing")
         
         # Step 12: Show database summary
         if not show_database_summary(db, admin_user):
@@ -391,7 +391,7 @@ def setup_database():
         return True
         
     except Exception as e:
-        print(f"❌ Error during database setup: {e}")
+        print(f"Error during database setup: {e}")
         return False
     finally:
         db.close()
@@ -405,11 +405,11 @@ def main():
     success = setup_database()
     
     if success:
-        print("\n🎉 Setup completed successfully!")
+        print("\nSetup completed successfully!")
         print("You can now run the application with:")
         print("  python start_all.py")
     else:
-        print("\n❌ Setup failed!")
+        print("\nSetup failed!")
         print("Please check the error messages above.")
     
     return success

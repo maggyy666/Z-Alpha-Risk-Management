@@ -1,3 +1,15 @@
+"""Pairwise correlation helpers.
+
+Args/Inputs:
+- R: returns matrix (T x N), threshold for high-corr pairs.
+
+Provides:
+- avg_and_high_corr: average correlation and count of pairs above threshold.
+
+Returns:
+- Tuple[avg: float, total_pairs: int, high_pairs: int].
+"""
+
 import numpy as np
 
 def avg_and_high_corr(R: np.ndarray, threshold: float = 0.7) -> tuple[float, int, int]:

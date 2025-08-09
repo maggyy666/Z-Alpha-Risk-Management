@@ -1,3 +1,15 @@
+"""Returns utilities.
+
+Args/Inputs:
+- R: np.ndarray of returns (T x N), threshold for high-correlation flags.
+
+Provides:
+- avg_and_high_corr: average pairwise correlation and count of pairs above threshold.
+
+Returns:
+- Tuple[avg_corr: float, total_pairs: int, high_pairs: int].
+"""
+
 import numpy as np
 from typing import Dict, List, Tuple, Any
 

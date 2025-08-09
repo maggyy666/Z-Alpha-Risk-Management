@@ -1,3 +1,13 @@
+"""Basic stats and VaR/CVaR helpers.
+
+Args/Inputs:
+- returns: np.ndarray daily returns; sigma: annualized volatility for parametric VaR.
+
+Provides:
+- basic_stats: daily/annual means/std, Sharpe, Sortino.
+- var_cvar: parametric or historical VaR/CVaR in percent.
+"""
+
 import numpy as np
 from scipy.stats import norm
 

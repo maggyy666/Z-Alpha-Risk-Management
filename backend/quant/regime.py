@@ -1,3 +1,15 @@
+"""Market regime metrics and classification.
+
+Args/Inputs:
+- R: returns matrix (T x N), w: weights (N,), regime thresholds dict.
+
+Provides:
+- regime_metrics: annualized vol, average corr, momentum, radar dict, label.
+
+Returns:
+- Tuple[vol_ann: float, avg_corr: float, mom: float, radar: dict, label: str].
+"""
+
 import numpy as np
 
 def regime_metrics(R: np.ndarray, w: np.ndarray, regime_thresh: dict) -> tuple[float, float, float, dict, str]:

@@ -1,3 +1,12 @@
+"""Weights construction helpers.
+
+Args/Inputs:
+- vols: array of annualized volatilities (%), floor in %.
+
+Provides:
+- inverse_vol_allocation: inverse-volatility weights with floor and normalization.
+"""
+
 import numpy as np
 
 def inverse_vol_allocation(vols: np.ndarray, floor: float = 0.08) -> np.ndarray:

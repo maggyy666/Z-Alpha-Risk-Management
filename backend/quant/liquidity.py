@@ -1,3 +1,15 @@
+"""Portfolio liquidity metrics.
+
+Args/Inputs:
+- db: Session, username (str). Uses `TickerData`, `Portfolio`, `User`.
+
+Provides:
+- liquidity_metrics(db, username): JSON-like dict expected by frontend.
+
+Returns:
+- Dict with overview, distribution, volume_analysis, position_details, alerts.
+"""
+
 import numpy as np
 import pandas as pd
 from typing import Dict, List, Tuple
@@ -7,7 +19,6 @@ from database.models.ticker_data import TickerData
 from database.models.portfolio import Portfolio
 from database.models.user import User
 
-# ---------- helpers ---------------------------------------------------------
 
 _N_VOL = 21
 _N_SPR = 10
@@ -38,7 +49,7 @@ def _curr_volume(db, symbol):
 
 def _spread_pct(db, symbol):
     """Calculate spread percentage using real bid/ask or high-low proxy"""
-    # First try to get real bid/ask data
+    # Try real bid/ask first; fallback to high/low proxy
     latest_data = (db.query(TickerData)
                       .filter(TickerData.ticker_symbol == symbol)
                       .order_by(TickerData.date.desc())
@@ -53,7 +64,7 @@ def _spread_pct(db, symbol):
             spread = (ask - bid) / mid
             return max(spread, 0.0001)  # Minimum 0.01%
     
-    # Fallback to high-low proxy
+    # Proxy path
     high = _get_series(db, symbol, "high_price", _N_SPR)
     low = _get_series(db, symbol, "low_price", _N_SPR)
     
@@ -64,7 +75,7 @@ def _spread_pct(db, symbol):
     with np.errstate(divide="ignore", invalid="ignore"):
         spr = np.where(mid > 0, (high - low) / mid, np.nan)
     
-    # Clamp tiny spreads to avoid unrealistic scores
+    # Clamp tiny spreads
     spr = np.clip(spr, 0.0001, 0.20)  # 0.01% to 20%
     return np.nanmean(spr)
 
@@ -84,8 +95,8 @@ def _spr_score(spread):
 # ---------- main public function -------------------------------------------
 
 def liquidity_metrics(db: Session, username: str = "admin") -> Dict[str, any]:
-    """Core calculator – returns exactly the JSON the React tab expects."""
-    # 1) pull user portfolio (weight, shares, mv)
+    """Core calculator - returns exactly the JSON the React tab expects."""
+    # 1) pull user portfolio (weight, shares, market value)
     user = db.query(User).filter(User.username == username).first()
     if not user:
         return {"error": "user not found"}
@@ -117,7 +128,7 @@ def liquidity_metrics(db: Session, username: str = "admin") -> Dict[str, any]:
     if total_mv == 0:
         return {"error": "no prices?"}
 
-    # 2) compute per-ticker liquidity metrics
+    # 2) per-ticker liquidity metrics
     high_liq_w, med_liq_w, low_liq_w = 0.0, 0.0, 0.0  # FIXED: Added low bucket
     max_liq_days = 0
     overall_score = 0.0
@@ -145,7 +156,7 @@ def liquidity_metrics(db: Session, username: str = "admin") -> Dict[str, any]:
         else:
             days = max(30, int(np.ceil(p["shares"] / avol / 0.20)))  # Minimum 30 days for any position
 
-        # FIXED: Proper bucket assignment
+        # Bucket assignment
         if liq >= 8:
             high_liq_w += w
         elif liq >= 5:
@@ -156,7 +167,7 @@ def liquidity_metrics(db: Session, username: str = "admin") -> Dict[str, any]:
         max_liq_days = max(max_liq_days, days)
         overall_score += w * liq
 
-        # rule-based alerts
+        # Alerts
         if liq < 3:
             alerts.append({
                 "severity": "HIGH",

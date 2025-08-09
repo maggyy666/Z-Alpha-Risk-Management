@@ -31,7 +31,21 @@
   border: none;
   padding: 0 0 0 20px; /* Add left padding to brand itself */
   margin-left: 0; /* Ensure it touches the edge */
+  -webkit-appearance: none;
+  appearance: none;
+  -webkit-tap-highlight-color: transparent;
 }
+
+.zalpha-navbar .brand:hover,
+.zalpha-navbar .brand:focus,
+.zalpha-navbar .brand:active,
+.zalpha-navbar .brand:focus-visible {
+  background: transparent !important;
+  outline: none !important;
+  box-shadow: none !important;
+}
+
+.brand::-moz-focus-inner { border: 0; }
 
 /* Enhanced logo style - bigger and more prominent */
 .logo { display: flex; align-items: center; gap: 16px; }

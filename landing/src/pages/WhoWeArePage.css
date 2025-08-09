@@ -91,11 +91,20 @@
   height: 100%;
 }
 
-/* Button hover effects */
-.who-we-are-page button:hover {
+/* Button hover effects (exclude navbar brand button) */
+.who-we-are-page button:not(.brand):hover {
   transform: translateY(-2px);
   box-shadow: 0 8px 24px rgba(25, 118, 210, 0.3);
   background-color: #1565c0 !important;
+}
+
+/* Ensure brand never gets a blue hover background in this page */
+.who-we-are-page .brand:hover,
+.who-we-are-page .brand:focus,
+.who-we-are-page .brand:active {
+  background: transparent !important;
+  box-shadow: none !important;
+  transform: none !important;
 }
 
 /* Full bleed utility */

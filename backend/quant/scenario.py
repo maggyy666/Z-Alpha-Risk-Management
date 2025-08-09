@@ -1,3 +1,12 @@
+"""Scenario analytics.
+
+Args/Inputs:
+- R: scenario returns (T x N), w: weights (N,).
+
+Provides:
+- scenario_pnl: total return (%) and max drawdown (%) for the scenario.
+"""
+
 import numpy as np
 from .drawdown import drawdown
 

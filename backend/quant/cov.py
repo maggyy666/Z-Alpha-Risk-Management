@@ -1,3 +1,15 @@
+"""Correlation/covariance estimators.
+
+Args/Inputs:
+- R: returns matrix (T x N), lam for EWMA.
+
+Provides:
+- ewma_corr: EWMA correlation with PD enforcement and renormalized diagonal.
+
+Returns:
+- np.ndarray [N x N].
+"""
+
 import numpy as np
 
 def ewma_corr(R: np.ndarray, lam: float = 0.94) -> np.ndarray:

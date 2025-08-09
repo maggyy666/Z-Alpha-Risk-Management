@@ -30,13 +30,13 @@ def fetch_portfolio_fundamentals():
         # Get admin user
         admin_user = db.query(User).filter(User.username == "admin").first()
         if not admin_user:
-            print("❌ Admin user not found")
+            print("Admin user not found")
             return False
         
         # Get portfolio tickers
         portfolio_items = db.query(Portfolio).filter(Portfolio.user_id == admin_user.id).all()
         if not portfolio_items:
-            print("❌ No portfolio items found")
+            print("No portfolio items found")
             return False
         
         tickers = [item.ticker_symbol for item in portfolio_items]
@@ -45,7 +45,7 @@ def fetch_portfolio_fundamentals():
         # Connect to IBKR
         print("🔌 Connecting to IBKR...")
         if not ibkr_service.connect():
-            print("❌ Failed to connect to IBKR")
+            print("Failed to connect to IBKR")
             return False
         
         print("Connected to IBKR successfully")
@@ -84,10 +84,10 @@ def fetch_portfolio_fundamentals():
                     success_count += 1
                     
                 else:
-                    print(f"❌ No fundamental data received for {ticker}")
+                    print(f"No fundamental data received for {ticker}")
                     
             except Exception as e:
-                print(f"❌ Error fetching data for {ticker}: {e}")
+                print(f"Error fetching data for {ticker}: {e}")
         
         # Commit all changes
         db.commit()
@@ -108,7 +108,7 @@ def fetch_portfolio_fundamentals():
         return True
         
     except Exception as e:
-        print(f"❌ Error: {e}")
+        print(f"Error: {e}")
         db.rollback()
         return False
         
@@ -127,5 +127,5 @@ if __name__ == "__main__":
     if success:
         print("Portfolio fundamentals fetch completed successfully")
     else:
-        print("❌ Portfolio fundamentals fetch failed")
+        print("Portfolio fundamentals fetch failed")
     print("=" * 60)

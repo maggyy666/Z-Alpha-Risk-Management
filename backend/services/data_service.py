@@ -54,7 +54,7 @@ STRESS_LIMITS = {
     "lookback_regime_days": 60,
     "momentum_window_days": 20,
     "scenario_min_days": 10,
-    "scenario_min_weight_coverage": 0.30,  # min. 30% MV musi być objęte danymi (obniżone z 70%)
+    "scenario_min_weight_coverage": 0.30,  # at least 30% market value must be covered by data
     "clamp_return_abs": 0.40,              # ±40% guard na dzienne zwroty
 }
 
@@ -71,7 +71,7 @@ REGIME_THRESH = {
 class DataService:
     def __init__(self):
         self.ibkr_service = IBKRService()
-        # Stałe tickery które zawsze będą pobierane z IBKR
+        # Static tickers always fetched from IBKR
         self.STATIC_TICKERS = ['SPY', 'MTUM', 'IWM', 'VLUE', 'QUAL']
         
         # Cache system for expensive operations
@@ -145,10 +145,10 @@ class DataService:
                 print(f"✅ Using cached ticker info for {symbol}")
                 return info
 
-            # 1️⃣ – przyjmujemy preload (również {"type": "ETF"}) i NIE robimy IBKR drugi raz
+            # 1) accept preload (incl. {"type": "ETF"}); do not call IBKR again
             fundamental_data = preloaded
 
-            # 2️⃣ – jeżeli preload mówi „ETF" → omijamy IBKR & idziemy prosto do yfinance
+            # 2) if preload marks ETF → skip IBKR and use yfinance
             if fundamental_data and fundamental_data.get("type") == "ETF":
                 print(f"🔎 {symbol} is ETF → skipping IBKR, going straight to yfinance")
                 sector, industry = self.ibkr_service._get_sector_industry_external(symbol)
@@ -160,7 +160,7 @@ class DataService:
                     "company_name": fundamental_data.get("company_name", symbol)
                 }
 
-            # 3️⃣ – jeśli nadal nic nie mamy, dopiero wtedy **JEDEN** call do IBKR / yfinance
+            # 3) if still missing, perform a single IBKR/yfinance call
             if not fundamental_data:
                 if self.ibkr_service.connection and self.ibkr_service.connection.connected:
                     fundamental_data = self.ibkr_service.get_fundamentals(symbol)
@@ -192,7 +192,7 @@ class DataService:
             return info
             
         except Exception as e:
-            print(f"❌ Error ensuring ticker info for {symbol}: {e}")
+            print(f"Error ensuring ticker info for {symbol}: {e}")
             db.rollback()
             return None
     
@@ -311,7 +311,7 @@ class DataService:
                                  .all())
             
             if len(historical_data) < 30:
-                print(f"❌ Not enough data for {symbol} ({len(historical_data)} records)")
+                print(f"Not enough data for {symbol} ({len(historical_data)} records)")
                 return {}
             
             print(f"{symbol}: Found {len(historical_data)} historical records")
@@ -328,7 +328,7 @@ class DataService:
             print(f"{symbol}: Returns shape: {returns.shape}, mean: {np.mean(returns):.6f}")
             
             if len(returns) < 30:
-                print(f"❌ Not enough returns for {symbol}")
+                print(f"Not enough returns for {symbol}")
                 return {}
             
             # Calculate basic statistics
@@ -352,7 +352,7 @@ class DataService:
             
             metrics = {
                 'volatility_pct': forecast_vol,   # %
-                'mean_return_annual': mean_annual,  # ułamek/rok
+                'mean_return_annual': mean_annual,  # fraction per year
                 'mean_return_pct': mean_annual * 100,  # %
                 'sharpe_ratio': sharpe_ratio,
                 'last_price': last_price
@@ -362,7 +362,7 @@ class DataService:
             return metrics
             
         except Exception as e:
-            print(f"❌ Error calculating metrics for {symbol}: {e}")
+            print(f"Error calculating metrics for {symbol}: {e}")
             return {}
     
     # _calculate_forecast_volatility, _ewma_volatility, _garch_volatility, _egarch_volatility moved to backend.quant.volatility
@@ -400,13 +400,13 @@ class DataService:
             portfolio_items = db.query(Portfolio).filter(Portfolio.user_id == user.id).all()
             shares_map = {item.ticker_symbol: item.shares for item in portfolio_items}
 
-            # 1) Zbierz metryki dla wszystkich tickerów
+        # 1) collect metrics for all tickers
             for symbol in all_tickers:
                 print(f"Processing {symbol}...")
                 m = self.calculate_volatility_metrics(db, symbol, forecast_model, risk_free_annual)
                 print(f"{symbol} metrics: {m}")
                 if m:
-                    # Dla statycznych tickerów używamy domyślnej liczby shares
+                    # For static tickers use default shares count
                     shares = shares_map.get(symbol, 1000) if symbol in shares_map else 1000
                     portfolio_data.append({
                         'symbol': symbol,
@@ -524,12 +524,12 @@ class DataService:
             return True
 
         except Exception as e:
-            print(f"❌ Error injecting sample data for {symbol}: {e}")
+            print(f"Error injecting sample data for {symbol}: {e}")
             db.rollback()
             return False 
 
     def _get_close_series(self, db: Session, symbol: str):
-        """Zwraca (dates, closes) posortowane rosnąco, bez NaN/zer."""
+        """Return (dates, closes) ascending; filter NaN and non-positive prices."""
         rows = (db.query(TickerData)
                   .filter(TickerData.ticker_symbol == symbol)
                   .order_by(TickerData.date)
@@ -546,7 +546,7 @@ class DataService:
         return dates, closes
 
     def _log_returns_from_series(self, dates, closes):
-        """Zwraca (ret_dates, log_returns) – dates skrócone o 1."""
+        """Return (ret_dates, log_returns); dates shifted by one for diffs."""
         if len(closes) < 2:
             return [], np.array([])
         rets = np.diff(np.log(closes))
@@ -587,7 +587,7 @@ class DataService:
             dates = [d[0] for d in date_range]
             
             if not dates:
-                print("❌ No historical data found in database")
+                print("No historical data found in database")
                 return {"factor_exposures": [], "r2_data": [], "available_factors": available_factors, "available_tickers": all_tickers}
             
             print(f"Found {len(dates)} dates from {min(dates)} to {max(dates)}")
@@ -630,7 +630,7 @@ class DataService:
                                  .all())
                 
                 if len(ticker_data) < 1:
-                    print(f"❌ Not enough data for {ticker} ({len(ticker_data)} records)")
+                    print(f"Not enough data for {ticker} ({len(ticker_data)} records)")
                     continue
                 
                 # Calculate returns for asset
@@ -644,7 +644,7 @@ class DataService:
                         # Use real SPY data for MARKET factor
                         common = [d for d in asset_ret_dates if d in spy_ret_map]
                         if len(common) < 5:
-                            print(f"❌ Not enough common dates for {ticker} vs SPY ({len(common)} records)")
+                            print(f"Not enough common dates for {ticker} vs SPY ({len(common)} records)")
                             continue
                         
                         # Sort common dates and build vectors for rolling
@@ -681,14 +681,14 @@ class DataService:
                                     "r2": round(max(0.0, min(1.0, r2)), 3)
                                 })
                             except Exception as e:
-                                print(f"❌ Error calculating MARKET beta for {ticker}: {e}")
+                                print(f"Error calculating MARKET beta for {ticker}: {e}")
                                 continue
                     
                     elif factor == "MOMENTUM":
                         # Use real MTUM data (market-neutral)
                         common = [d for d in asset_ret_dates if d in mtum_ret_map and d in spy_ret_map]
                         if len(common) < 5:
-                            print(f"❌ Not enough common dates for {ticker} vs MTUM ({len(common)} records)")
+                            print(f"Not enough common dates for {ticker} vs MTUM ({len(common)} records)")
                             continue
                         
                         common.sort()
@@ -724,14 +724,14 @@ class DataService:
                                     "r2": round(max(0.0, min(1.0, r2)), 3)
                                 })
                             except Exception as e:
-                                print(f"❌ Error calculating MOMENTUM beta for {ticker}: {e}")
+                                print(f"Error calculating MOMENTUM beta for {ticker}: {e}")
                                 continue
                     
                     elif factor == "SIZE":
                         # Use real IWM data (market-neutral)
                         common = [d for d in asset_ret_dates if d in iwm_ret_map and d in spy_ret_map]
                         if len(common) < 5:
-                            print(f"❌ Not enough common dates for {ticker} vs IWM ({len(common)} records)")
+                            print(f"Not enough common dates for {ticker} vs IWM ({len(common)} records)")
                             continue
                         
                         common.sort()
@@ -767,14 +767,14 @@ class DataService:
                                     "r2": round(max(0.0, min(1.0, r2)), 3)
                                 })
                             except Exception as e:
-                                print(f"❌ Error calculating SIZE beta for {ticker}: {e}")
+                                print(f"Error calculating SIZE beta for {ticker}: {e}")
                                 continue
                     
                     elif factor == "VALUE":
                         # Use real VLUE data (market-neutral)
                         common = [d for d in asset_ret_dates if d in vlue_ret_map and d in spy_ret_map]
                         if len(common) < 5:
-                            print(f"❌ Not enough common dates for {ticker} vs VLUE ({len(common)} records)")
+                            print(f"Not enough common dates for {ticker} vs VLUE ({len(common)} records)")
                             continue
                         
                         common.sort()
@@ -810,14 +810,14 @@ class DataService:
                                     "r2": round(max(0.0, min(1.0, r2)), 3)
                                 })
                             except Exception as e:
-                                print(f"❌ Error calculating VALUE beta for {ticker}: {e}")
+                                print(f"Error calculating VALUE beta for {ticker}: {e}")
                                 continue
                     
                     elif factor == "QUALITY":
                         # Use real QUAL data (market-neutral)
                         common = [d for d in asset_ret_dates if d in qual_ret_map and d in spy_ret_map]
                         if len(common) < 5:
-                            print(f"❌ Not enough common dates for {ticker} vs QUAL ({len(common)} records)")
+                            print(f"Not enough common dates for {ticker} vs QUAL ({len(common)} records)")
                             continue
                         
                         common.sort()
@@ -853,7 +853,7 @@ class DataService:
                                     "r2": round(max(0.0, min(1.0, r2)), 3)
                                 })
                             except Exception as e:
-                                print(f"❌ Error calculating QUALITY beta for {ticker}: {e}")
+                                print(f"Error calculating QUALITY beta for {ticker}: {e}")
                                 continue
                     
                     else:
@@ -1025,7 +1025,7 @@ class DataService:
                 item['weight_frac'] = w
                 item['weight'] = w * 100.0  # do UI
             
-            # 2) Sort malejąco po wadze %
+            # 2) sort by descending weight
             portfolio_data.sort(key=lambda x: x['weight'], reverse=True)
             
             # 3) KPI koncentracji
@@ -1055,7 +1055,7 @@ class DataService:
                 'sectors': list(sector_w.keys()),
                 'weights': [v*100.0 for v in sector_w.values()],   # %
             }
-            hhi_sec = sum(v*v for v in sector_w.values())          # ✅ na ułamkach
+            hhi_sec = sum(v*v for v in sector_w.values())          # on fractions
             sector_concentration['hhi'] = hhi_sec
             sector_concentration['effective_sectors'] = 1.0/hhi_sec if hhi_sec>0 else 0.0
             
@@ -1140,7 +1140,7 @@ class DataService:
                 print(f"Debug: {s} - insufficient data")
                 ret_map[s] = ([], np.array([]))
                 continue
-            # przytnij końcówkę (ostatnie ~lookback dni)
+            # trim tail (last ~lookback days)
             dates = dates[-(lookback_days+2):]
             closes = closes[-(lookback_days+2):]
             rd, r = self._log_returns_from_series(dates, closes)
@@ -1149,7 +1149,7 @@ class DataService:
         return ret_map
 
     def _intersect_and_stack(self, ret_map: Dict[str, Any], symbols: List[str]):
-        """Wspólne daty i macierz R [T x N] w kolejności symbols."""
+        """Return (dates, R, active) with common dates; R is [T x N] by symbols."""
         print(f"Debug: Intersecting {symbols}")
         print(f"Debug: ret_map keys: {list(ret_map.keys())}")
         for s in symbols:
@@ -1163,7 +1163,7 @@ class DataService:
         return result
     
     def _get_common_date_range(self, db: Session, symbols: List[str]) -> Dict[str, Any]:
-        """Znajdź wspólny zakres dat dla wszystkich tickerów"""
+        """Find common date range for all tickers."""
         try:
             all_dates = []
             for symbol in symbols:
@@ -1174,11 +1174,11 @@ class DataService:
             if not all_dates:
                 return {"start_date": None, "end_date": None, "total_days": 0}
             
-            # Znajdź wspólny zakres
+            # find common range
             min_date = min(all_dates)
             max_date = max(all_dates)
             
-            # Bezpieczne obliczenie różnicy dni
+            # safe day-diff calc
             total_days = 0
             if min_date and max_date:
                 try:
@@ -1192,12 +1192,12 @@ class DataService:
                 "total_days": total_days
             }
         except Exception as e:
-            print(f"❌ Error getting common date range: {e}")
+            print(f"Error getting common date range: {e}")
             return {"start_date": None, "end_date": None, "total_days": 0}
 
     def get_risk_scoring(self, db: Session, username: str = "admin") -> Dict[str, Any]:
         """MVP risk scoring: szybko i bez spiny."""
-        # 1) wagi i lista tickerów usera
+        # 1) user weights and tickers list
         conc = self.get_concentration_risk_data(db, username)
         if "error" in conc: 
             return {"error": conc["error"]}
@@ -1207,23 +1207,23 @@ class DataService:
         tickers = [p['ticker'] for p in positions]
         w = np.array([p['weight_frac'] for p in positions], dtype=float)  # sum ~1
 
-        # 2) serie zwrotów: tickery + SPY + ETFy faktorowe
+        # 2) return series: tickers + SPY + factor ETFs
         factor_proxies = {"MOMENTUM":"MTUM","SIZE":"IWM","VALUE":"VLUE","QUALITY":"QUAL"}
         needed = list(set(tickers + ["SPY"] + list(factor_proxies.values())))
         ret_map = self._get_return_series_map(db, needed, lookback_days=180)
 
-        # 3) macierz zwrotów pozycji, wspólne daty (ostatnie ~60)
+        # 3) position returns matrix, common dates (last ~60)
         dates, R, active = self._intersect_and_stack(ret_map, tickers)
         if R.size == 0 or len(dates) < 40:
             return {"error":"Insufficient overlapping history"}
         
-        # przeskaluj wagi tylko na aktywne tickery
+        # scale weights to active tickers only
         w_map = {p["ticker"]: p["weight_frac"] for p in positions}
         w = np.array([w_map[s] for s in active], dtype=float)
         w = w / w.sum()  # renormalizuj
         
-        # portfelowe zwroty przy stałych wagach (snapshot) 
-        R = clamp(R, STRESS_LIMITS["clamp_return_abs"])  # spójność z regime/scenariuszami
+        # portfolio returns with fixed weights (snapshot)
+        R = clamp(R, STRESS_LIMITS["clamp_return_abs"])  # align with regime/scenarios
         rp = (R @ w)  # T x 1
         T = len(rp)
         # przytnij do 60dni
@@ -1245,7 +1245,7 @@ class DataService:
         idx_win = {d:i for i,d in enumerate(dates_win)}
         rp_win = np.array([rp[idx_win[d]] for d in dates_mkt], dtype=float)
 
-        # 4) metryki surowe
+        # 4) raw metrics
         # vol ann
         sigma_ann = annualized_vol(rp_win)
         # market beta
@@ -1273,8 +1273,8 @@ class DataService:
         # max drawdown on rp_win
         _, max_dd = drawdown(rp_win)
 
-        # 5) concentration (HHI i Neff)
-        hhi = float(conc["concentration_metrics"]["herfindahl_index"])  # już w [0..1]
+        # 5) concentration (HHI, Neff)
+        hhi = float(conc["concentration_metrics"]["herfindahl_index"])  # already in [0..1]
         neff = float(conc["concentration_metrics"]["effective_positions"])
 
         # 5a) worst historical scenario (stress test)
@@ -1283,7 +1283,7 @@ class DataService:
         if "results" in stress:
             losses = [-r["return_pct"] for r in stress["results"] if r["return_pct"] < 0]
             if losses:
-                worst_loss = max(losses) / 100.0     # na ułamek, np. 0.07 = -7 %
+                worst_loss = max(losses) / 100.0     # fraction, e.g. 0.07 = -7%
 
         # 6) skoring (0..1)
         raw_metrics = {
@@ -1357,7 +1357,7 @@ class DataService:
         }
 
     def _get_returns_between_dates(self, db: Session, symbol: str, start_d: date, end_d: date):
-        """Zwraca (dates, log_returns) w [start_d, end_d] dla symbolu. Może zwrócić [] gdy brak danych."""
+        """Return (dates, log_returns) in [start_d, end_d] for symbol; may return []."""
         rows = (db.query(TickerData)
                   .filter(TickerData.ticker_symbol == symbol,
                           TickerData.date >= start_d,
@@ -1374,7 +1374,7 @@ class DataService:
         # _clamp moved to backend.quant.risk
 
     def _portfolio_snapshot(self, db: Session, username: str = "admin"):
-        """Zwraca listę pozycji (ticker, weight_frac)."""
+        """Return list of (ticker, weight_frac)."""
         conc = self.get_concentration_risk_data(db, username)
         if "error" in conc: 
             return [], 0.0
@@ -1382,7 +1382,7 @@ class DataService:
         w_sum = sum(p.get("weight_frac", 0.0) for p in positions)
         if w_sum <= 0:
             return [], 0.0
-        # normalizacja dla pewności
+        # normalize for safety
         for p in positions:
             p["weight_frac"] = float(p["weight_frac"]) / w_sum
         return positions, 1.0
@@ -1403,7 +1403,7 @@ class DataService:
         if R.size == 0 or len(dates) < 40:
             return {"error":"Insufficient data for regime"}
 
-        # przeskaluj wagi tylko na aktywne tickery
+        # rescale weights for active tickers
         w_map = {p["ticker"]: p["weight_frac"] for p in positions}
         w = np.array([w_map[s] for s in active], dtype=float)
         w = w / w.sum()  # renormalizuj
@@ -1425,7 +1425,7 @@ class DataService:
 
     def get_historical_scenarios(self, db: Session, username: str = "admin",
                                  scenarios: Optional[List[Dict[str, Any]]] = None) -> Dict[str, Any]:
-        """Wylicza PnL i DD dla historycznych scenariuszy. Pomija scenariusze z niskim pokryciem wag lub zbyt krótkie."""
+        """Compute PnL/DD for historical scenarios; skip low-coverage/too-short ones."""
         positions, ok = self._portfolio_snapshot(db, username)
         if not ok or not positions:
             return {"error":"No positions"}
@@ -1457,7 +1457,7 @@ class DataService:
                 excluded.append({"name": name, "reason": "No overlapping data"})
                 continue
 
-            # wspólne daty i macierz
+            # common dates and matrix
             dates, R, active = self._intersect_and_stack(ret_map, included)
             if len(dates) < STRESS_LIMITS["scenario_min_days"]:
                 excluded.append({"name": name, "reason": f"Too few common dates ({len(dates)})"})
@@ -1467,7 +1467,7 @@ class DataService:
             w = np.array([w_map[t] for t in active], dtype=float)
             w = w / w.sum()
 
-            # Calculate scenario PnL and drawdown (bez clampu dla wierności historycznej)
+            # Calculate scenario PnL and drawdown (no clamp to keep historical fidelity)
             ret_pct, max_dd = scenario_pnl(R, w)
 
             analyzed.append({
@@ -1488,7 +1488,7 @@ class DataService:
         }
 
     def get_stress_testing(self, db: Session, username: str = "admin") -> Dict[str, Any]:
-        """Wrapper pod front – łączy Market Regime + Historical Scenarios."""
+        """Frontend wrapper – combine Market Regime and Historical Scenarios."""
         regime = self.get_market_regime(db, username)
         scenarios = self.get_historical_scenarios(db, username)
         return {
@@ -1517,7 +1517,7 @@ class DataService:
         
         if R.size == 0 or len(dates) < 60:
             # Fallback to diagonal correlation if insufficient data
-            print("⚠️ Insufficient data for correlation, using diagonal matrix")
+            print("Warning: Insufficient data for correlation, using diagonal matrix")
             n = len(tickers)
             corr_matrix = np.eye(n)
         else:
@@ -1669,7 +1669,7 @@ class DataService:
     def get_rolling_forecast(self, db: Session, tickers: List[str], model: str, 
                            window: int, username: str = "admin") -> List[Dict[str, Any]]:
         """
-        Zwraca listę słowników: {date, ticker, vol_pct}
+        Return list of dicts: {date, ticker, vol_pct}
         – gotowe do wykresu liniowego.
         """
         try:
@@ -1680,7 +1680,7 @@ class DataService:
             lookback = 3*365      # 3 lata – wystarczy dla 252-rolling
             ret_map = self._get_return_series_map(db, tickers, lookback_days=lookback)
 
-            # --- 2. Znajdź wspólne daty dla wszystkich tickerów ---
+            # 2) find common dates for all tickers
             common_dates = None
             for tkr in tickers:
                 if tkr == "PORTFOLIO":
@@ -1697,13 +1697,13 @@ class DataService:
             
             common_dates = sorted(list(common_dates))
             
-            # --- 3. Linie dla pojedynczych tickerów (tylko wspólne daty) ---
+            # 3) lines for individual tickers (common dates only)
             out = []
             for tkr in tickers:
                 if tkr == "PORTFOLIO":
                     continue
                 dates, rets = ret_map.get(tkr, ([], np.array([])))
-                if len(rets) < window:          # za mało danych
+                if len(rets) < window:          # not enough data
                     continue
                 
                 # Create date index for fast lookup
@@ -1720,13 +1720,13 @@ class DataService:
                                 "vol_pct": round(float(σ), 4)
                             })
 
-            # --- 4. Linia „PORTFOLIO" (jeśli chcą) ---
+            # 4) "PORTFOLIO" line (optional)
             if "PORTFOLIO" in tickers:
                 conc = self.get_concentration_risk_data(db, username)
                 if "error" not in conc and conc["portfolio_data"]:
                     w_map = {p["ticker"]: p["weight_frac"] for p in conc["portfolio_data"]}
                     active = list(w_map.keys())
-                    # uzupełnij ret_map, jeśli brak któregoś aktywnego tickera
+                    # fill ret_map if any active ticker missing
                     if any(a not in ret_map for a in active):
                         ret_map.update(self._get_return_series_map(db, active, lookback_days=lookback))
 
@@ -1749,7 +1749,7 @@ class DataService:
                                         "vol_pct": round(float(σ), 4)
                                     })
 
-            # sort (frontend nie musi nic grzebać)
+            # sort (frontend does not need to transform)
             out.sort(key=lambda d: (d["date"], d["ticker"]))
             
             # Get common date range for all tickers
@@ -1768,18 +1768,17 @@ class DataService:
 
     def get_latest_factor_exposures(self, db: Session, username: str = "admin") -> Dict[str, Any]:
         """
-        Zwraca macierz β (ticker × factor) oraz listę dat, 
-        wybierając NAJNOWSZY wpis dla każdej pary (ticker,factor).
+        Return β matrix (ticker × factor) and dates, selecting latest entry for each (ticker,factor).
         """
         try:
             data = self.get_factor_exposure_data(db, username)
             exposures = data["factor_exposures"]      # ~100 k wierszy
 
-            # 1) upakuj tylko to co potrzebne - oszczędność RAM
+            # 1) pack only necessary fields to save RAM
             latest_map: Dict[tuple, tuple] = {}
             for row in exposures:
                 key = (row["ticker"], row["factor"])
-                # jeśli widzimy nowszą datę → podmień
+                # replace if newer date found
                 if key not in latest_map or row["date"] > latest_map[key][0]:
                     latest_map[key] = (row["date"], row["beta"])
 
@@ -1787,15 +1786,15 @@ class DataService:
             factors = data["available_factors"]
             tickers = data["available_tickers"] + ["PORTFOLIO"]
 
-            # 2) portfelowe bety - ważona suma wszystkich spółek użytkownika
+            # 2) portfolio betas - weighted sum of all user's stocks
             port_betas = {f: 0.0 for f in factors}
             try:
-                # Pobierz portfolio użytkownika z wagami
+                # fetch user portfolio with weights
                 conc = self.get_concentration_risk_data(db, username)
                 if "error" not in conc and conc["portfolio_data"]:
                     w_map = {p["ticker"]: p["weight_frac"] for p in conc["portfolio_data"]}
                     
-                    # Oblicz ważoną sumę β dla każdego czynnika (bez normalizacji)
+                    # weighted sum per factor (no normalization)
                     for factor in factors:
                         for ticker, weight in w_map.items():
                             if (ticker, factor) in latest_map:
@@ -1805,7 +1804,7 @@ class DataService:
                 print(f"Error calculating portfolio betas: {e}")
                 pass
 
-            # 3) ułóż końcową listę
+            # 3) arrange final list
             table = []
             for t in tickers:
                 row = {"ticker": t}
@@ -1830,7 +1829,7 @@ class DataService:
     def get_portfolio_summary(self, db: Session, username: str = "admin") -> Dict[str, Any]:
         """
         Zwraca agregowane dane dla Portfolio Summary dashboard.
-        Łączy dane z risk_scoring, concentration_risk, forecast_metrics i forecast_risk_contribution.
+        Combine outputs of risk_scoring, concentration_risk, forecast_metrics, forecast_risk_contribution.
         """
         try:
             # 1) Risk Scoring
@@ -1968,7 +1967,7 @@ class DataService:
             print(f"Debug: {ticker} + SPY: {len(dates_2)} dates, R shape: {R_2.shape}")
             
             if R_2.size < 30:
-                print(f"Warning: {ticker}: <30 wspólnych obserwacji, pomijam")
+                print(f"Warning: {ticker}: <30 common observations, skipping")
                 continue
 
             # Calculate metrics for this ticker

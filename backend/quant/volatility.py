@@ -1,14 +1,11 @@
-"""
-Czyste modele zmienności – brak zależności od SQLAlchemy
-ani wewnętrznych klas projektu.
-"""
+"""Standalone volatility models (no DB/project dependencies)."""
 
 from math import exp, log, sqrt
 import numpy as np
 from arch import arch_model
 import warnings
 
-# -------- helpers -------- #
+# Helpers
 
 def lambda_from_half_life(days: int) -> float:
     """λ = 2^(-1/HL)"""
@@ -20,7 +17,7 @@ def log_returns(prices):
     return np.diff(np.log(prices))
 
 
-# -------- główne modele -------- #
+# Core models
 
 def ewma_vol(returns, lam=0.94, annualize=True):
     if len(returns) < 2:
@@ -53,7 +50,7 @@ def egarch_vol(returns, omega=-0.1, alpha=0.1, gamma=0.1, beta=0.9, annualize=Tr
     return sigma * sqrt(252) if annualize else sigma
 
 
-# -------- wygodny dispatcher -------- #
+# Dispatcher
 
 def annualized_vol(returns: np.ndarray) -> float:
     """Calculate annualized volatility from returns"""
@@ -132,15 +129,15 @@ def test_vol_reasonable(returns: np.ndarray, symbol: str = "UNKNOWN") -> bool:
         
         # Check if volatility is reasonable
         if sigma > 3.0:  # > 300% annualized
-            print(f"⚠️  {symbol}: EGARCH volatility {sigma*100:.1f}% > 300% – suspicious!")
+            print(f"Warning: {symbol}: EGARCH volatility {sigma*100:.1f}% > 300% – suspicious!")
             return False
         elif sigma < 0.05:  # < 5% annualized
-            print(f"⚠️  {symbol}: EGARCH volatility {sigma*100:.1f}% < 5% – suspicious!")
+            print(f"Warning: {symbol}: EGARCH volatility {sigma*100:.1f}% < 5% – suspicious!")
             return False
         else:
             print(f"{symbol}: EGARCH volatility {sigma*100:.1f}% – reasonable")
             return True
             
     except Exception as e:
-        print(f"❌ {symbol}: EGARCH volatility test failed: {e}")
+        print(f"{symbol}: EGARCH volatility test failed: {e}")
         return False

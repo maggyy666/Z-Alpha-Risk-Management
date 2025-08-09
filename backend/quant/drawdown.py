@@ -1,3 +1,15 @@
+"""Drawdown utilities.
+
+Args/Inputs:
+- returns: np.ndarray daily log or simple returns.
+
+Provides:
+- drawdown: series and maximum drawdown.
+
+Returns:
+- Tuple[np.ndarray, float].
+"""
+
 import numpy as np
 
 def drawdown(returns: np.ndarray) -> tuple[np.ndarray, float]:

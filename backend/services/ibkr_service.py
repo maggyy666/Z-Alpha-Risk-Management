@@ -166,11 +166,11 @@ class IBKRService:
                     return True
                 time.sleep(0.05)
             
-            print("❌ Timeout connecting to IBKR or waiting for nextValidId")
+            print("Timeout connecting to IBKR or waiting for nextValidId")
             return False
             
         except Exception as e:
-            print(f"❌ Error connecting to IBKR: {e}")
+            print(f"Error connecting to IBKR: {e}")
             return False
     
     def get_fundamentals(self, symbol: str, report_type: str = "ReportSnapshot") -> Optional[Dict[str, Any]]:
@@ -220,24 +220,24 @@ class IBKRService:
                 elif req_id in self.connection.fundamental_error:
                     error_code = self.connection.fundamental_error[req_id]
                     if error_code == 430:  # fundamentals not available - likely ETF
-                        print(f"⚠️ Fundamentals not available for {symbol} (error 430) - likely ETF")
+                        print(f"Warning: Fundamentals not available for {symbol} (error 430) - likely ETF")
                         self.connection.fundamental_xml.pop(req_id, None)
                         return {
                             'type': 'ETF',
                             'company_name': symbol
                         }
                     else:
-                        print(f"⚠️ IBKR error {error_code} for {symbol}")
+                        print(f"Warning: IBKR error {error_code} for {symbol}")
                         break
                 time.sleep(0.1)
             
             # Timeout or error - cancel request and return None
             self.connection.cancelFundamentalData(req_id)
-            print(f"❌ Timeout getting fundamentals for {symbol}")
+            print(f"Timeout getting fundamentals for {symbol}")
             return None
             
         except Exception as e:
-            print(f"❌ Error getting fundamentals for {symbol}: {e}")
+            print(f"Error getting fundamentals for {symbol}: {e}")
             return None
     
     def _parse_simple_xml(self, xml: str, symbol: str) -> dict:
@@ -270,7 +270,7 @@ class IBKRService:
                 }
                 
         except Exception as e:
-            print(f"❌ Error parsing XML for {symbol}: {e}")
+            print(f"Error parsing XML for {symbol}: {e}")
             return {
                 'type': 'STOCK',
                 'company_name': symbol
@@ -305,7 +305,7 @@ class IBKRService:
             }
             
         except Exception as e:
-            print(f"❌ Error getting external data for {symbol}: {e}")
+            print(f"Error getting external data for {symbol}: {e}")
             return None
     
     def _get_sector_industry_external(self, symbol: str) -> tuple:
@@ -326,7 +326,7 @@ class IBKRService:
             return sector, industry
             
         except Exception as e:
-            print(f"⚠️ Could not get sector/industry for {symbol} with yfinance: {e}")
+            print(f"Warning: Could not get sector/industry for {symbol} with yfinance: {e}")
         return None, None
     
     def _map_etf_to_sector_industry(self, symbol: str, info: dict) -> tuple:
@@ -396,10 +396,10 @@ class IBKRService:
                 print(f"yfinance market cap for {symbol}: {market_cap}")
                 return float(market_cap)
             else:
-                print(f"⚠️ No market cap data for {symbol} in yfinance")
+                print(f"Warning: No market cap data for {symbol} in yfinance")
                 
         except Exception as e:
-            print(f"⚠️ Could not get market cap for {symbol} with yfinance: {e}")
+            print(f"Warning: Could not get market cap for {symbol} with yfinance: {e}")
         return None
 
     def get_contract_details(self, symbol: str) -> Optional[Dict[str, Any]]:
@@ -441,15 +441,15 @@ class IBKRService:
                         print(f"Contract details for {symbol}: {result}")
                         return result
                     except (IndexError, AttributeError) as e:
-                        print(f"⚠️ Contract details parsing error for {symbol}: {e}")
+                        print(f"Warning: Contract details parsing error for {symbol}: {e}")
                         break
                 time.sleep(0.1)
             
-            print(f"❌ Timeout getting contract details for {symbol}")
+            print(f"Timeout getting contract details for {symbol}")
             return None
             
         except Exception as e:
-            print(f"❌ Error getting contract details for {symbol}: {e}")
+            print(f"Error getting contract details for {symbol}: {e}")
             return None
 
     def get_historical_data(self, symbol: str, duration: str = "9 Y", 
@@ -483,11 +483,11 @@ class IBKRService:
                     return data
                 time.sleep(0.1)
             
-            print(f"❌ Timeout getting historical data for {symbol}")
+            print(f"Timeout getting historical data for {symbol}")
             return None
             
         except Exception as e:
-            print(f"❌ Error getting historical data for {symbol}: {e}")
+            print(f"Error getting historical data for {symbol}: {e}")
             return None
 
     def get_bid_ask_spread(self, symbol: str, timeout: int = 15) -> Optional[Dict[str, Any]]:
@@ -597,7 +597,7 @@ class IBKRService:
                 time.sleep(0.05)
             self.connection.cancelMktData(req_id)
         except Exception as e:
-            print("⚠️ IBKR snapshot failed:", e)
+            print("Warning: IBKR snapshot failed:", e)
 
         # -- fallback: yfinance --------------------------
         try:
@@ -608,9 +608,9 @@ class IBKRService:
                 print(f"yfinance price for {symbol}: ${price}")
                 return price
             else:
-                print(f"⚠️ No price data for {symbol} in yfinance")
+                print(f"Warning: No price data for {symbol} in yfinance")
         except Exception as e:
-            print(f"⚠️ yfinance failed for {symbol}: {e}")
+            print(f"Warning: yfinance failed for {symbol}: {e}")
         return None
     
     def disconnect(self):

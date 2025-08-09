@@ -36,7 +36,7 @@ def complete_setup():
                 tickers_with_data.add(ticker)
                 print(f"{ticker}: {count} records")
             else:
-                print(f"❌ {ticker}: No data")
+                print(f"{ticker}: No data")
         
         # Get tickers without data
         tickers_needing_data = [t for t in tickers if t not in tickers_with_data]
@@ -63,9 +63,9 @@ def complete_setup():
                     count = db.query(TickerData).filter(TickerData.ticker_symbol == ibkr_symbol).count()
                     print(f"{ticker}: Added {count} records")
                 else:
-                    print(f"❌ {ticker}: Failed to fetch data")
+                    print(f"{ticker}: Failed to fetch data")
             except Exception as e:
-                print(f"❌ {ticker}: Error - {e}")
+                print(f"{ticker}: Error - {e}")
                 continue
         
         # Show final summary
@@ -79,12 +79,12 @@ def complete_setup():
                 latest = db.query(TickerData).filter(TickerData.ticker_symbol == ticker).order_by(TickerData.date.desc()).first()
                 print(f"{ticker}: {count} records, latest: {latest.date} @ ${latest.close_price}")
             else:
-                print(f"❌ {ticker}: No data")
+                print(f"{ticker}: No data")
         
         print(f"\n🎉 Setup completed!")
         
     except Exception as e:
-        print(f"❌ Error in complete_setup: {e}")
+        print(f"Error in complete_setup: {e}")
     finally:
         db.close()
 

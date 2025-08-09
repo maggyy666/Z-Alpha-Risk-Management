@@ -238,13 +238,13 @@ class PortfolioDataService:
         try:
             # Authenticate
             if not self.ibkr_api.authenticate():
-                print("❌ Failed to authenticate with IBKR")
+                print("Failed to authenticate with IBKR")
                 return []
             
             # Get accounts
             accounts = self.ibkr_api.get_accounts()
             if not accounts:
-                print("❌ No accounts found")
+                print("No accounts found")
                 return []
             
             account_id = accounts[0].get('accountId')  # Use first account
@@ -252,14 +252,14 @@ class PortfolioDataService:
             # Get positions
             positions = self.ibkr_api.get_positions(account_id)
             if not positions:
-                print("❌ No positions found")
+                print("No positions found")
                 return []
             
             # Filter for stocks/ETFs only
             stock_positions = [p for p in positions if p.get('assetClass') in ['STK', 'ETF']]
             
             if not stock_positions:
-                print("❌ No stock/ETF positions found")
+                print("No stock/ETF positions found")
                 return []
             
             # Get conids for market data

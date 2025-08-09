@@ -1,3 +1,16 @@
+"""Realized performance/risk metrics.
+
+Args/Inputs:
+- ret: DataFrame of daily returns; R: np.ndarray (T x N); active tickers list.
+
+Provides:
+- compute_realized_metrics: per-ticker table (annual return/vol, Sharpe, Sortino,
+  skew, kurtosis, max DD, VaR/CVaR, hit ratio, beta, captures, TE, IR).
+
+Returns:
+- pandas.DataFrame indexed by ticker.
+"""
+
 import numpy as np
 import pandas as pd
 import scipy.stats as st
@@ -7,8 +20,8 @@ from .drawdown import drawdown
 from .var import var_cvar
 from .linear import ols_beta
 
-ANNUAL = 252   # dni handlowe
-LOG = True     # czy używamy log-zwrotów
+ANNUAL = 252
+LOG = True
 
 def to_simple(x):
     """Convert log returns to simple returns"""
@@ -19,15 +32,21 @@ def annual_mean(mu_d):
     return (np.exp(mu_d*ANNUAL) - 1) if LOG else mu_d*ANNUAL
 
 def compute_realized_metrics(ret: pd.DataFrame,
-                           benchmark_ndx: str = "SPY",  # Changed from NDX to SPY
+       benchmark_ndx: str = "SPY",
                            benchmark_spy: str = "SPY",
                            R: np.ndarray = None,
                            active: List[str] = None) -> pd.DataFrame:
-    """
-    ret – DataFrame dziennych log-stop zwrotu; kolumny = tickery (+ SPY, PORTFOLIO)
-    R – numpy array [T x N] z zwrotami
-    active – lista aktywnych symboli
-    Zwraca tabelę z kolumnami jak na screenie.
+    """Compute realized metrics table for active symbols.
+
+    Args:
+      ret: DataFrame of daily (log) returns; columns are tickers (incl. SPY/PORTFOLIO).
+      benchmark_ndx: benchmark symbol.
+      benchmark_spy: kept for compatibility.
+      R: returns matrix (T x N) aligned to active.
+      active: list of tickers.
+
+    Returns:
+      DataFrame with performance and risk measures per ticker.
     """
     
     tbl = []
@@ -43,32 +62,24 @@ def compute_realized_metrics(ret: pd.DataFrame,
         if len(r) < 30:  # Minimum observations
             continue
 
-        # ------------- podstawowe staty -----------------
-        s = basic_stats(r)                            # mean_daily, std_daily, sharpe, sortino
+        s = basic_stats(r)
         
-        # Poprawka dla log-zwrotów
-        mu_a   = annual_mean(s["mean_daily"])*100    # %
-        vol_a  = s["std_daily"]*np.sqrt(ANNUAL)*100  # % (dla log ≈ OK)
+        mu_a   = annual_mean(s["mean_daily"]) * 100
+        vol_a  = s["std_daily"] * np.sqrt(ANNUAL) * 100
         sharpe = s["sharpe_ratio"]
         sortino= s["sortino_ratio"]
 
-        # -------------------------------------------------
         skew    = st.skew(r, bias=False)
-        kurtosis= st.kurtosis(r, fisher=False, bias=False)  # 3=normal
+        kurtosis= st.kurtosis(r, fisher=False, bias=False)
 
-        # ---------------- max DD -------------------------
         _, mdd = drawdown(r)
-        max_dd = mdd*100                              # %
+        max_dd = mdd * 100
 
-        # -------------- VaR / CVaR -----------------------
-        # Dla log-zwrotów przekazujemy większe mu, sigma
         var_pct, cvar_pct = var_cvar(s["std_daily"], s["mean_daily"], 0.95)
 
-        # -------------- hit ratio ------------------------
-        hit_ratio = (r > 0).mean()*100                # %
+        hit_ratio = (r > 0).mean() * 100
 
-        # -------------- bety -----------------------------
-        # Find benchmark index in active symbols
+        # Beta vs benchmark
         benchmark_idx = None
         if active is not None:
             try:
@@ -83,13 +94,13 @@ def compute_realized_metrics(ret: pd.DataFrame,
             beta_ndx = np.nan
             beta_spy = np.nan
 
-        # -------------- up / down capture ---------------
+        # Up/Down capture
         if benchmark_idx is not None and R is not None:
             b = R[:, benchmark_idx]
             up   = b > 0
             down = b < 0
             
-            # Calculate cumulative returns for up/down periods - POPRAWKA DLA LOG-ZWROTÓW
+            # Cumulative returns during up/down periods (log to simple)
             if up.any():
                 # Up capture: ratio of cumulative returns during up periods
                 r_up_cum = np.exp(r[up].sum()) - 1
@@ -102,7 +113,6 @@ def compute_realized_metrics(ret: pd.DataFrame,
                 # Down capture: ratio of cumulative returns during down periods
                 r_down_cum = np.exp(r[down].sum()) - 1
                 b_down_cum = np.exp(b[down].sum()) - 1
-                # Używamy abs() dla down capture żeby znak benchmarku nie odwracał sensu
                 down_cap = (r_down_cum / abs(b_down_cum) * 100) if b_down_cum != 0 else np.nan
             else:
                 down_cap = np.nan
@@ -110,8 +120,7 @@ def compute_realized_metrics(ret: pd.DataFrame,
             up_cap = np.nan
             down_cap = np.nan
 
-        # -------------- tracking error & IR -------------
-        # TE = std dev różnicy
+        # Tracking error & Information Ratio
         if benchmark_idx is not None and R is not None:
             b = R[:, benchmark_idx]
             te = np.std(r - b, ddof=1) * np.sqrt(ANNUAL) * 100

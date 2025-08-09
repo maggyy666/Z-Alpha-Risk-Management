@@ -1,19 +1,28 @@
+"""Rolling metrics for time series.
+
+Args/Inputs:
+- ret: DataFrame of returns; metric: str; window; ticker symbol.
+
+Provides:
+- rolling_metric: rolling series for vol/sharpe/return/maxdd/beta.
+
+Returns:
+- pandas.Series aligned to dates.
+"""
+
 import pandas as pd
 import numpy as np
 from typing import Dict, Any, List
 from .stats import basic_stats
 
 ANNUAL = 252
-ROLL_WIN = 21          # 1 miesiąc; front wysyła inny? – przekaż parametrem
+ROLL_WIN = 21
 
 def rolling_metric(ret: pd.DataFrame,
-                   metric: str = "vol",      # vol | sharpe | return | drawdown …
+                   metric: str = "vol",
                    window: int = ROLL_WIN,
                    ticker: str = "PORTFOLIO") -> pd.Series:
-    """
-    Zwraca serię rolling-metric dla wskazanego tickera.
-    index = data, values = % lub bezw.
-    """
+    """Return rolling metric series for the ticker (index=dates)."""
     r = ret[ticker].dropna()
 
     if metric == "vol":
@@ -37,6 +46,6 @@ def rolling_metric(ret: pd.DataFrame,
             return ols_beta(x.values, benchmark.values)[0]
         f = beta_func
     else:
-        raise ValueError("Nieobsługiwany metric")
+        raise ValueError("Unsupported metric")
 
     return r.rolling(window).apply(f, raw=False).dropna()

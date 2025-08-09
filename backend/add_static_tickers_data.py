@@ -36,12 +36,12 @@ def add_static_tickers_data():
             if success:
                 print(f"✅ Added sample data for {ticker}")
             else:
-                print(f"❌ Failed to add sample data for {ticker}")
+                print(f"Failed to add sample data for {ticker}")
         
         print("✅ Static tickers data added!")
         
     except Exception as e:
-        print(f"❌ Error adding static tickers data: {e}")
+        print(f"Error adding static tickers data: {e}")
     finally:
         db.close()
 

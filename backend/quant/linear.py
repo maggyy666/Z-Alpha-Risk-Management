@@ -1,3 +1,15 @@
+"""Linear models helpers.
+
+Args/Inputs:
+- y, x: np.ndarray aligned series.
+
+Provides:
+- ols_beta: OLS beta and R^2 for y on x.
+
+Returns:
+- Tuple[beta: float, r_squared: float].
+"""
+
 import numpy as np
 
 def ols_beta(y: np.ndarray, x: np.ndarray) -> tuple[float, float]:

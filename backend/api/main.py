@@ -1,3 +1,11 @@
+"""FastAPI application exposing portfolio risk analytics endpoints.
+
+This API provides authentication, portfolio initialization, and read-only
+analytics (volatility, factor exposures, concentration, stress tests,
+covariance matrices, rolling metrics, liquidity, and summary). It relies on
+database-backed services and is intended for local development/testing.
+"""
+
 from fastapi import FastAPI, Depends, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.orm import Session
@@ -6,12 +14,11 @@ from services.data_service import DataService
 from database.models.user import User
 from database.models.portfolio import Portfolio
 from database.models.ticker_data import TickerData
-# from services.ibkr_client_portal import PortfolioDataService  # Not needed for now
+from database.models.ticker import TickerInfo
 from typing import List, Dict, Any
 from pydantic import BaseModel
 import uvicorn
 
-# Pydantic models for login
 class LoginRequest(BaseModel):
     username: str
     password: str
@@ -21,42 +28,34 @@ class LoginResponse(BaseModel):
     message: str
     username: str = None
 
-# Pydantic models for portfolio management
 class PortfolioRequest(BaseModel):
     username: str
-    tickers: List[str]  # List of ticker symbols
+    tickers: List[str]
 
 class PortfolioResponse(BaseModel):
     success: bool
     message: str
     tickers: List[str] = []
 
-# Session management
 class SessionResponse(BaseModel):
     logged_in: bool
     username: str = None
     email: str = None
 
-# Create tables
 Base.metadata.create_all(bind=engine)
 
 app = FastAPI(title="IBKR Portfolio API", version="1.0.0")
 
-# Add CORS middleware
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000", "http://localhost:3001"],  # React app + Landing page
+    allow_origins=["http://localhost:3000", "http://localhost:3001"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
-# Initialize services
 data_service = DataService()
-# portfolio_service = PortfolioDataService()  # Not needed for now
 
-# Portfolio symbols (fallback)
-# Portfolio symbols are now managed through user portfolios
 
 @app.get("/")
 def read_root():
@@ -132,7 +131,7 @@ def initialize_portfolio(db: Session = Depends(get_db)):
             if success:
                 print(f"Injected sample data for {symbol}")
             else:
-                print(f"❌ Failed to inject sample data for {symbol}")
+                print(f"Failed to inject sample data for {symbol}")
         
         return {
             "message": f"Initialized {len(tickers)} tickers",
