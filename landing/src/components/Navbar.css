@@ -1,0 +1,161 @@
+.zalpha-navbar {
+  background: #ffffff;
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 1000;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+}
+
+.container {
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 0 0; /* Remove padding to allow logo to go to far left */
+}
+
+.navbar-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  height: 70px; /* Slightly taller for bigger logo */
+  padding: 0 20px 0 0; /* Only right padding, logo goes to edge */
+}
+
+.brand {
+  display: flex;
+  align-items: center;
+  gap: 16px; /* Increased gap for bigger logo */
+  cursor: pointer;
+  background: none;
+  border: none;
+  padding: 0 0 0 20px; /* Add left padding to brand itself */
+  margin-left: 0; /* Ensure it touches the edge */
+}
+
+/* Enhanced logo style - bigger and more prominent */
+.logo { display: flex; align-items: center; gap: 16px; }
+.logo-symbol { 
+  font-size: 32px; /* Increased from 24px */
+  font-weight: 700; 
+  color: #1976d2; /* Match brand color */
+  font-family: 'Times New Roman', serif; 
+  width: 40px; /* Set fixed width */
+  height: 40px; /* Set fixed height */
+  background-color: #1976d2;
+  color: white;
+  border-radius: 6px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.logo-text { display: flex; align-items: center; gap: 10px; }
+.logo-main { 
+  font-size: 22px; /* Increased from 18px */
+  font-weight: 700; 
+  color: #1976d2; /* Match brand color */
+  letter-spacing: 0.5px; 
+  text-transform: uppercase;
+}
+.logo-separator { 
+  font-size: 20px; /* Increased from 16px */
+  color: #1976d2; 
+  font-weight: 300; 
+}
+.logo-sub { 
+  font-size: 20px; /* Increased from 16px */
+  color: #1976d2; 
+  font-weight: 400; 
+  font-family: serif;
+}
+
+/* Brand address below logo */
+
+.desktop-nav { display: none; gap: 8px; }
+.desktop-right { display: none; gap: 16px; align-items: center; }
+
+.nav-link {
+  color: #1976d2;
+  text-decoration: none;
+  padding: 8px 12px;
+  font-size: 0.875rem;
+  font-weight: 500;
+  transition: all 0.2s ease;
+}
+.nav-link.hover { text-decoration: underline; text-underline-offset: 4px; }
+
+.lang { display: flex; align-items: center; gap: 4px; color: #1976d2; font-size: 0.875rem; font-weight: 500; }
+
+.login-btn {
+  background: #ffffff;
+  border: 1px solid #1976d2;
+  color: #1976d2;
+  padding: 8px 16px;
+  border-radius: 4px;
+  font-size: 0.875rem;
+  font-weight: 500;
+  cursor: pointer;
+}
+
+.mobile-menu-btn button{ color:#1976d2; padding:8px; background:none; border:none; cursor:pointer; }
+
+.mobile-nav { padding: 8px 0 12px; background: #ffffff; }
+.mobile-actions { display:flex; align-items:center; justify-content: space-between; padding: 8px 12px; margin-top: 8px; border-top: 1px solid #dadce0; }
+
+@media (min-width: 900px) {
+  .desktop-nav { display: flex; }
+  .desktop-right { display: flex; }
+  .mobile-menu-btn { display: none; }
+}
+
+@media (max-width: 768px) {
+  .navbar-row {
+    height: 60px; /* Smaller on mobile */
+    padding: 0 15px 0 0; /* Less padding */
+  }
+  
+  .brand {
+    padding: 0 0 0 15px; /* Less padding on mobile */
+    gap: 12px; /* Smaller gap */
+  }
+  
+  .logo-symbol {
+    font-size: 28px; /* Slightly smaller on mobile */
+    width: 35px;
+    height: 35px;
+  }
+  
+  .logo-main {
+    font-size: 18px; /* Smaller on mobile */
+  }
+  
+  .logo-separator {
+    font-size: 16px;
+  }
+  
+  .logo-sub {
+    font-size: 16px;
+  }
+
+}
+
+@media (max-width: 480px) {
+  .logo-text {
+    gap: 6px; /* Even smaller gap on very small screens */
+  }
+  
+  .logo-main {
+    font-size: 16px;
+  }
+  
+  .logo-separator {
+    font-size: 14px;
+  }
+  
+  .logo-sub {
+    font-size: 14px;
+  }
+
+}
+
+
