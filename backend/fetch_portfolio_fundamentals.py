@@ -40,7 +40,7 @@ def fetch_portfolio_fundamentals():
             return False
         
         tickers = [item.ticker_symbol for item in portfolio_items]
-        print(f"📊 Found {len(tickers)} portfolio tickers: {', '.join(tickers)}")
+        print(f"Found {len(tickers)} portfolio tickers: {', '.join(tickers)}")
         
         # Connect to IBKR
         print("🔌 Connecting to IBKR...")
@@ -48,7 +48,7 @@ def fetch_portfolio_fundamentals():
             print("❌ Failed to connect to IBKR")
             return False
         
-        print("✅ Connected to IBKR successfully")
+        print("Connected to IBKR successfully")
         
         # Fetch fundamental data for each ticker
         success_count = 0
@@ -62,7 +62,7 @@ def fetch_portfolio_fundamentals():
                 fundamental_data = ibkr_service.get_fundamentals(ticker)
                 
                 if fundamental_data:
-                    print(f"✅ Fundamental data received for {ticker}:")
+                    print(f"Fundamental data received for {ticker}:")
                     print(f"   Industry: {fundamental_data.get('industry')}")
                     print(f"   Sector: {fundamental_data.get('sector')}")
                     print(f"   Market Cap: {fundamental_data.get('market_cap')}")
@@ -80,7 +80,7 @@ def fetch_portfolio_fundamentals():
                     ticker_info.company_name = fundamental_data.get("company_name")
                     ticker_info.updated_at = datetime.now(timezone.utc)
                     
-                    print(f"✅ Updated ticker info for {ticker}")
+                    print(f"Updated ticker info for {ticker}")
                     success_count += 1
                     
                 else:
@@ -91,10 +91,10 @@ def fetch_portfolio_fundamentals():
         
         # Commit all changes
         db.commit()
-        print(f"\n✅ Successfully processed {success_count}/{total_count} tickers")
+        print(f"\nSuccessfully processed {success_count}/{total_count} tickers")
         
         # Show summary
-        print("\n📊 DATABASE SUMMARY:")
+        print("\nDATABASE SUMMARY:")
         all_tickers = db.query(TickerInfo).all()
         print(f"Total ticker_info records: {len(all_tickers)}")
         
@@ -125,7 +125,7 @@ if __name__ == "__main__":
     
     print("=" * 60)
     if success:
-        print("✅ Portfolio fundamentals fetch completed successfully")
+        print("Portfolio fundamentals fetch completed successfully")
     else:
         print("❌ Portfolio fundamentals fetch failed")
     print("=" * 60)

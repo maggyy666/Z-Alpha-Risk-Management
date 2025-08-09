@@ -34,7 +34,7 @@ def complete_setup():
             count = db.query(TickerData).filter(TickerData.ticker_symbol == ticker).count()
             if count > 0:
                 tickers_with_data.add(ticker)
-                print(f"✅ {ticker}: {count} records")
+                print(f"{ticker}: {count} records")
             else:
                 print(f"❌ {ticker}: No data")
         
@@ -61,7 +61,7 @@ def complete_setup():
                 success = data_service.fetch_and_store_historical_data(db, ibkr_symbol)
                 if success:
                     count = db.query(TickerData).filter(TickerData.ticker_symbol == ibkr_symbol).count()
-                    print(f"✅ {ticker}: Added {count} records")
+                    print(f"{ticker}: Added {count} records")
                 else:
                     print(f"❌ {ticker}: Failed to fetch data")
             except Exception as e:
@@ -77,7 +77,7 @@ def complete_setup():
             count = db.query(TickerData).filter(TickerData.ticker_symbol == ticker).count()
             if count > 0:
                 latest = db.query(TickerData).filter(TickerData.ticker_symbol == ticker).order_by(TickerData.date.desc()).first()
-                print(f"✅ {ticker}: {count} records, latest: {latest.date} @ ${latest.close_price}")
+                print(f"{ticker}: {count} records, latest: {latest.date} @ ${latest.close_price}")
             else:
                 print(f"❌ {ticker}: No data")
         

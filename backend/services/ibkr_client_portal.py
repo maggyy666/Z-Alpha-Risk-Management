@@ -36,7 +36,7 @@ class IBKRClientPortalAPI:
                 return False
                 
             self.authenticated = True
-            print("✅ Successfully authenticated with IBKR Client Portal")
+            print("Successfully authenticated with IBKR Client Portal")
             return True
             
         except Exception as e:

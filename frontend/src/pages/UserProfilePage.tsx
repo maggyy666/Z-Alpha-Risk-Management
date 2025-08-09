@@ -110,7 +110,7 @@ const UserProfilePage: React.FC = () => {
                     }}
                   />
                   <div className="photo-placeholder hidden">
-                    <span className="photo-icon">👤</span>
+                    <span className="photo-icon"></span>
                   </div>
                 </div>
               </div>

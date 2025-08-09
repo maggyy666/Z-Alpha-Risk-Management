@@ -138,7 +138,7 @@ def test_vol_reasonable(returns: np.ndarray, symbol: str = "UNKNOWN") -> bool:
             print(f"⚠️  {symbol}: EGARCH volatility {sigma*100:.1f}% < 5% – suspicious!")
             return False
         else:
-            print(f"✅ {symbol}: EGARCH volatility {sigma*100:.1f}% – reasonable")
+            print(f"{symbol}: EGARCH volatility {sigma*100:.1f}% – reasonable")
             return True
             
     except Exception as e:

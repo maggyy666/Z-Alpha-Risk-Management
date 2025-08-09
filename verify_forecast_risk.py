@@ -76,19 +76,19 @@ class ForecastRiskVerifier:
         print("=" * 60)
         
         # 1. Pobierz dane z dashboardu
-        print("\n📊 1. Pobieranie danych z dashboardu...")
+    print("\n1. Pobieranie danych z dashboardu...")
         dashboard_data = self.get_forecast_risk_data(vol_model, username)
         if not dashboard_data:
             return
         
         # 2. Pobierz dane koncentracji (wagi)
-        print("\n📊 2. Pobieranie wag z concentration-risk-data...")
+    print("\n2. Pobieranie wag z concentration-risk-data...")
         conc_data = self.get_concentration_data(username)
         if not conc_data:
             return
         
         # 3. Przygotuj dane do weryfikacji
-        print("\n📊 3. Przygotowanie danych do weryfikacji...")
+    print("\n3. Przygotowanie danych do weryfikacji...")
         
         # Wagi z concentration data
         portfolio_items = conc_data["portfolio_data"]
@@ -106,7 +106,7 @@ class ForecastRiskVerifier:
             print(f"   Znormalizowane wagi: {weights}")
         
         # 5. Pobierz macierz kowariancji Σ
-        print(f"\n📊 4. Pobieranie macierzy kowariancji...")
+    print(f"\n4. Pobieranie macierzy kowariancji...")
         cov_matrix = self.get_covariance_matrix(tickers, vol_model, username)
         if cov_matrix is None:
             return
@@ -115,7 +115,7 @@ class ForecastRiskVerifier:
         print(f"   Portfolio volatility z Σ: {np.sqrt(weights @ cov_matrix @ weights):.4f}")
         
         # 6. Manualne przeliczenie RC% z macierzy Σ
-        print(f"\n📊 5. Manualne przeliczenie RC%...")
+    print(f"\n5. Manualne przeliczenie RC%...")
         mrc_manual, rc_pct_manual, sigma_p_manual = self.calculate_risk_contribution_manual(weights, cov_matrix)
         
         print(f"   Portfolio volatility (manual): {sigma_p_manual:.4f}")
@@ -127,12 +127,12 @@ class ForecastRiskVerifier:
         dashboard_mrc_pct = np.array(dashboard_data["marginal_rc_pct"])
         dashboard_portfolio_vol = dashboard_data["portfolio_vol"]
         
-        print(f"\n📊 6. Dane z dashboardu:")
+    print(f"\n6. Dane z dashboardu:")
         print(f"   Portfolio Volatility: {dashboard_portfolio_vol:.4f}")
         print(f"   Tickers: {dashboard_tickers}")
         
         # 8. Porównaj manualne obliczenia z dashboardem
-        print(f"\n📊 7. Porównanie manualne vs dashboard:")
+    print(f"\n7. Porównanie manualne vs dashboard:")
         diff_rc = rc_pct_manual * 100 - dashboard_rc_pct
         max_diff = np.max(np.abs(diff_rc))
         
@@ -172,7 +172,7 @@ class ForecastRiskVerifier:
         
         # 8. Sprawdź czy RC% sumuje się do 100%
         rc_sum = dashboard_rc_pct.sum()
-        print(f"\n📊 6. Suma RC%: {rc_sum:.6f}")
+        print(f"\n6. Suma RC%: {rc_sum:.6f}")
         if abs(rc_sum - 100.0) < 1e-2:
             print("✅ ZGODNE: RC% sumuje się do 100%")
         else:
@@ -180,10 +180,10 @@ class ForecastRiskVerifier:
         
         # 9. Sprawdź czy portfolio volatility się zgadza
         expected_vol = dashboard_portfolio_vol * 100  # na procenty
-        print(f"\n📊 7. Portfolio Volatility: {expected_vol:.2f}%")
+        print(f"\n7. Portfolio Volatility: {expected_vol:.2f}%")
         
         # 10. Wyświetl ranking RC%
-        print(f"\n📊 8. Ranking Risk Contribution (%):")
+        print(f"\n8. Ranking Risk Contribution (%):")
         rc_ranking = list(zip(dashboard_tickers, dashboard_rc_pct))
         rc_ranking.sort(key=lambda x: x[1], reverse=True)
         
@@ -194,15 +194,15 @@ class ForecastRiskVerifier:
         # 11. Sprawdź czy są ujemne MRC (hedging)
         negative_mrc = dashboard_mrc_pct < 0
         if np.any(negative_mrc):
-            print(f"\n📊 9. Hedging positions (ujemne MRC):")
+            print(f"\n9. Hedging positions (ujemne MRC):")
             for ticker, mrc in zip(dashboard_tickers, dashboard_mrc_pct):
                 if mrc < 0:
                     print(f"   🔽 {ticker}: {mrc:.2f}%")
         else:
-            print(f"\n📊 9. Brak hedging positions (wszystkie MRC ≥ 0)")
+            print(f"\n9. Brak hedging positions (wszystkie MRC ≥ 0)")
         
         # 12. Podsumowanie
-        print(f"\n📊 10. PODSUMOWANIE:")
+        print(f"\n10. PODSUMOWANIE:")
         print(f"   Model: {vol_model}")
         print(f"   Portfolio Volatility: {dashboard_portfolio_vol:.4f}")
         print(f"   Top Contributor: {top_contributor} ({top_rc_pct:.2f}%)")
@@ -220,7 +220,7 @@ class ForecastRiskVerifier:
 
 def main():
     """Główna funkcja"""
-    print("🚀 Uruchamianie weryfikacji Forecast Risk Contribution")
+            print("Uruchamianie weryfikacji Forecast Risk Contribution")
     print("=" * 60)
     
     verifier = ForecastRiskVerifier()
@@ -242,11 +242,11 @@ def main():
             print(f"❌ Błąd podczas sprawdzania modelu {model}: {e}")
     
     # Podsumowanie wszystkich modeli
-    print(f"\n📊 PODSUMOWANIE WSZYSTKICH MODELI:")
+    print(f"\nPODSUMOWANIE WSZYSTKICH MODELI:")
     print("=" * 60)
     
     for model, result in results.items():
-        status = "✅" if result["top_contributor"] == "DOMO" else "❌"
+        status = "OK" if result["top_contributor"] == "DOMO" else "FAIL"
         print(f"{status} {model:15s}: {result['top_contributor']:6s} ({result['top_rc_pct']:6.2f}%)")
 
 if __name__ == "__main__":

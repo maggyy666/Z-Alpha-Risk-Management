@@ -130,7 +130,7 @@ def initialize_portfolio(db: Session = Depends(get_db)):
         for symbol in tickers:
             success = data_service.inject_sample_data(db, symbol)
             if success:
-                print(f"✅ Injected sample data for {symbol}")
+                print(f"Injected sample data for {symbol}")
             else:
                 print(f"❌ Failed to inject sample data for {symbol}")
         

@@ -162,7 +162,7 @@ class IBKRService:
             start_time = time.time()
             while (time.time() - start_time) < timeout:
                 if self.connection.connected and self.connection.next_order_id is not None:
-                    print("✅ IBKR ready, nextValidId =", self.connection.next_order_id)
+                    print("IBKR ready, nextValidId =", self.connection.next_order_id)
                     return True
                 time.sleep(0.05)
             
@@ -322,7 +322,7 @@ class IBKRService:
             if sector == 'Unknown' and industry == 'Unknown':
                 sector, industry = self._map_etf_to_sector_industry(symbol, info)
             
-            print(f"✅ yfinance data for {symbol}: sector={sector}, industry={industry}")
+            print(f"yfinance data for {symbol}: sector={sector}, industry={industry}")
             return sector, industry
             
         except Exception as e:
@@ -393,7 +393,7 @@ class IBKRService:
             
             market_cap = info.get('marketCap')
             if market_cap:
-                print(f"✅ yfinance market cap for {symbol}: {market_cap}")
+                print(f"yfinance market cap for {symbol}: {market_cap}")
                 return float(market_cap)
             else:
                 print(f"⚠️ No market cap data for {symbol} in yfinance")
@@ -438,7 +438,7 @@ class IBKRService:
                             "market_cap": market_cap,
                             "company_name": symbol
                         }
-                        print(f"✅ Contract details for {symbol}: {result}")
+                        print(f"Contract details for {symbol}: {result}")
                         return result
                     except (IndexError, AttributeError) as e:
                         print(f"⚠️ Contract details parsing error for {symbol}: {e}")
@@ -479,7 +479,7 @@ class IBKRService:
             while (time.time() - start_time) < 30:  # 30 second timeout
                 if req_id in self.connection.historical_data:
                     data = self.connection.historical_data.pop(req_id)
-                    print(f"✅ Historical data received for {symbol}: {len(data)} bars")
+                    print(f"Historical data received for {symbol}: {len(data)} bars")
                     return data
                 time.sleep(0.1)
             
@@ -605,7 +605,7 @@ class IBKRService:
             ticker = yf.Ticker(symbol)
             price = ticker.info.get("regularMarketPrice")
             if price:
-                print(f"✅ yfinance price for {symbol}: ${price}")
+                print(f"yfinance price for {symbol}: ${price}")
                 return price
             else:
                 print(f"⚠️ No price data for {symbol} in yfinance")

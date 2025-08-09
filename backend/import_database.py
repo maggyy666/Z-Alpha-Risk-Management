@@ -49,7 +49,7 @@ def import_users(db: Session, users_data):
         db.merge(user)  # Use merge to handle existing records
     
     db.commit()
-    print(f"✅ Users imported successfully")
+    print(f"Users imported successfully")
 
 def import_portfolios(db: Session, portfolios_data):
     """Import portfolios data"""
@@ -67,7 +67,7 @@ def import_portfolios(db: Session, portfolios_data):
         db.merge(portfolio)
     
     db.commit()
-    print(f"✅ Portfolios imported successfully")
+    print(f"Portfolios imported successfully")
 
 def import_tickers(db: Session, tickers_data):
     """Import tickers data"""
@@ -88,7 +88,7 @@ def import_tickers(db: Session, tickers_data):
         db.merge(ticker)
     
     db.commit()
-    print(f"✅ Tickers imported successfully")
+    print(f"Tickers imported successfully")
 
 def import_historical_data(db: Session, historical_data):
     """Import historical data"""
@@ -116,7 +116,7 @@ def import_historical_data(db: Session, historical_data):
         db.commit()
         print(f"  Batch {i//batch_size + 1}/{(len(historical_data) + batch_size - 1)//batch_size} imported...")
     
-    print(f"✅ Historical data imported successfully")
+    print(f"Historical data imported successfully")
 
 def import_ticker_data(db: Session, ticker_data):
     """Import ticker_data table data"""
@@ -144,7 +144,7 @@ def import_ticker_data(db: Session, ticker_data):
         db.commit()
         print(f"  Batch {i//batch_size + 1}/{(len(ticker_data) + batch_size - 1)//batch_size} imported...")
     
-    print(f"✅ Ticker data imported successfully")
+    print(f"Ticker data imported successfully")
 
 def import_database(import_file):
     """Import database from JSON file"""

@@ -281,7 +281,7 @@
 }
 
 .careers-page [style*="fontSize: 3rem"][style*="color: #d32f2f"]::after {
-  content: '🔥';
+  content: '';
   position: absolute;
   top: -10px;
   right: -20px;

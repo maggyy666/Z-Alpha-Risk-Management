@@ -226,7 +226,7 @@ def generate_historical_data(db, data_service, tickers, data_type):
                 try:
                     info = data_service._ensure_ticker_info(db, ticker)
                     if info:
-                        print(f"✅ Ticker info for {ticker}: sector={info.sector}, industry={info.industry}")
+        print(f"Ticker info for {ticker}: sector={info.sector}, industry={info.industry}")
                     else:
                         print(f"⚠️ No ticker info for {ticker}")
                 except Exception as e:
@@ -265,7 +265,7 @@ def fetch_fundamental_data(db, data_service, tickers):
                 
                 if info:
                     success_count += 1
-                    print(f"✅ Successfully processed {ticker}")
+                    print(f"Successfully processed {ticker}")
                 else:
                     print(f"❌ Failed to process {ticker}")
                     
@@ -273,7 +273,7 @@ def fetch_fundamental_data(db, data_service, tickers):
                 print(f"❌ Error processing {ticker}: {e}")
                 continue
         
-        print(f"✅ Successfully processed {success_count}/{len(tickers)} tickers")
+        print(f"Successfully processed {success_count}/{len(tickers)} tickers")
         return True
         
     except Exception as e:
@@ -312,7 +312,7 @@ def show_database_summary(db, admin_user):
 
 def setup_database():
     """Complete database setup"""
-    print("🚀 Starting complete database setup...")
+    print("Starting complete database setup...")
     
     # Step 1: Check prerequisites
     if not check_required_modules():
@@ -350,7 +350,7 @@ def setup_database():
             user = User(username="user", password="user123", email="user@external-zalpha.com")
             db.add(user)
             db.commit()
-            print("✅ Created user account")
+            print("Created user account")
         
         # Step 8: Setup portfolio for admin
         if not setup_portfolio(db, admin_user):
@@ -372,8 +372,8 @@ def setup_database():
         static_tickers = ['SPY', 'MTUM', 'IWM', 'VLUE', 'QUAL']
         all_tickers.update(static_tickers)
         
-        print(f"📊 Total unique tickers to process: {len(all_tickers)}")
-        print(f"📊 Tickers: {sorted(all_tickers)}")
+        print(f"Total unique tickers to process: {len(all_tickers)}")
+        print(f"Tickers: {sorted(all_tickers)}")
         
         # Step 12: Generate historical data for ALL tickers (ONE TIME DOWNLOAD)
         if not generate_historical_data(db, data_service, list(all_tickers), "all tickers"):
@@ -387,7 +387,7 @@ def setup_database():
         if not show_database_summary(db, admin_user):
             return False
         
-        print("✅ Database setup completed successfully!")
+        print("Database setup completed successfully!")
         return True
         
     except Exception as e:

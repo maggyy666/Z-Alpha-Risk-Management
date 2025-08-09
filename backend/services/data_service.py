@@ -314,18 +314,18 @@ class DataService:
                 print(f"❌ Not enough data for {symbol} ({len(historical_data)} records)")
                 return {}
             
-            print(f"📊 {symbol}: Found {len(historical_data)} historical records")
+            print(f"{symbol}: Found {len(historical_data)} historical records")
             
             # Sort by date ascending for calculations
             historical_data.sort(key=lambda x: x.date)
             
             # Extract prices and calculate returns
             prices = [row.close_price for row in historical_data]
-            print(f"📊 {symbol}: Prices range: {min(prices):.2f} - {max(prices):.2f}")
+            print(f"{symbol}: Prices range: {min(prices):.2f} - {max(prices):.2f}")
             
             # Calculate log returns
             returns = np.diff(np.log(prices))
-            print(f"📊 {symbol}: Returns shape: {returns.shape}, mean: {np.mean(returns):.6f}")
+            print(f"{symbol}: Returns shape: {returns.shape}, mean: {np.mean(returns):.6f}")
             
             if len(returns) < 30:
                 print(f"❌ Not enough returns for {symbol}")
@@ -348,7 +348,7 @@ class DataService:
             
             # Get last price from database (NO LIVE FETCHING!)
             last_price = float(historical_data[-1].close_price)
-            print(f"📊 Using database price for {symbol}: ${last_price}")
+            print(f"Using database price for {symbol}: ${last_price}")
             
             metrics = {
                 'volatility_pct': forecast_vol,   # %
@@ -476,7 +476,7 @@ class DataService:
             # Check if data already exists
             existing_count = db.query(TickerData).filter(TickerData.ticker_symbol == symbol).count()
             if existing_count > 0:
-                print(f"📊 {symbol}: Already has {existing_count} records")
+                print(f"{symbol}: Already has {existing_count} records")
                 return True
 
             # Generate sample data from 2016 to 2025
@@ -590,10 +590,10 @@ class DataService:
                 print("❌ No historical data found in database")
                 return {"factor_exposures": [], "r2_data": [], "available_factors": available_factors, "available_tickers": all_tickers}
             
-            print(f"📊 Found {len(dates)} dates from {min(dates)} to {max(dates)}")
+            print(f"Found {len(dates)} dates from {min(dates)} to {max(dates)}")
             
             # Wczytaj serie ETF z bazy (real factor proxies)
-            print("📊 Loading ETF data for factor proxies...")
+            print("Loading ETF data for factor proxies...")
             
             # MARKET proxy
             spy_dates, spy_closes = self._get_close_series(db, "SPY")
@@ -617,7 +617,7 @@ class DataService:
             qual_ret_dates, qual_rets = self._log_returns_from_series(qual_dates, qual_closes)
             qual_ret_map = dict(zip(qual_ret_dates, qual_rets))
             
-            print(f"📊 ETF data loaded: SPY({len(spy_ret_dates)}), MTUM({len(mtum_ret_dates)}), IWM({len(iwm_ret_dates)}), VLUE({len(vlue_ret_dates)}), QUAL({len(qual_ret_dates)})")
+            print(f"ETF data loaded: SPY({len(spy_ret_dates)}), MTUM({len(mtum_ret_dates)}), IWM({len(iwm_ret_dates)}), VLUE({len(vlue_ret_dates)}), QUAL({len(qual_ret_dates)})")
             
             # Calculate factor exposures for each ticker and factor
             for ticker in all_tickers:

@@ -489,7 +489,7 @@ const WhoWeArePage: React.FC = () => {
                       }}
                     />
                   ) : (
-                    '👤'
+                    ''
                   )}
                 </div>
 

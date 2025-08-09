@@ -13,14 +13,14 @@ from services.data_service import DataService
 
 def add_static_tickers_data():
     """Add sample data for static tickers"""
-    print("📊 Adding sample data for static tickers...")
+    print("Adding sample data for static tickers...")
     
     data_service = DataService()
     db = SessionLocal()
     
     try:
         static_tickers = data_service.get_static_tickers()
-        print(f"📊 Static tickers: {static_tickers}")
+        print(f"Static tickers: {static_tickers}")
         
         for ticker in static_tickers:
             print(f"🔍 Processing {ticker}...")
