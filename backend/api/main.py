@@ -281,7 +281,7 @@ def get_forecast_metrics(
 def get_rolling_forecast(
     model: str = Query("EWMA (5D)"),
     window: int = Query(21, ge=5, le=252),
-    tickers: str = Query("PORTFOLIO"),   # CSV w URL-u
+    tickers: str = Query("PORTFOLIO"),   # CSV in URL
     username: str = "admin",
     db: Session = Depends(get_db)
 ):

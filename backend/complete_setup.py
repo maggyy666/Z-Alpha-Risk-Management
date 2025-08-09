@@ -81,7 +81,7 @@ def complete_setup():
             else:
                 print(f"{ticker}: No data")
         
-        print(f"\n🎉 Setup completed!")
+        print(f"\n Setup completed!")
         
     except Exception as e:
         print(f"Error in complete_setup: {e}")

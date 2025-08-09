@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+
 """
 Export current database to JSON format for easy distribution
 """

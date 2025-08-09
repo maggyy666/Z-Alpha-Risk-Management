@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+
 """
 Check status of all components
 """

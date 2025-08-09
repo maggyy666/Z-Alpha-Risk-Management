@@ -14,13 +14,11 @@ import shutil
 def get_requests():
     """Get requests module from poetry environment"""
     try:
-        # Try to import from poetry environment
         result = subprocess.run(
             ["cd backend && poetry run python -c 'import requests; print(\"OK\")'"],
             shell=True, capture_output=True, text=True
         )
         if result.returncode == 0:
-            # If poetry environment has requests, use it
             import importlib.util
             spec = importlib.util.spec_from_file_location(
                 "requests", 
@@ -33,18 +31,15 @@ def get_requests():
             spec.loader.exec_module(requests)
             return requests
         else:
-            # Fallback to system requests if available
             import requests
             return requests
     except Exception:
-        # Final fallback
         import requests
         return requests
 
 def run_command(command, cwd=None, background=False):
     """Run a command and return the process"""
     print(f"Running: {command}")
-    
     try:
         if background:
             process = subprocess.Popen(
@@ -86,20 +81,32 @@ def install_dependencies():
     """Install Python dependencies using Poetry"""
     print("Installing Python dependencies...")
     try:
-        # First, ensure poetry.lock is up to date
         if not run_command("poetry lock"):
             print("Failed to update poetry.lock")
             return False
-        
-        # Install dependencies
         if not run_command("poetry install"):
             print("Failed to install dependencies")
             return False
-        
-        print("Dependencies installed successfully!")
+        print("Python dependencies installed successfully!")
         return True
     except Exception as e:
         print(f"Error installing dependencies: {e}")
+        return False
+
+def install_js_dependencies():
+    """Install npm deps for landing and frontend"""
+    print("Installing JavaScript dependencies...")
+    try:
+        if not run_command("npm install", cwd="landing"):
+            print("Failed to install landing dependencies")
+            return False
+        if not run_command("npm install", cwd="frontend"):
+            print("Failed to install frontend dependencies")
+            return False
+        print("JavaScript dependencies installed successfully!")
+        return True
+    except Exception as e:
+        print(f"Error installing JS dependencies: {e}")
         return False
 
 def check_docker_installed():
@@ -165,21 +172,20 @@ def check_backend_ready():
     """Check if backend is ready"""
     print("Checking if backend is ready...")
     requests = get_requests()
-    for i in range(90):  # Wait up to 90 seconds for backend
+    for i in range(90):
         try:
             response = requests.get("http://localhost:8000/health", timeout=5)
             if response.status_code == 200:
                 print("Backend is ready!")
                 return True
         except requests.exceptions.ConnectionError:
-            if i % 10 == 0:  # Print status every 10 seconds
+            if i % 10 == 0:
                 print(f"Waiting for backend... ({i+1}/90 seconds)")
-                # Check if containers are still running
                 if i > 20 and not check_docker_containers_running():
                     print("Docker containers stopped running")
                     return False
         except requests.exceptions.RequestException as e:
-            if i % 15 == 0:  # Print errors every 15 seconds
+            if i % 15 == 0:
                 print(f"Request error: {e}")
         except Exception as e:
             print(f"Unexpected error checking backend: {e}")
@@ -196,32 +202,16 @@ def check_required_files():
         "poetry.lock",
         "backend/setup_database.py",
         "backend/api/main.py",
-        "frontend/package.json"
+        "frontend/package.json",
+        "landing/package.json"
     ]
-    
-    missing_files = []
-    for file_path in required_files:
-        if not os.path.exists(file_path):
-            missing_files.append(file_path)
-    
+    missing_files = [f for f in required_files if not os.path.exists(f)]
     if missing_files:
         print("Missing required files:")
         for file_path in missing_files:
             print(f"  - {file_path}")
         return False
-    
     print("All required files found")
-    
-    # Check for sample data file as backup option
-    sample_file = "z_alpha_sample_database.json"
-    if os.path.exists(sample_file):
-        file_size = os.path.getsize(sample_file)
-        file_size_mb = file_size / (1024 * 1024)
-        print(f"Sample data file available: {sample_file} ({file_size_mb:.1f} MB)")
-    else:
-        print(f"Sample data file not found: {sample_file}")
-        print("   If database setup fails, sample data will need to be generated")
-    
     return True
 
 def delete_database():
@@ -242,174 +232,88 @@ def delete_database():
 def setup_database():
     """Setup database with sample data - with fallback to import"""
     print("Setting up database...")
-    try:
-        # First try the original setup (generates new data)
-        if run_command("cd backend && poetry run python setup_database.py"):
-            print("Database setup completed successfully!")
-            return True
-        else:
-            print("Standard database setup failed!")
-            print("Attempting to use pre-generated sample data as fallback...")
-            
-            # Check if sample data file exists
-            sample_file = "z_alpha_sample_database.json"
-            if os.path.exists(sample_file):
-                print(f"Found sample data file: {sample_file}")
-                print("Importing sample data...")
-                
-                # Copy sample file to backend directory for import script
-                import shutil
-                try:
-                    shutil.copy(sample_file, "backend/z_alpha_sample_database.json")
-                    print("Sample data file copied to backend directory")
-                except Exception as e:
-                    print(f"Warning: Could not copy sample file: {e}")
-                
-                if run_command("cd backend && poetry run python import_database.py"):
-                    print("Sample data imported successfully!")
-                    print("Database setup completed using pre-generated data!")
-                    return True
-                else:
-                    print("Failed to import sample data!")
-                    return False
-            else:
-                print(f"Sample data file not found: {sample_file}")
-                print("Please ensure the sample data file exists or check your setup.")
-                return False
-                
-    except Exception as e:
-        print(f"Error setting up database: {e}")
-        return False
+    if run_command("cd backend && poetry run python setup_database.py"):
+        print("Database setup completed successfully!")
+        return True
+    print("Standard database setup failed!")
+    return False
 
 def check_ports_available():
     """Check if required ports are available"""
     import socket
-    
     ports_to_check = [3000, 3001, 8000]
     unavailable_ports = []
-    
     for port in ports_to_check:
         try:
             with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
                 s.bind(('localhost', port))
         except OSError:
             unavailable_ports.append(port)
-    
     if unavailable_ports:
         print(f"Ports {unavailable_ports} are already in use. Please free them up first.")
         return False
-    
     print("All required ports are available")
     return True
 
 def main():
-    """Main function"""
     print("=" * 60)
     print("Z-ALPHA SECURITIES - DOCKER START ALL")
     print("=" * 60)
     
-    # Sanity checks
     print("\nPerforming sanity checks...")
-    
-    if not check_required_files():
-        print("Sanity check failed: Missing required files")
-        return
-    
-    if not check_poetry_installed():
-        print("Sanity check failed: Poetry not installed")
-        return
-    
-    if not check_docker_installed():
-        print("Sanity check failed: Docker not installed")
-        return
-    
-    if not check_docker_running():
-        print("Sanity check failed: Docker not running")
-        return
-    
-    if not check_docker_compose():
-        print("Sanity check failed: Docker Compose not available")
-        return
-    
-    if not check_ports_available():
-        print("Sanity check failed: Ports not available")
-        return
-    
+    if not check_required_files(): return
+    if not check_poetry_installed(): return
+    if not check_docker_installed(): return
+    if not check_docker_running(): return
+    if not check_docker_compose(): return
+    if not check_ports_available(): return
+
     print("All sanity checks passed!")
-    
-    # 0. Install dependencies
+
     print("\nStep 0: Installing Python dependencies...")
-    if not install_dependencies():
-        print("Failed to install dependencies")
-        return
-    
-    # 1. Delete existing database
+    if not install_dependencies(): return
+
+    print("\nStep 0b: Installing JavaScript dependencies...")
+    if not install_js_dependencies(): return
+
     print("\nStep 1: Cleaning up existing database...")
-    if not delete_database():
-        print("Failed to clean up database")
-        return
-    
-    # 2. Setup database
+    if not delete_database(): return
+
     print("\nStep 2: Setting up database...")
-    if not setup_database():
-        return
-    
-    # 3. Start Docker services
+    if not setup_database(): return
+
     print("\nStep 3: Starting Docker services...")
-    try:
-        # Start Docker services in detached mode
-        if not run_command("docker compose up --build --detach"):
-            print("Failed to start Docker services")
-            return
-        
-        print("Docker services started successfully")
-        
-        # Give Docker services time to initialize
-        print("Waiting for Docker services to initialize...")
-        time.sleep(5)
-        
-        # Wait for backend to be ready
-        print("Waiting for backend to start...")
-        if not check_backend_ready():
-            print("Backend failed to start!")
-            try:
-                run_command("docker compose down")
-            except Exception as e:
-                print(f"Error stopping Docker services: {e}")
-            return
-        
-        print("Backend is ready!")
-        
-        print("\n" + "=" * 60)
-        print("EVERYTHING IS RUNNING!")
-        print("=" * 60)
-        print("\nFrontend: http://localhost:3000")
-        print("Frontend (Alt): http://localhost:3001")
-        print("Backend: http://localhost:8000")
-        print("API Docs: http://localhost:8000/docs")
-        print("\nPress Ctrl+C to stop everything")
-        print("=" * 60)
-        
-        try:
-            # Keep running until interrupted
-            while True:
-                time.sleep(1)
-        except KeyboardInterrupt:
-            print("\nStopping Docker services...")
-            
-            # Stop Docker services
-            try:
-                run_command("docker compose down")
-                print("Docker services stopped")
-                print("Cleanup completed")
-            except Exception as e:
-                print(f"Error during cleanup: {e}")
-            
-            print("Goodbye!")
-            
-    except Exception as e:
-        print(f"Unexpected error: {e}")
+    if not run_command("docker compose up --build --detach"):
+        print("Failed to start Docker services")
         return
 
+    print("Docker services started successfully")
+    time.sleep(5)
+
+    print("Waiting for backend to start...")
+    if not check_backend_ready():
+        print("Backend failed to start!")
+        run_command("docker compose down")
+        return
+
+    print("\n" + "=" * 60)
+    print("EVERYTHING IS RUNNING!")
+    print("=" * 60)
+    print("\nFrontend: http://localhost:3000")
+    print("Frontend (Alt): http://localhost:3001")
+    print("Backend: http://localhost:8000")
+    print("API Docs: http://localhost:8000/docs")
+    print("\nPress Ctrl+C to stop everything")
+    print("=" * 60)
+
+    try:
+        while True:
+            time.sleep(1)
+    except KeyboardInterrupt:
+        print("\nStopping Docker services...")
+        run_command("docker compose down")
+        print("Docker services stopped. Cleanup completed.")
+        print("Goodbye!")
+
 if __name__ == "__main__":
-    main() 
+    main()
