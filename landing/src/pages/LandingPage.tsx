@@ -115,6 +115,15 @@ const LandingPage: React.FC = () => {
     },
   ];
 
+  // Ensure chronological order by extracting the first 4-digit year from headline
+  const extractYear = (s: string): number => {
+    const m = s.match(/(19|20)\d{2}/);
+    return m ? parseInt(m[0], 10) : 9999;
+  };
+  const roadmapChrono = [...roadmapItems].sort(
+    (a, b) => extractYear(a.headline) - extractYear(b.headline)
+  );
+
   useEffect(() => {
     const observerOptions = {
       threshold: 0.1,
@@ -607,7 +616,7 @@ const LandingPage: React.FC = () => {
             {/* Vertical Road‑map */}
             <div className="roadmap">
               <div className="roadmap-rail" aria-hidden="true" />
-              {roadmapItems.map((ev, idx) => {
+              {roadmapChrono.map((ev, idx) => {
                 const isEven = idx % 2 === 0;
                 const EventCard = (
                   <div className="roadmap-card event">

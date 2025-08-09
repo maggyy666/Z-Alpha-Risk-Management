@@ -32,7 +32,7 @@ export const Navbar: React.FC<NavbarProps> = ({ onClientLogin, onNavigate, onBra
           {/* Brand */}
           <button className="brand" onClick={onBrandClick} aria-label="Home">
             <div className="logo">
-              <span className="logo-symbol">ρ</span>
+              <span className="logo-symbol">α</span>
               <div className="logo-text">
                 <span className="logo-main">Z-ALPHA</span>
                 <span className="logo-separator">|</span>
