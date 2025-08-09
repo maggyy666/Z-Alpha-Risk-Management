@@ -5,7 +5,12 @@ body {
     sans-serif;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+  overflow-x: hidden; /* prevent horizontal scrollbar from decorative/absolute elements */
 }
+
+html { overflow-x: hidden; }
+
+.full-bleed { width: 100%; }
 
 code {
   font-family: source-code-pro, Menlo, Monaco, Consolas, 'Courier New',
