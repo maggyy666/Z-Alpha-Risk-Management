@@ -15,36 +15,26 @@ python start_all.py
 
 ### Option 2: Without Docker (Development)
 
-#### Backend Setup (One Command)
+#### Backend Setup
 ```bash
 cd backend && poetry install && poetry run python setup_database.py && poetry run uvicorn api.main:app --host 0.0.0.0 --port 8000 --reload
 ```
 
-#### Frontend Setup (One Command)
+#### Dashboard Frontend
 ```bash
 cd frontend && npm install && npm start
 ```
 
-#### Frontend Setup on Port 3001 (Manual)
-```bash
-cd frontend && npm install && PORT=3001 npm start
+#### Landing Page Frontend
+
+**Windows:**
+```powershell
+cd landing; npm install; $env:PORT=3001; npx --yes react-scripts start
 ```
 
-#### Alternative: Separate Commands
-
-**Backend Setup**
+**macOS/Linux:**
 ```bash
-cd backend
-poetry install
-poetry run python setup_database.py
-poetry run uvicorn api.main:app --host 0.0.0.0 --port 8000 --reload
-```
-
-**Frontend Setup**
-```bash
-cd frontend
-npm install
-npm start
+cd landing && npm install && PORT=3001 npm start
 ```
 
 #### Access the Application
