@@ -52,8 +52,13 @@ cd landing && npm install && PORT=3001 npm start
 5. Opens at http://localhost:3000
 
 ## Default login
-- Username: `admin`
-- Password: `admin`
+- Username: `admin@zalpha.com`
+- Password: `admin123`
+
+OR
+
+- Username: `user@external-zalpha.com`
+- Password: `user123`
 
 ## Troubleshooting
 
