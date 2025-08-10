@@ -1502,25 +1502,34 @@ class DataService:
         Returns:
             Dict[str, Any]: Risk scoring results or error message.
         """
+        print(f"[RISK-SCORING] Starting risk scoring for user: {username}")
         # 1) user weights and tickers list
+        print(f"[RISK-SCORING] Getting concentration risk data...")
         conc = self.get_concentration_risk_data(db, username)
         if "error" in conc: 
+            print(f"[RISK-SCORING] Error in concentration risk: {conc['error']}")
             return {"error": conc["error"]}
         positions = conc["portfolio_data"]
         if not positions:
+            print(f"[RISK-SCORING] No positions found")
             return {"error":"No positions"}
         tickers = [p['ticker'] for p in positions]
         w = np.array([p['weight_frac'] for p in positions], dtype=float)  # sum ~1
+        print(f"[RISK-SCORING] Portfolio tickers: {tickers}, weights sum: {w.sum():.4f}")
 
         # 2) return series: tickers + SPY + factor ETFs
         factor_proxies = {"MOMENTUM":"MTUM","SIZE":"IWM","VALUE":"VLUE","QUALITY":"QUAL"}
         needed = list(set(tickers + ["SPY"] + list(factor_proxies.values())))
+        print(f"[RISK-SCORING] Getting return series for: {needed}")
         ret_map = self._get_return_series_map(db, needed, lookback_days=180)
 
         # 3) position returns matrix, align on SPY calendar
+        print(f"[RISK-SCORING] Aligning returns on SPY calendar...")
         dates_ref, R_all, active = self._align_on_reference(ret_map, tickers + ["SPY"], ref_symbol="SPY", min_obs=40)
         if R_all.size == 0 or len(dates_ref) < 40:
+            print(f"[RISK-SCORING] Insufficient overlapping history (vs SPY)")
             return {"error":"Insufficient overlapping history (vs SPY)"}
+        print(f"[RISK-SCORING] Aligned data shape: {R_all.shape}, active symbols: {active}")
 
         # wagi na aktywne
         w_map = {p["ticker"]: p["weight_frac"] for p in positions}
@@ -1980,11 +1989,15 @@ class DataService:
     def get_forecast_metrics(self, db: Session, username: str = "admin", 
                            conf_level: float = 0.95) -> Dict[str, Any]:
         """Get forecast metrics for all portfolio tickers"""
+        print(f"[FORECAST-METRICS] Starting forecast metrics for user: {username}, conf_level: {conf_level}")
         try:
             # Get portfolio tickers
+            print(f"[FORECAST-METRICS] Getting portfolio tickers...")
             tickers = self.get_user_portfolio_tickers(db, username)
             if not tickers:
+                print(f"[FORECAST-METRICS] No portfolio tickers found")
                 return {"error": "No portfolio tickers found"}
+            print(f"[FORECAST-METRICS] Portfolio tickers: {tickers}")
             
             # Get shares map
             user_id = db.query(User.id).filter(User.username == username).scalar()
@@ -2000,8 +2013,10 @@ class DataService:
             
             for ticker in tickers:
                 # Get historical data
+                print(f"[FORECAST-METRICS] Processing {ticker}...")
                 dates, closes = self._get_close_series(db, ticker)
                 if len(closes) < 250:  # min rok historii (250 dni)
+                    print(f"[FORECAST-METRICS] {ticker}: Insufficient data ({len(closes)} < 250)")
                     continue
                 
                 # Calculate returns
@@ -2010,10 +2025,12 @@ class DataService:
                     continue
                 
                 # Calculate forecast volatilities
+                print(f"[FORECAST-METRICS] {ticker}: Calculating volatilities...")
                 ewma5 = forecast_sigma(returns, "EWMA (5D)") * 100
                 ewma20 = forecast_sigma(returns, "EWMA (20D)") * 100
                 garch_vol = forecast_sigma(returns, "GARCH") * 100
                 egarch_vol = forecast_sigma(returns, "EGARCH") * 100
+                print(f"[FORECAST-METRICS] {ticker}: EWMA5={ewma5:.2f}%, EWMA20={ewma20:.2f}%, GARCH={garch_vol:.2f}%, EGARCH={egarch_vol:.2f}%")
                 
                 # Calculate basic stats for VaR/CVaR
                 stats = basic_stats(returns)
@@ -2060,6 +2077,8 @@ class DataService:
         Return list of dicts: {date, ticker, vol_pct}
         – gotowe do wykresu liniowego.
         """
+        print(f"[ROLLING-FORECAST] Starting rolling forecast for user: {username}")
+        print(f"[ROLLING-FORECAST] Tickers: {tickers}, model: {model}, window: {window}")
         try:
             if not tickers:
                 return []
@@ -2232,20 +2251,23 @@ class DataService:
         Zwraca agregowane dane dla Portfolio Summary dashboard.
         Combine outputs of risk_scoring, concentration_risk, forecast_metrics, forecast_risk_contribution.
         """
+        print(f"[PORTFOLIO-SUMMARY] Starting portfolio summary for user: {username}")
         try:
             # 1) Risk Scoring
+            print(f"[PORTFOLIO-SUMMARY] Getting risk scoring data...")
             risk_data = self.get_risk_scoring(db, username)
             if "error" in risk_data:
-                print(f"Warning: Risk scoring failed: {risk_data['error']}")
+                print(f"[PORTFOLIO-SUMMARY] Warning: Risk scoring failed: {risk_data['error']}")
                 risk_data = {
                     "component_scores": {"overall": 0.5},
                     "risk_contribution_pct": {"market": 25.0, "concentration": 25.0, "volatility": 25.0, "liquidity": 25.0}
                 }
             
             # 2) Concentration Risk
+            print(f"[PORTFOLIO-SUMMARY] Getting concentration risk data...")
             conc_data = self.get_concentration_risk_data(db, username)
             if "error" in conc_data:
-                print(f"Warning: Concentration risk failed: {conc_data['error']}")
+                print(f"[PORTFOLIO-SUMMARY] Warning: Concentration risk failed: {conc_data['error']}")
                 conc_data = {
                     "total_market_value": 0,
                     "portfolio_data": [],
@@ -2253,9 +2275,10 @@ class DataService:
                 }
             
             # 3) Forecast Risk Contribution (EGARCH)
+            print(f"[PORTFOLIO-SUMMARY] Getting forecast risk contribution (EGARCH)...")
             forecast_contribution = self.get_forecast_risk_contribution(db, username, vol_model="EGARCH")
             if "error" in forecast_contribution:
-                print(f"Warning: Forecast risk contribution failed: {forecast_contribution['error']}")
+                print(f"[PORTFOLIO-SUMMARY] Warning: Forecast risk contribution failed: {forecast_contribution['error']}")
                 forecast_contribution = {
                     "portfolio_vol": 0.15,
                     "tickers": ["N/A"],
@@ -2263,9 +2286,10 @@ class DataService:
                 }
             
             # 4) Forecast Metrics (dla CVaR)
+            print(f"[PORTFOLIO-SUMMARY] Getting forecast metrics...")
             forecast_metrics = self.get_forecast_metrics(db, username)
             if "error" in forecast_metrics:
-                print(f"Warning: Forecast metrics failed: {forecast_metrics['error']}")
+                print(f"[PORTFOLIO-SUMMARY] Warning: Forecast metrics failed: {forecast_metrics['error']}")
                 forecast_metrics = {"metrics": []}
             
             # 5) Agregacja CVaR
@@ -2365,6 +2389,7 @@ class DataService:
 
     def get_realized_metrics(self, db: Session, username: str = "admin") -> Dict[str, Any]:
         """Get realized risk metrics for portfolio and individual tickers (NaN-tolerant, aligned to SPY)."""
+        print(f"[REALIZED-METRICS] Starting realized metrics for user: {username}")
         try:
             import pandas as pd
             import numpy as np
@@ -2376,19 +2401,25 @@ class DataService:
                 return cached
         
             # 1) snapshot portfela
+            print(f"[REALIZED-METRICS] Getting portfolio snapshot...")
             portfolio_positions, ok = self._portfolio_snapshot(db, username)
             if not ok or not portfolio_positions:
+                print(f"[REALIZED-METRICS] No portfolio positions found")
                 return {"metrics": []}
             
             portfolio_tickers = [p["ticker"] for p in portfolio_positions]
             weights_map = {p["ticker"]: p["weight_frac"] for p in portfolio_positions}
+            print(f"[REALIZED-METRICS] Portfolio tickers: {portfolio_tickers}")
 
             # 2) Zwroty – dłuższe okno i kalendarz SPY
             needed = portfolio_tickers + ["SPY"]
+            print(f"[REALIZED-METRICS] Getting return series for: {needed}")
             ret_map = self._get_return_series_map(db, needed, lookback_days=252*2)  # 2 lata
             dates_ref, M, active = self._align_on_reference(ret_map, needed, ref_symbol="SPY", min_obs=30)
+            print(f"[REALIZED-METRICS] Aligned data shape: {M.shape}, active symbols: {active}")
             if M.size == 0 or len(dates_ref) < 30 or "SPY" not in ret_map or len(ret_map["SPY"][0]) == 0:
                 # brak sensownego pokrycia → demo
+                print(f"[REALIZED-METRICS] Insufficient data, using sample metrics")
                 return self._get_sample_realized_metrics(portfolio_tickers)
         
             # SPY w kalendarzu ref
@@ -2491,6 +2522,8 @@ class DataService:
     def get_rolling_metric(self, db: Session, metric: str = "vol", window: int = 21,
                           tickers: List[str] = None, username: str = "admin") -> Dict[str, Any]:
         """Get rolling metric data for charting"""
+        print(f"[ROLLING-METRIC] Starting rolling metric calculation for user: {username}")
+        print(f"[ROLLING-METRIC] Metric: {metric}, window: {window}, tickers: {tickers}")
         import numpy as np
         import pandas as pd
         from math import isfinite
@@ -2627,6 +2660,7 @@ class DataService:
     # --- liquidity wrappers ------------------------------------------------
     def get_liquidity_metrics(self, db: Session, username: str = "admin") -> Dict[str, Any]:
         """Get comprehensive liquidity metrics for portfolio"""
+        print(f"[LIQUIDITY-METRICS] Starting liquidity metrics for user: {username}")
         try:
             from quant.liquidity import liquidity_metrics
             return liquidity_metrics(db, username)
