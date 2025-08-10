@@ -320,7 +320,11 @@ class ApiService {
   async getVolatilityData(forecastModel: string = 'EWMA (5D)', username: string = "admin"): Promise<VolatilityData> {
     try {
       const response = await api.get('/volatility-data', {
-        params: { forecast_model: forecastModel, username }
+        params: { 
+          forecast_model: forecastModel, 
+          username,
+          _t: Date.now() // Add timestamp to prevent caching
+        }
       });
       return response.data;
     } catch (error) {
@@ -332,7 +336,10 @@ class ApiService {
   async getFactorExposureData(username: string = "admin"): Promise<FactorExposureResponse> {
     try {
       const response = await api.get('/factor-exposure-data', {
-        params: { username }
+        params: { 
+          username,
+          _t: Date.now() // Add timestamp to prevent caching
+        }
       });
       return response.data;
     } catch (error) {
@@ -344,7 +351,10 @@ class ApiService {
   async getConcentrationRiskData(username: string = "admin"): Promise<ConcentrationRiskResponse> {
     try {
       const response = await api.get('/concentration-risk-data', {
-        params: { username }
+        params: { 
+          username,
+          _t: Date.now() // Add timestamp to prevent caching
+        }
       });
       return response.data;
     } catch (error) {
@@ -356,7 +366,10 @@ class ApiService {
   async getRiskScoringData(username: string = "admin"): Promise<RiskScoringResponse> {
     try {
       const response = await api.get('/risk-scoring', {
-        params: { username }
+        params: { 
+          username,
+          _t: Date.now() // Add timestamp to prevent caching
+        }
       });
       return response.data;
     } catch (error) {
@@ -368,7 +381,10 @@ class ApiService {
   async getStressTestingData(username: string = "admin"): Promise<StressTestingResponse> {
     try {
       const response = await api.get('/stress-testing', {
-        params: { username }
+        params: { 
+          username,
+          _t: Date.now() // Add timestamp to prevent caching
+        }
       });
       return response.data;
     } catch (error) {
@@ -377,11 +393,24 @@ class ApiService {
     }
   }
 
-  async getForecastRiskContributionData(volModel: string = 'EWMA (5D)', username: string = "admin"): Promise<ForecastRiskContributionResponse> {
+  async getForecastRiskContributionData(volModel: string = 'EWMA (5D)', tickers: string[] = [], includePortfolioBar: boolean = true, username: string = "admin"): Promise<ForecastRiskContributionResponse> {
     try {
-      const response = await api.get('/forecast-risk-contribution', {
-        params: { vol_model: volModel, username }
-      });
+      console.log('[API] getForecastRiskContributionData called with:', { volModel, tickers, includePortfolioBar, username });
+      
+      const params = { 
+        vol_model: volModel, 
+        tickers: tickers.length > 0 ? tickers.join(',') : '',
+        include_portfolio_bar: includePortfolioBar,
+        username,
+        _t: Date.now() // Add timestamp to prevent caching
+      };
+      
+      console.log('[API] Request params:', params);
+      
+      const response = await api.get('/forecast-risk-contribution', { params });
+      
+      console.log('[API] Response data:', response.data);
+      
       return response.data;
     } catch (error) {
       console.error('Error fetching forecast risk contribution data:', error);
@@ -392,7 +421,10 @@ class ApiService {
   async getForecastMetrics(username: string = "admin"): Promise<ForecastMetricsResponse> {
     try {
       const response = await api.get('/forecast-metrics', {
-        params: { username }
+        params: { 
+          username,
+          _t: Date.now() // Add timestamp to prevent caching
+        }
       });
       return response.data;
     } catch (error) {
@@ -408,7 +440,8 @@ class ApiService {
           model, 
           window, 
           tickers: tickers.join(','), 
-          username 
+          username,
+          _t: Date.now() // Add timestamp to prevent caching
         }
       });
       return response.data;
@@ -421,7 +454,10 @@ class ApiService {
   async getLatestFactorExposures(username: string = "admin"): Promise<LatestFactorExposuresResponse> {
     try {
       const response = await api.get('/latest-factor-exposures', {
-        params: { username }
+        params: { 
+          username,
+          _t: Date.now() // Add timestamp to prevent caching
+        }
       });
       return response.data;
     } catch (error) {
@@ -433,7 +469,10 @@ class ApiService {
   async getPortfolioSummary(username: string = "admin"): Promise<PortfolioSummaryResponse> {
     try {
       const response = await api.get('/portfolio-summary', {
-        params: { username }
+        params: { 
+          username,
+          _t: Date.now() // Add timestamp to prevent caching
+        }
       });
       return response.data;
     } catch (error) {
@@ -445,7 +484,10 @@ class ApiService {
   async getRealizedMetrics(username: string = "admin"): Promise<RealizedMetricsResponse> {
     try {
       const response = await api.get('/realized-metrics', {
-        params: { username }
+        params: { 
+          username,
+          _t: Date.now() // Add timestamp to prevent caching
+        }
       });
       return response.data;
     } catch (error) {
@@ -466,7 +508,8 @@ class ApiService {
           metric, 
           window, 
           tickers: tickers.join(','), 
-          username 
+          username,
+          _t: Date.now() // Add timestamp to prevent caching
         }
       });
       return response.data;
@@ -479,7 +522,10 @@ class ApiService {
   async getLiquidityOverview(username: string = "admin"): Promise<LiquidityOverviewResponse> {
     try {
       const response = await api.get('/liquidity-overview', {
-        params: { username }
+        params: { 
+          username,
+          _t: Date.now() // Add timestamp to prevent caching
+        }
       });
       return response.data;
     } catch (error) {
@@ -491,7 +537,10 @@ class ApiService {
   async getLiquidityVolumeAnalysis(username: string = "admin"): Promise<LiquidityVolumeAnalysisResponse> {
     try {
       const response = await api.get('/liquidity-volume-analysis', {
-        params: { username }
+        params: { 
+          username,
+          _t: Date.now() // Add timestamp to prevent caching
+        }
       });
       return response.data;
     } catch (error) {
@@ -503,7 +552,10 @@ class ApiService {
   async getLiquidityAlerts(username: string = "admin"): Promise<LiquidityAlertsResponse> {
     try {
       const response = await api.get('/liquidity-alerts', {
-        params: { username }
+        params: { 
+          username,
+          _t: Date.now() // Add timestamp to prevent caching
+        }
       });
       return response.data;
     } catch (error) {
@@ -548,6 +600,16 @@ class ApiService {
       return response.data;
     } catch (error) {
       console.error('Login error:', error);
+      throw error;
+    }
+  }
+
+  async getUserPortfolio(username: string = "admin"): Promise<any> {
+    try {
+      const response = await api.get(`/user-portfolio/${username}`);
+      return response.data;
+    } catch (error) {
+      console.error('Error fetching user portfolio:', error);
       throw error;
     }
   }

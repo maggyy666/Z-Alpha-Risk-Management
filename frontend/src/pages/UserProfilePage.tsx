@@ -3,43 +3,119 @@ import './UserProfilePage.css';
 import martinPhoto from '../assets/martin-shkreli.webp';
 import sbfPhoto from '../assets/Sam-Bankman-Fried-Silicon-Valley-Culture-Plaintext-Business-1237105664.webp';
 import apiService from '../services/api';
+import axios from 'axios';
 import { useSession } from '../contexts/SessionContext';
 import portfolioService, { PortfolioItem } from '../services/portfolioService';
 
 const UserProfilePage: React.FC = () => {
   const [loading, setLoading] = useState(true);
-  const { session, setDefaultSession, setCurrentUser } = useSession();
+  const { session, setDefaultSession, setCurrentUser, refreshPortfolioData } = useSession();
 
   const [newTicker, setNewTicker] = useState('');
   const [newShares, setNewShares] = useState('');
+  const [portfolio, setPortfolio] = useState<PortfolioItem[]>([]);
+  const [totalMarketValue, setTotalMarketValue] = useState(0);
+  const [saving, setSaving] = useState(false);
+  const [saveMessage, setSaveMessage] = useState('');
+  
+  // Ticker search states
+  const [tickerQuery, setTickerQuery] = useState('');
+  const [tickerSuggestions, setTickerSuggestions] = useState<any[]>([]);
+  const [showSuggestions, setShowSuggestions] = useState(false);
+  const [addingTicker, setAddingTicker] = useState(false);
+  const [addMessage, setAddMessage] = useState('');
+
+  const fetchPortfolioData = async () => {
+    try {
+      const currentUsername = session?.username || 'admin';
+      const response = await axios.get(`http://localhost:8000/user-portfolio/${currentUsername}`);
+      
+      if (response.data && response.data.portfolio_items) {
+        const portfolioItems = response.data.portfolio_items.map((item: any) => ({
+          ticker: item.ticker,
+          shares: item.shares,
+          price: item.price,
+          market_value: item.market_value,
+          weight: (item.market_value / response.data.total_market_value) * 100,
+          sector: item.sector,
+          industry: item.industry
+        }));
+        
+        setPortfolio(portfolioItems);
+        setTotalMarketValue(response.data.total_market_value);
+      }
+    } catch (error) {
+      console.error('Error fetching portfolio data:', error);
+      // Fallback to default portfolios if API fails
+      portfolioService.initializeDefaultPortfolios();
+      const currentUsername = session?.username || 'admin';
+      setPortfolio(portfolioService.getPortfolioItems(currentUsername));
+      setTotalMarketValue(portfolioService.getTotalMarketValue(currentUsername));
+    } finally {
+      setLoading(false);
+    }
+  };
 
   useEffect(() => {
-    // Initialize portfolio service with default portfolios
-    portfolioService.initializeDefaultPortfolios();
-    setLoading(false);
-  }, []);
+    fetchPortfolioData();
+  }, [session?.username]);
 
   // Get current user's portfolio
   const currentUsername = session?.username || 'admin';
-  const portfolio = portfolioService.getPortfolioItems(currentUsername);
-  const totalMarketValue = portfolioService.getTotalMarketValue(currentUsername);
   
   // Different profiles for different users
   const isAdmin = currentUsername === 'admin';
   const isUser = currentUsername === 'user';
 
   const handleSharesChange = (index: number, newShares: number) => {
-    const ticker = portfolio[index].ticker;
-    portfolioService.updateShares(currentUsername, ticker, newShares);
-    // Force re-render
-    window.location.reload();
+    const updatedPortfolio = [...portfolio];
+    updatedPortfolio[index].shares = newShares;
+    updatedPortfolio[index].market_value = newShares * updatedPortfolio[index].price;
+    
+    // Recalculate weights
+    const newTotal = updatedPortfolio.reduce((sum, item) => sum + item.market_value, 0);
+    updatedPortfolio.forEach(item => {
+      item.weight = (item.market_value / newTotal) * 100;
+    });
+    
+    setPortfolio(updatedPortfolio);
+    setTotalMarketValue(newTotal);
   };
 
-  const handleRemoveTicker = (index: number) => {
-    const ticker = portfolio[index].ticker;
-    portfolioService.removeTicker(currentUsername, ticker);
-    // Force re-render
-    window.location.reload();
+  const handleRemoveTicker = async (index: number) => {
+    const tickerToRemove = portfolio[index].ticker;
+    
+    try {
+      const currentUsername = session?.username || 'admin';
+      const response = await axios.delete(
+        `http://localhost:8000/remove-ticker/${currentUsername}?ticker=${encodeURIComponent(tickerToRemove)}`
+      );
+
+      if (response.data.success) {
+        // Remove from local state
+        const updatedPortfolio = portfolio.filter((_, i) => i !== index);
+        
+        // Recalculate weights
+        const newTotal = updatedPortfolio.reduce((sum, item) => sum + item.market_value, 0);
+        updatedPortfolio.forEach(item => {
+          item.weight = (item.market_value / newTotal) * 100;
+        });
+        
+        setPortfolio(updatedPortfolio);
+        setTotalMarketValue(newTotal);
+        
+        // Show success message
+        setSaveMessage(`Successfully removed ${tickerToRemove} from portfolio`);
+        setTimeout(() => setSaveMessage(''), 3000);
+      } else {
+        setSaveMessage(response.data.error || 'Failed to remove ticker');
+        setTimeout(() => setSaveMessage(''), 5000);
+      }
+    } catch (error: any) {
+      console.error('Error removing ticker:', error);
+      setSaveMessage(error.response?.data?.detail || 'Error removing ticker. Please try again.');
+      setTimeout(() => setSaveMessage(''), 5000);
+    }
   };
 
   const handleAddTicker = () => {
@@ -48,14 +124,29 @@ const UserProfilePage: React.FC = () => {
       const shares = parseInt(newShares);
       
       if (shares > 0 && !portfolio.find(item => item.ticker === ticker)) {
-        // Simulate price fetch - in real app this would come from API
-        const simulatedPrice = Math.random() * 200 + 10; // Random price between $10-$210
+        // For now, use a placeholder price - in real app this would come from API
+        const placeholderPrice = 100; // Placeholder price
         
-        portfolioService.addTicker(currentUsername, ticker, shares, simulatedPrice);
+        const newItem: PortfolioItem = {
+          ticker,
+          shares,
+          price: placeholderPrice,
+          market_value: shares * placeholderPrice,
+          weight: 0
+        };
+        
+        const updatedPortfolio = [...portfolio, newItem];
+        
+        // Recalculate weights
+        const newTotal = updatedPortfolio.reduce((sum, item) => sum + item.market_value, 0);
+        updatedPortfolio.forEach(item => {
+          item.weight = (item.market_value / newTotal) * 100;
+        });
+        
+        setPortfolio(updatedPortfolio);
+        setTotalMarketValue(newTotal);
         setNewTicker('');
         setNewShares('');
-        // Force re-render
-        window.location.reload();
       }
     }
   };
@@ -63,6 +154,152 @@ const UserProfilePage: React.FC = () => {
   const handleKeyPress = (e: React.KeyboardEvent) => {
     if (e.key === 'Enter') {
       handleAddTicker();
+    }
+  };
+
+    const handleSavePortfolio = async () => {
+    setSaving(true);
+    setSaveMessage('');
+
+    try {
+      const currentUsername = session?.username || 'admin';
+
+      // Prepare data for API
+      const portfolioData = portfolio.map(item => ({
+        ticker: item.ticker,
+        shares: item.shares
+      }));
+
+      const response = await axios.post(
+        `http://localhost:8000/user-portfolio/${currentUsername}`,
+        portfolioData
+      );
+
+      if (response.data.success) {
+        setSaveMessage('Portfolio saved successfully!');
+        setTimeout(() => setSaveMessage(''), 3000);
+        
+        // Clear backend cache for this user using new endpoint
+        try {
+          await axios.post(`http://localhost:8000/invalidate-user/${currentUsername}`);
+          console.log('Backend cache invalidated for user:', currentUsername);
+        } catch (cacheError) {
+          console.error('Error invalidating cache:', cacheError);
+        }
+        
+        // Refresh portfolio data in this component
+        await fetchPortfolioData();
+        
+        // Notify other components about portfolio update
+        console.log('🔄 Dispatching portfolio-updated event...');
+        window.dispatchEvent(new CustomEvent('portfolio-updated', {
+          detail: { timestamp: Date.now() }
+        }));
+        console.log('✅ Portfolio update event dispatched');
+      }
+    } catch (error) {
+      console.error('Error saving portfolio:', error);
+      setSaveMessage('Error saving portfolio. Please try again.');
+      setTimeout(() => setSaveMessage(''), 5000);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  // Ticker search functions
+  const searchTickers = async (query: string) => {
+    if (query.length < 2) {
+      setTickerSuggestions([]);
+      setShowSuggestions(false);
+      return;
+    }
+
+    try {
+      const response = await axios.get(`http://localhost:8000/ticker-search?query=${encodeURIComponent(query)}`);
+      setTickerSuggestions(response.data.suggestions || []);
+      setShowSuggestions(true);
+    } catch (error) {
+      console.error('Error searching tickers:', error);
+      setTickerSuggestions([]);
+      setShowSuggestions(false);
+    }
+  };
+
+  const handleTickerQueryChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const query = e.target.value;
+    setTickerQuery(query);
+    searchTickers(query);
+  };
+
+  const handleTickerSelect = (suggestion: any) => {
+    setTickerQuery(suggestion.symbol);
+    setShowSuggestions(false);
+  };
+
+  const handleAddTickerToPortfolio = async () => {
+    if (!tickerQuery.trim() || !newShares.trim()) {
+      setAddMessage('Please enter both ticker and shares');
+      setTimeout(() => setAddMessage(''), 3000);
+      return;
+    }
+
+    const shares = parseInt(newShares);
+    if (shares <= 0) {
+      setAddMessage('Shares must be greater than 0');
+      setTimeout(() => setAddMessage(''), 3000);
+      return;
+    }
+
+    // Check if ticker already exists
+    if (portfolio.find(item => item.ticker === tickerQuery.toUpperCase())) {
+      setAddMessage('Ticker already exists in portfolio');
+      setTimeout(() => setAddMessage(''), 3000);
+      return;
+    }
+
+    setAddingTicker(true);
+    setAddMessage('');
+
+    try {
+      const currentUsername = session?.username || 'admin';
+      const response = await axios.post(
+        `http://localhost:8000/add-ticker/${currentUsername}?ticker=${encodeURIComponent(tickerQuery)}&shares=${shares}`
+      );
+
+      if (response.data.success) {
+        setAddMessage(`Successfully added ${tickerQuery} with ${shares} shares (${response.data.data_source})`);
+        setTickerQuery('');
+        setNewShares('');
+        setShowSuggestions(false);
+        
+        // Refresh portfolio data
+        const portfolioResponse = await axios.get(`http://localhost:8000/user-portfolio/${currentUsername}`);
+        if (portfolioResponse.data && portfolioResponse.data.portfolio_items) {
+          const portfolioItems = portfolioResponse.data.portfolio_items.map((item: any) => ({
+            ticker: item.ticker,
+            shares: item.shares,
+            price: item.price,
+            market_value: item.market_value,
+            weight: (item.market_value / portfolioResponse.data.total_market_value) * 100,
+            sector: item.sector,
+            industry: item.industry
+          }));
+          
+          setPortfolio(portfolioItems);
+          setTotalMarketValue(portfolioResponse.data.total_market_value);
+        }
+        
+        setTimeout(() => setAddMessage(''), 5000);
+      } else {
+        setAddMessage(response.data.error || 'Failed to add ticker');
+        setTimeout(() => setAddMessage(''), 5000);
+      }
+    } catch (error: any) {
+      console.error('Error adding ticker:', error);
+      setAddMessage(error.response?.data?.detail || 'Error adding ticker. Please try again.');
+      setTimeout(() => setAddMessage(''), 5000);
+    } finally {
+      setAddingTicker(false);
     }
   };
 
@@ -216,32 +453,72 @@ const UserProfilePage: React.FC = () => {
             </div>
             
             <div className="detail-section">
-              <h3>Portfolio [Editable] - Total Value: {formatCurrency(totalMarketValue)}</h3>
+              <h3>Portfolio - Total Value: {formatCurrency(totalMarketValue)}</h3>
               
               {/* Add New Ticker Section */}
               <div className="add-ticker-section">
                 <h4>Add New Ticker</h4>
                 <div className="add-ticker-container">
-                  <input
-                    type="text"
-                    placeholder="Ticker (e.g., AAPL)"
-                    value={newTicker}
-                    onChange={(e) => setNewTicker(e.target.value)}
-                    onKeyPress={handleKeyPress}
-                    className="ticker-input"
-                  />
+                  <div className="ticker-search-container">
+                    <input
+                      type="text"
+                      placeholder="Search ticker (e.g., AAPL)"
+                      value={tickerQuery}
+                      onChange={handleTickerQueryChange}
+                      className="ticker-input"
+                    />
+                    {showSuggestions && tickerSuggestions.length > 0 && (
+                      <div className="ticker-suggestions">
+                        {tickerSuggestions.map((suggestion, index) => (
+                          <div
+                            key={index}
+                            className="suggestion-item"
+                            onClick={() => handleTickerSelect(suggestion)}
+                          >
+                            <span className="suggestion-symbol">{suggestion.symbol}</span>
+                            <span className="suggestion-name">{suggestion.name}</span>
+                            <span className="suggestion-exchange">{suggestion.exchange}</span>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
                   <input
                     type="number"
                     placeholder="Shares"
                     value={newShares}
                     onChange={(e) => setNewShares(e.target.value)}
-                    onKeyPress={handleKeyPress}
                     className="shares-input"
                   />
-                  <button onClick={handleAddTicker} className="add-ticker-btn">
-                    Add
+                  <button 
+                    onClick={handleAddTickerToPortfolio} 
+                    disabled={addingTicker}
+                    className="add-ticker-btn"
+                  >
+                    {addingTicker ? 'Adding...' : 'Add Ticker'}
                   </button>
                 </div>
+                {addMessage && (
+                  <div className={`add-message ${addMessage.includes('Error') || addMessage.includes('Failed') ? 'error' : 'success'}`}>
+                    {addMessage}
+                  </div>
+                )}
+              </div>
+
+              {/* Save Portfolio Section */}
+              <div className="save-portfolio-section">
+                <button 
+                  onClick={handleSavePortfolio} 
+                  disabled={saving}
+                  className="save-portfolio-btn"
+                >
+                  {saving ? 'Saving...' : 'SAVE PORTFOLIO'}
+                </button>
+                {saveMessage && (
+                  <div className={`save-message ${saveMessage.includes('Error') ? 'error' : 'success'}`}>
+                    {saveMessage}
+                  </div>
+                )}
               </div>
 
               <div className="portfolio-table-container">

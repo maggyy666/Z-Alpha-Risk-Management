@@ -30,12 +30,31 @@ const RealizedRiskPage: React.FC = () => {
   const [rollingData, setRollingData] = useState<RollingMetricsResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [availableTickers, setAvailableTickers] = useState<string[]>([]);
   const { getCurrentUsername } = useSession();
   
   // Rolling metrics controls
   const [selectedMetric, setSelectedMetric] = useState<string>("vol");
   const [selectedTimeFrame, setSelectedTimeFrame] = useState<number>(21);
-  const [selectedTickers, setSelectedTickers] = useState<string[]>(["PORTFOLIO", "GOOGL"]);
+  const [selectedTickers, setSelectedTickers] = useState<string[]>(["PORTFOLIO"]);
+
+  const fetchAvailableTickers = useCallback(async () => {
+    try {
+      const username = getCurrentUsername();
+      const response = await apiService.getUserPortfolio(username);
+      if (response && response.portfolio_items) {
+        const tickers = response.portfolio_items.map((item: any) => item.ticker);
+        setAvailableTickers(tickers);
+        
+        // Automatycznie wybierz PORTFOLIO + pierwszy ticker z portfolio
+        if (tickers.length > 0) {
+          setSelectedTickers(["PORTFOLIO", tickers[0]]);
+        }
+      }
+    } catch (err) {
+      console.error('Error fetching available tickers:', err);
+    }
+  }, [getCurrentUsername]);
 
   const fetchRealizedData = useCallback(async () => {
     try {
@@ -68,8 +87,9 @@ const RealizedRiskPage: React.FC = () => {
   }, [selectedMetric, selectedTimeFrame, selectedTickers, getCurrentUsername]);
 
   useEffect(() => {
+    fetchAvailableTickers();
     fetchRealizedData();
-  }, [fetchRealizedData]);
+  }, [fetchAvailableTickers, fetchRealizedData]);
 
   useEffect(() => {
     fetchRollingData();
@@ -321,7 +341,6 @@ const RealizedRiskPage: React.FC = () => {
                 <th>CVaR 95%</th>
                 <th>Hit Ratio</th>
                 <th>Beta (SPY)</th>
-                <th>Beta (SPX)</th>
                 <th>Up Cap %</th>
                 <th>Down Cap %</th>
                 <th>Track Error</th>
@@ -349,7 +368,6 @@ const RealizedRiskPage: React.FC = () => {
                   <td className="negative">{metric.cvar_95_pct?.toFixed(1) || '0.0'}</td>
                   <td>{metric.hit_ratio_pct?.toFixed(0) || '0'}</td>
                   <td>{metric.beta_ndx?.toFixed(2) || '0.00'}</td>
-                  <td>{metric.beta_spy?.toFixed(2) || '0.00'}</td>
                   <td className={metric.up_capture_ndx_pct >= 100 ? 'positive' : 'neutral'}>
                     {metric.up_capture_ndx_pct?.toFixed(0) || '0'}
                   </td>
@@ -410,7 +428,7 @@ const RealizedRiskPage: React.FC = () => {
               selectedItems={selectedTickers}
               availableItems={[
                 "PORTFOLIO",
-                ...(realizedData?.metrics?.map(metric => metric.ticker).filter(ticker => ticker !== "PORTFOLIO") || [])
+                ...availableTickers
               ]}
               onSelectionChange={setSelectedTickers}
               placeholder="Add ticker"
@@ -421,7 +439,13 @@ const RealizedRiskPage: React.FC = () => {
         {/* Chart */}
         <div className="rolling-chart-container">
           {rollingData ? (
-            <Line data={createRollingChartData()!} options={chartOptions} />
+            (() => {
+              const chartData = createRollingChartData();
+              if (!chartData) {
+                return <div className="chart-loading">No data available for selected metric</div>;
+              }
+              return <Line data={chartData} options={chartOptions} />;
+            })()
           ) : (
             <div className="chart-loading">Loading chart data...</div>
           )}

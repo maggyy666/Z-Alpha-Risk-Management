@@ -218,6 +218,17 @@ def delete_database():
     """Delete existing database if it exists"""
     db_path = "backend/portfolio.db"
     try:
+        # First, stop any running containers that might be using the database
+        print("Stopping any running containers...")
+        try:
+            subprocess.run(["docker", "compose", "down"], 
+                         shell=True, capture_output=True, text=True, timeout=30)
+        except Exception as e:
+            print(f"Warning: Could not stop containers: {e}")
+        
+        # Wait a moment for file handles to be released
+        time.sleep(2)
+        
         if os.path.exists(db_path):
             print("Deleting existing database...")
             os.remove(db_path)
@@ -227,15 +238,26 @@ def delete_database():
         return True
     except Exception as e:
         print(f"Error deleting database: {e}")
+        print("  The database file might be locked by another process")
+        print("  Try manually stopping any running containers with: docker compose down")
         return False
 
-def setup_database():
-    """Setup database with sample data - with fallback to import"""
+def setup_database(use_file_data=False):
+    """Setup database with real market data or imported file data"""
     print("Setting up database...")
-    if run_command("cd backend && poetry run python setup_database.py"):
-        print("Database setup completed successfully!")
-        return True
-    print("Standard database setup failed!")
+    
+    if use_file_data:
+        print("Using imported data from files (IBKR TWS not available)")
+        if run_command("cd backend && poetry run python setup_database.py --import-files"):
+            print("Database setup with imported data completed successfully!")
+            return True
+    else:
+        print("Using real market data from IBKR TWS")
+        if run_command("cd backend && poetry run python setup_database.py"):
+            print("Database setup with real data completed successfully!")
+            return True
+    
+    print("Database setup failed!")
     return False
 
 def check_ports_available():
@@ -255,6 +277,71 @@ def check_ports_available():
     print("All required ports are available")
     return True
 
+def check_ibkr_connection():
+    """Check if IBKR TWS is running and accessible"""
+    print("Checking IBKR TWS connection...")
+    try:
+        # Create a temporary test script to check IBKR connection
+        test_script = """
+import sys
+import os
+sys.path.append(os.path.join(os.path.dirname(__file__), 'backend'))
+
+try:
+    from services.ibkr_service import IBKRService
+    ibkr = IBKRService()
+    connected = ibkr.connect(timeout=10)
+    print(f"Connected: {connected}")
+    if connected:
+        ibkr.disconnect()
+    sys.exit(0 if connected else 1)
+except Exception as e:
+    print(f"Error: {e}")
+    sys.exit(1)
+"""
+        
+        # Write the test script to a temporary file
+        test_file = "test_ibkr_connection.py"
+        with open(test_file, 'w') as f:
+            f.write(test_script)
+        
+        try:
+            # Run the test script
+            result = subprocess.run(
+                ["poetry", "run", "python", test_file],
+                shell=True, capture_output=True, text=True, timeout=15
+            )
+            
+            # Clean up the test file
+            if os.path.exists(test_file):
+                os.remove(test_file)
+            
+            if result.returncode == 0 and "Connected: True" in result.stdout:
+                print("IBKR TWS connection successful")
+                return True
+            else:
+                print("IBKR TWS connection failed")
+                print(f"  Return code: {result.returncode}")
+                print(f"  Output: {result.stdout.strip()}")
+                print(f"  Error: {result.stderr.strip()}")
+                print("  Make sure IBKR TWS is running and configured to accept connections")
+                print("  Check that TWS is listening on port 7496 (paper) or 7497 (live)")
+                print("  Ensure 'Enable ActiveX and Socket Clients' is checked in TWS settings")
+                return False
+                
+        except subprocess.TimeoutExpired:
+            print("IBKR TWS connection timeout")
+            print("  TWS might not be running or not responding")
+            return False
+        finally:
+            # Ensure test file is cleaned up
+            if os.path.exists(test_file):
+                os.remove(test_file)
+            
+    except Exception as e:
+        print(f"Error checking IBKR connection: {e}")
+        return False
+
 def main():
     print("=" * 60)
     print("Z-ALPHA SECURITIES - DOCKER START ALL")
@@ -268,7 +355,7 @@ def main():
     if not check_docker_compose(): return
     if not check_ports_available(): return
 
-    print("All sanity checks passed!")
+    print("All basic sanity checks passed!")
 
     print("\nStep 0: Installing Python dependencies...")
     if not install_dependencies(): return
@@ -276,11 +363,33 @@ def main():
     print("\nStep 0b: Installing JavaScript dependencies...")
     if not install_js_dependencies(): return
 
-    print("\nStep 1: Cleaning up existing database...")
-    if not delete_database(): return
+    # Check IBKR connection before proceeding with database operations
+    ibkr_connected = check_ibkr_connection()
+    
+    if ibkr_connected:
+        print("\nIBKR TWS is available - will fetch real market data")
+        print("\nStep 1: Cleaning up existing database...")
+        if not delete_database(): return
 
-    print("\nStep 2: Setting up database...")
-    if not setup_database(): return
+        print("\nStep 2: Setting up database with real market data...")
+        if not setup_database(use_file_data=False): return
+    else:
+        print("\nIBKR TWS is not available - using fallback data from data/ folder")
+        
+        # Check if fallback data exists
+        data_dir = "data"
+        if os.path.exists(data_dir) and os.listdir(data_dir):
+            print(f"Found fallback data in {data_dir}/ folder")
+            print("\nStep 1: Cleaning up existing database...")
+            if not delete_database(): return
+            
+            print("\nStep 2: Setting up database with fallback data...")
+            if not setup_database(use_file_data=True): return
+        else:
+            print(f"No fallback data found in {data_dir}/ folder")
+            print("Please run download_fallback_data.py first to download data")
+            print("Or start IBKR TWS and run this script again")
+            return
 
     print("\nStep 3: Starting Docker services...")
     if not run_command("docker compose up --build --detach"):
@@ -300,20 +409,20 @@ def main():
     print("EVERYTHING IS RUNNING!")
     print("=" * 60)
     print("\nFrontend: http://localhost:3000")
-    print("Frontend (Alt): http://localhost:3001")
-    print("Backend: http://localhost:8000")
-    print("API Docs: http://localhost:8000/docs")
-    print("\nPress Ctrl+C to stop everything")
-    print("=" * 60)
+    print("Backend API: http://localhost:8000")
+    print("Landing: http://localhost:3001")
+    print("\nTo stop all services: docker compose down")
+    print("To view logs: docker compose logs -f")
+    print("\nPress Ctrl+C to stop all services")
 
     try:
+        # Keep the script running
         while True:
             time.sleep(1)
     except KeyboardInterrupt:
-        print("\nStopping Docker services...")
+        print("\n\nShutting down all services...")
         run_command("docker compose down")
-        print("Docker services stopped. Cleanup completed.")
-        print("Goodbye!")
+        print("All services stopped. Goodbye!")
 
 if __name__ == "__main__":
     main()

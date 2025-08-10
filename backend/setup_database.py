@@ -146,33 +146,55 @@ def create_admin_user(db):
         return None
 
 def get_default_portfolio(username: str) -> List[str]:
-    """Get default portfolio for a user"""
-    portfolios = {
-        "admin": [
-            "AMD", "APP", "BULL", "DOMO", "GOOGL", 
-            "META", "QQQM", "RDDT", "SGOV", "SMCI", "SNOW", 
-            "TSLA", "ULTY"
-        ],
-        "user": [
-            "AAPL", "MSFT", "GOOGL", "AMZN", "NVDA", "META",
-            "TSLA", "NFLX", "ADBE", "CRM", "ORCL", "INTC"
-        ]
-    }
-    return portfolios.get(username, [])
-
-def setup_portfolio(db, user):
-    """Setup portfolio with default tickers for user"""
-    print(f"Setting up portfolio for {user.username}...")
+    """Get default portfolio for a user from JSON file"""
+    # Handle both cases: running from project root or from backend/
+    portfolio_file = f"../data/{username}_portfolio.json"
+    if not os.path.exists(portfolio_file):
+        portfolio_file = f"data/{username}_portfolio.json"
     
     try:
-        portfolio_tickers = get_default_portfolio(user.username)
+        if not os.path.exists(portfolio_file):
+            print(f"Portfolio file {portfolio_file} not found")
+            return []
         
-        if not portfolio_tickers:
-            print(f"No default portfolio defined for {user.username}")
+        with open(portfolio_file, 'r') as f:
+            portfolio_data = json.load(f)
+        
+        if not isinstance(portfolio_data, list):
+            print(f"Invalid portfolio format: expected list of ticker objects")
+            return []
+        
+        # Extract just ticker symbols for backward compatibility
+        tickers = [item.get('ticker') for item in portfolio_data if 'ticker' in item]
+        return tickers
+        
+    except Exception as e:
+        print(f"Error reading portfolio file for {username}: {e}")
+        return []
+
+def import_portfolio_from_file(db, user, portfolio_file: str):
+    """Import portfolio from JSON file"""
+    try:
+        if not os.path.exists(portfolio_file):
+            print(f"Portfolio file {portfolio_file} not found")
+            return False
+        
+        with open(portfolio_file, 'r') as f:
+            portfolio_data = json.load(f)
+        
+        if not isinstance(portfolio_data, list):
+            print(f"Invalid portfolio format: expected list of ticker objects")
             return False
         
         added_count = 0
-        for ticker in portfolio_tickers:
+        for item in portfolio_data:
+            if 'ticker' not in item or 'shares' not in item:
+                print(f"Invalid portfolio item: missing ticker or shares")
+                continue
+            
+            ticker = item['ticker']
+            shares = int(item['shares'])
+            
             existing = db.query(Portfolio).filter(
                 Portfolio.user_id == user.id,
                 Portfolio.ticker_symbol == ticker
@@ -182,25 +204,42 @@ def setup_portfolio(db, user):
                 portfolio_item = Portfolio(
                     user_id=user.id,
                     ticker_symbol=ticker,
-                    shares=1000
+                    shares=shares
                 )
                 db.add(portfolio_item)
                 added_count += 1
         
         db.commit()
-        print(f"Portfolio initialized for {user.username} with {added_count} new tickers")
+        print(f"Imported portfolio for {user.username} with {added_count} tickers from {portfolio_file}")
         return True
     except Exception as e:
-        print(f"Error setting up portfolio for {user.username}: {e}")
+        print(f"Error importing portfolio for {user.username}: {e}")
         db.rollback()
         return False
 
-def generate_ticker_data(db, ticker, start_date, end_date):
-    """Fetch real historical data from IBKR for a ticker"""
-    data_service = DataService()
-    return data_service.fetch_and_store_historical_data(db, ticker)
+def setup_portfolio(db, user, use_file_data=False):
+    """Setup portfolio for user from JSON file"""
+    print(f"Setting up portfolio for {user.username}...")
+    
+    # Always use portfolio file (JSON-based approach)
+    # Handle both cases: running from project root or from backend/
+    portfolio_file = f"../data/{user.username}_portfolio.json"
+    if not os.path.exists(portfolio_file):
+        portfolio_file = f"data/{user.username}_portfolio.json"
+    return import_portfolio_from_file(db, user, portfolio_file)
 
-def generate_historical_data(db, data_service, tickers, data_type):
+def generate_ticker_data(db, ticker, start_date, end_date, use_file_data=False):
+    """Fetch real historical data from IBKR for a ticker, or import from file if IBKR unavailable"""
+    data_service = DataService()
+    
+    if use_file_data:
+        print(f"Importing data for {ticker} from file (IBKR unavailable)")
+        return data_service.import_ticker_data_from_file(db, ticker)
+    else:
+        print(f"Fetching real data for {ticker} from IBKR")
+        return data_service.fetch_and_store_historical_data(db, ticker)
+
+def generate_historical_data(db, data_service, tickers, data_type, use_file_data=False):
     """Generate historical data for tickers"""
     print(f"Generating historical data for {data_type}...")
     
@@ -211,7 +250,7 @@ def generate_historical_data(db, data_service, tickers, data_type):
                 existing_count = db.query(TickerData).filter(TickerData.ticker_symbol == ticker).count()
                 if existing_count == 0:
                     # Generate historical data for this ticker
-                    generate_ticker_data(db, ticker, None, None)  # start_date and end_date not needed
+                    generate_ticker_data(db, ticker, None, None, use_file_data=use_file_data)
                     print(f"Generated data for {ticker}")
                     
                     # Note: Using proxy spread (high-low) for liquidity calculations
@@ -310,9 +349,14 @@ def show_database_summary(db, admin_user):
         print(f"Error showing database summary: {e}")
         return False
 
-def setup_database():
+def setup_database(use_file_data=False):
     """Complete database setup"""
     print("Starting complete database setup...")
+    
+    if use_file_data:
+        print("⚠ Using imported data from files (IBKR TWS not available)")
+    else:
+        print("✓ Using real market data from IBKR TWS")
     
     # Step 1: Check prerequisites
     if not check_required_modules():
@@ -353,11 +397,11 @@ def setup_database():
             print("Created user account")
         
         # Step 8: Setup portfolio for admin
-        if not setup_portfolio(db, admin_user):
+        if not setup_portfolio(db, admin_user, use_file_data=use_file_data):
             return False
         
         # Step 9: Setup portfolio for user
-        if not setup_portfolio(db, user):
+        if not setup_portfolio(db, user, use_file_data=use_file_data):
             return False
         
         # Step 10: Initialize data service
@@ -375,15 +419,18 @@ def setup_database():
         print(f"Total unique tickers to process: {len(all_tickers)}")
         print(f"Tickers: {sorted(all_tickers)}")
         
-        # Step 12: Generate historical data for ALL tickers (ONE TIME DOWNLOAD)
-        if not generate_historical_data(db, data_service, list(all_tickers), "all tickers"):
+        # Step 12: Generate historical data for ALL tickers
+        if not generate_historical_data(db, data_service, list(all_tickers), "all tickers", use_file_data=use_file_data):
             return False
         
-        # Step 13: Fetch fundamental data for all tickers
-        if not fetch_fundamental_data(db, data_service, list(all_tickers)):
-            print("Warning: Some fundamental data may be missing")
+        # Step 13: Fetch fundamental data for all tickers (skip if using file data)
+        if not use_file_data:
+            if not fetch_fundamental_data(db, data_service, list(all_tickers)):
+                print("Warning: Some fundamental data may be missing")
+        else:
+            print("Skipping fundamental data fetch (using imported data)")
         
-        # Step 12: Show database summary
+        # Step 14: Show database summary
         if not show_database_summary(db, admin_user):
             return False
         
@@ -398,11 +445,16 @@ def setup_database():
 
 def main():
     """Main function"""
+    import sys
+    
     print("=" * 60)
     print("Z-ALPHA SECURITIES - DATABASE SETUP")
     print("=" * 60)
     
-    success = setup_database()
+    # Check if --import-files flag is provided
+    use_file_data = "--import-files" in sys.argv
+    
+    success = setup_database(use_file_data=use_file_data)
     
     if success:
         print("\nSetup completed successfully!")
