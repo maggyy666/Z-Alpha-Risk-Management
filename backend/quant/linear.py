@@ -11,8 +11,10 @@ Returns:
 """
 
 import numpy as np
+from numpy.linalg import LinAlgError
+from typing import Tuple
 
-def ols_beta(y: np.ndarray, x: np.ndarray) -> tuple[float, float]:
+def ols_beta(y: np.ndarray, x: np.ndarray) -> Tuple[float, float]:
     """
     OLS regression: y = α + βx + ε
     Returns: (beta, r_squared)
@@ -20,20 +22,21 @@ def ols_beta(y: np.ndarray, x: np.ndarray) -> tuple[float, float]:
     if len(y) != len(x) or len(y) < 2:
         return 0.0, 0.0
     
+    # Guard for zero-variance x
+    if np.allclose(np.var(x), 0.0):
+        return 0.0, 0.0
+    
     # Add constant for regression
-    x_with_const = np.column_stack([np.ones(len(x)), x])
+    X = np.column_stack([np.ones(len(x)), x])
     
     try:
-        # OLS regression
-        coef = np.linalg.lstsq(x_with_const, y, rcond=None)[0]
-        beta = coef[1]
-        
-        # Calculate R-squared
-        y_pred = x_with_const @ coef
-        ss_res = np.sum((y - y_pred) ** 2)
-        ss_tot = np.sum((y - np.mean(y)) ** 2)
-        r_squared = 1 - (ss_res / ss_tot) if ss_tot > 0 else 0.0
-        
-        return float(beta), float(r_squared)
-    except:
+        coef = np.linalg.lstsq(X, y, rcond=None)[0]
+        beta = float(coef[1])
+        y_pred = X @ coef
+        ss_res = float(np.sum((y - y_pred) ** 2))
+        ss_tot = float(np.sum((y - np.mean(y)) ** 2))
+        r2 = 1.0 - ss_res / ss_tot if ss_tot > 0 else 0.0
+        r2 = float(np.clip(r2, 0.0, 1.0))
+        return beta, r2
+    except LinAlgError:
         return 0.0, 0.0

@@ -125,7 +125,7 @@ def compute_realized_metrics(ret: pd.DataFrame,
             b = R[:, benchmark_idx]
             te = np.std(r - b, ddof=1) * np.sqrt(ANNUAL) * 100
             
-            # Poprawka dla log-zwrotów w Information Ratio
+            # Fix for log returns in Information Ratio
             mu_b = annual_mean(np.mean(b))
             ir = (mu_a/100 - mu_b) / (te/100) if te != 0 else np.nan
         else:
@@ -141,7 +141,7 @@ def compute_realized_metrics(ret: pd.DataFrame,
     cols = ["Ticker", "Ann.Return%", "Ann.Volatility%", "Sharpe", "Sortino",
             "Skew", "Kurtosis", "Max Drawdown%",
             "VaR(5%)%", "CVaR(95%)%", "Hit Ratio%",
-            "Beta (SPY)",  # Usunięto duplikat
+            "Beta (SPY)",  # Removed duplicate
             "Up Capture (SPY)%", "Down Capture (SPY)%",  # Changed from NDX to SPY
             "Tracking Error%", "Information Ratio"]
     return pd.DataFrame(tbl, columns=cols).set_index("Ticker")

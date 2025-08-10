@@ -12,7 +12,7 @@ Returns:
 
 import numpy as np
 import pandas as pd
-from typing import Dict, List, Tuple
+from typing import Dict, List, Tuple, Any
 from datetime import date, timedelta
 from sqlalchemy.orm import Session
 from database.models.ticker_data import TickerData
@@ -30,7 +30,7 @@ def _get_series(db: Session, symbol: str, field: str, lookback: int):
                .order_by(TickerData.date.desc())
                .limit(lookback)
                .all())
-    rows.reverse()           # oldest->newest
+    rows.reverse()           # oldest to newest
     if not rows:
         return np.array([])
     return np.array([getattr(r, field) for r in rows], dtype=float)
@@ -55,27 +55,27 @@ def _spread_pct(db, symbol):
                       .order_by(TickerData.date.desc())
                       .first())
     
-    if latest_data and latest_data.bid_price and latest_data.ask_price:
-        # Use real bid/ask data
-        bid = float(latest_data.bid_price)
-        ask = float(latest_data.ask_price)
+    bid = getattr(latest_data, "bid_price", None) if latest_data else None
+    ask = getattr(latest_data, "ask_price", None) if latest_data else None
+    if bid is not None and ask is not None:
+        bid = float(bid)
+        ask = float(ask)
         mid = (bid + ask) / 2
         if mid > 0:
             spread = (ask - bid) / mid
-            return max(spread, 0.0001)  # Minimum 0.01%
+            return max(spread, 0.0001)  # minimum 0.01%
     
     # Proxy path
     high = _get_series(db, symbol, "high_price", _N_SPR)
     low = _get_series(db, symbol, "low_price", _N_SPR)
     
     if len(high) < _N_SPR or len(low) < _N_SPR:
-        return np.nan  # FIXED: Return nan instead of 0.0
+        return np.nan
     
     mid = (high + low) / 2
     with np.errstate(divide="ignore", invalid="ignore"):
         spr = np.where(mid > 0, (high - low) / mid, np.nan)
     
-    # Clamp tiny spreads
     spr = np.clip(spr, 0.0001, 0.20)  # 0.01% to 20%
     return np.nanmean(spr)
 
@@ -87,16 +87,21 @@ def _vol_score(avg_vol):
 
 def _spr_score(spread):
     """Calculate spread score (1-10) based on spread percentage"""
-    # FIXED: Handle nan and zero values properly
     if not np.isfinite(spread) or spread <= 0:
         return 1.0  # no data/zero data = worst score
     return float(np.clip(10 - 400 * spread, 1, 10))
 
-# ---------- main public function -------------------------------------------
 
-def liquidity_metrics(db: Session, username: str = "admin") -> Dict[str, any]:
+
+def liquidity_metrics(
+    db: Session,
+    username: str = "admin",
+    adv_frac: float = 0.20,
+    vol_thr_high: float = 5e6,
+    vol_thr_med: float = 1e6
+) -> Dict[str, Any]:
     """Core calculator - returns exactly the JSON the React tab expects."""
-    # 1) pull user portfolio (weight, shares, market value)
+    # Get user portfolio (weight, shares, market value)
     user = db.query(User).filter(User.username == username).first()
     if not user:
         return {"error": "user not found"}
@@ -122,39 +127,45 @@ def liquidity_metrics(db: Session, username: str = "admin") -> Dict[str, any]:
         pos.append({
             "ticker": it.ticker_symbol,
             "shares": it.shares,
-            "market_value": mv
+            "market_value": mv,
+            "weight_frac": 0.0  # will calculate after total
         })
 
     if total_mv == 0:
         return {"error": "no prices?"}
 
-    # 2) per-ticker liquidity metrics
-    high_liq_w, med_liq_w, low_liq_w = 0.0, 0.0, 0.0  # FIXED: Added low bucket
+    # Per-ticker liquidity metrics
+    high_liq_w, med_liq_w, low_liq_w = 0.0, 0.0, 0.0
     max_liq_days = 0
     overall_score = 0.0
     alerts = []
     details = []
 
+    # Calculate weights
     for p in pos:
-        w = p["market_value"] / total_mv
+        p["weight_frac"] = p["market_value"] / total_mv
+    
+    for p in pos:
+        w = p["weight_frac"]
         avol = _avg_volume(db, p["ticker"])
         cvol = _curr_volume(db, p["ticker"])
         spr = _spread_pct(db, p["ticker"])   # may return np.nan
 
-        v_cat = "High" if avol > 5e6 else ("Medium" if avol > 1e6 else "Low")
+        v_cat = "High" if avol > vol_thr_high else ("Medium" if avol > vol_thr_med else "Low")
         v_scr = _vol_score(avol)
         s_scr = _spr_score(spr)              # converts nan/0 to score=1
         liq = 0.7 * v_scr + 0.3 * s_scr
 
-        # liquidation time (20% ADV per day) - FIXED: Handle zero volume
+        # liquidation time (adv_frac * ADV per day)
         if avol <= 1:
-            days = max(30, int(np.ceil(p["shares"] / 1.0 / 0.20)))  # Minimum 30 days for zero volume
+            days = int(1e9)
             alerts.append({
                 "severity": "HIGH",
-                "text": f"Zero/low volume position: {p['ticker']} (ADV: {avol:.0f})"
+                "text": f"Zero/low volume: {p['ticker']} (ADV: {avol:.0f})"
             })
         else:
-            days = max(30, int(np.ceil(p["shares"] / avol / 0.20)))  # Minimum 30 days for any position
+            days = int(np.ceil(p["shares"] / (adv_frac * avol)))
+        days = max(days, 1)
 
         # Bucket assignment
         if liq >= 8:
@@ -168,20 +179,26 @@ def liquidity_metrics(db: Session, username: str = "admin") -> Dict[str, any]:
         overall_score += w * liq
 
         # Alerts
-        if liq < 3:
+        if not np.isfinite(spr):
             alerts.append({
-                "severity": "HIGH",
-                "text": f"Very illiquid position: {p['ticker']} (score {liq:.1f})"
+                "severity": "MEDIUM",
+                "text": f"No spread data for {p['ticker']} (using proxy/NA)"
             })
-        if spr > 0.015:
+        elif spr > 0.015:
             alerts.append({
                 "severity": "MEDIUM",
                 "text": f"Wide avg spread on {p['ticker']} ({spr:.2%})"
             })
 
+        if liq < 3:
+            alerts.append({
+                "severity": "HIGH",
+                "text": f"Very illiquid: {p['ticker']} (score {liq:.1f})"
+            })
+
         details.append({
             **p,
-            "weight_pct": round(w * 100, 2),  # FIXED: Keep exact w for calculations, rounded for display
+            "weight_pct": round(w * 100, 2),
             "avg_volume": int(avol),
             "current_volume": int(cvol),
             "spread_pct": round(spr * 100, 2) if np.isfinite(spr) else 0.0,
@@ -191,7 +208,7 @@ def liquidity_metrics(db: Session, username: str = "admin") -> Dict[str, any]:
             "liq_days": days
         })
 
-    # 3) portfolio-level outputs
+    # Portfolio-level outputs
     risk_level = ("LOW" if overall_score >= 8
                   else "MEDIUM" if overall_score >= 5
                   else "HIGH")
@@ -202,17 +219,19 @@ def liquidity_metrics(db: Session, username: str = "admin") -> Dict[str, any]:
             "text": "Portfolio liquidity classified as HIGH RISK"
         })
 
-    # Format liquidation time
-    if max_liq_days <= 1:
+    # portfolio-level liquidation time formatting
+    if max_liq_days >= 365*10:
+        liq_time = "illiquid"
+    elif max_liq_days <= 1:
         liq_time = "1 day"
     elif max_liq_days <= 5:
-        liq_time = f"2-5 days"
+        liq_time = "2-5 days"
     else:
         liq_time = f"{max_liq_days} days"
 
-    # FIXED: Correct volume analysis calculations
+    # volume_weighted_avg — use exact weights
     avg_volume_global = int(np.mean([p['avg_volume'] for p in details]))
-    volume_weighted_avg = int(sum(p['avg_volume'] * p['weight_pct'] / 100 for p in details))
+    volume_weighted_avg = int(sum(p['avg_volume'] * p['weight_frac'] for p in details))
 
     return {
         "overview": {
@@ -223,7 +242,7 @@ def liquidity_metrics(db: Session, username: str = "admin") -> Dict[str, any]:
         "distribution": {
             "High Liquidity (8-10)": round(high_liq_w * 100, 1),
             "Medium Liquidity (5-8)": round(med_liq_w * 100, 1),
-            "Low Liquidity (<5)": round(low_liq_w * 100, 1)  # FIXED: Added low bucket
+            "Low Liquidity (<5)": round(low_liq_w * 100, 1)
         },
         "volume_analysis": {
             "avg_volume_global": avg_volume_global,
