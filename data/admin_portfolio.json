@@ -1,0 +1,58 @@
+[
+  {
+    "ticker": "AMD",
+    "shares": 155
+  },
+  {
+    "ticker": "APP",
+    "shares": 250
+  },
+  {
+    "ticker": "BULL",
+    "shares": 150
+  },
+  {
+    "ticker": "DOMO",
+    "shares": 300
+  },
+  {
+    "ticker": "GOOGL",
+    "shares": 50
+  },
+  {
+    "ticker": "META",
+    "shares": 80
+  },
+  {
+    "ticker": "QQQM",
+    "shares": 100
+  },
+  {
+    "ticker": "RDDT",
+    "shares": 250
+  },
+  {
+    "ticker": "SGOV",
+    "shares": 500
+  },
+  {
+    "ticker": "SMCI",
+    "shares": 75
+  },
+  {
+    "ticker": "SNOW",
+    "shares": 120
+  },
+  {
+    "ticker": "TSLA",
+    "shares": 60
+  },
+  {
+    "ticker": "ULTY",
+    "shares": 100
+  },
+  {
+    "ticker": "MSFT",
+    "shares": 75
+  }
+]

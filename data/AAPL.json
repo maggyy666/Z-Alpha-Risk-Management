@@ -1,0 +1,36 @@
+{
+  "fundamental": {
+    "symbol": "AAPL",
+    "company_name": "Apple Inc.",
+    "sector": "Technology",
+    "industry": "Consumer Electronics",
+    "market_cap": 3403645714432.0,
+    "type": "STK"
+  },
+  "stock": [
+    {
+      "date": "2024-01-02",
+      "open": 185.59,
+      "high": 186.12,
+      "low": 184.26,
+      "close": 185.85,
+      "volume": 52464100
+    },
+    {
+      "date": "2024-01-03",
+      "open": 185.78,
+      "high": 186.01,
+      "low": 183.62,
+      "close": 184.25,
+      "volume": 47320000
+    },
+    {
+      "date": "2024-01-04",
+      "open": 184.25,
+      "high": 185.50,
+      "low": 183.80,
+      "close": 185.14,
+      "volume": 51230000
+    }
+  ]
+}

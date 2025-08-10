@@ -1,0 +1,50 @@
+[
+  {
+    "ticker": "AAPL",
+    "shares": 100
+  },
+  {
+    "ticker": "MSFT",
+    "shares": 80
+  },
+  {
+    "ticker": "GOOGL",
+    "shares": 60
+  },
+  {
+    "ticker": "AMZN",
+    "shares": 70
+  },
+  {
+    "ticker": "NVDA",
+    "shares": 50
+  },
+  {
+    "ticker": "META",
+    "shares": 90
+  },
+  {
+    "ticker": "TSLA",
+    "shares": 40
+  },
+  {
+    "ticker": "NFLX",
+    "shares": 120
+  },
+  {
+    "ticker": "ADBE",
+    "shares": 85
+  },
+  {
+    "ticker": "CRM",
+    "shares": 110
+  },
+  {
+    "ticker": "ORCL",
+    "shares": 95
+  },
+  {
+    "ticker": "INTC",
+    "shares": 130
+  }
+]
