@@ -21,7 +21,7 @@ def stack_common_returns(ret_map: Dict[str, Tuple[List, np.ndarray]], symbols: L
     if not symbols:
         return [], np.empty((0, 0)), []
     
-    # 1. Odfiltruj puste / zbyt krótkie serie
+    # 1. Filter NaN and short series
     ok = [s for s in symbols if s in ret_map and len(ret_map[s][1]) >= min_obs]
     if len(ok) < 2:
         print(f"Warning: Only {len(ok)} tickers have sufficient data (min_obs={min_obs})")
@@ -57,10 +57,7 @@ def stack_common_returns(ret_map: Dict[str, Tuple[List, np.ndarray]], symbols: L
         dates, returns = ret_map[symbol]
         idx_map = idx_maps[symbol]
         
-        for i, date in enumerate(common):
-            if date in idx_map:
-                R[i, j] = returns[idx_map[date]]
-            else:
-                R[i, j] = 0.0  # or np.nan if you prefer
+        # Assuming 'common' ⊆ dates (since we used intersection)
+        R[:, j] = [returns[idx_map[date]] for date in common]
     
     return common, R, active

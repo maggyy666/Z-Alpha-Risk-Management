@@ -69,8 +69,8 @@ def compute_realized_metrics(ret: pd.DataFrame,
         sharpe = s["sharpe_ratio"]
         sortino= s["sortino_ratio"]
 
-        skew    = st.skew(r, bias=False)
-        kurtosis= st.kurtosis(r, fisher=False, bias=False)
+        skew    = st.skew(r.astype(float), bias=False, nan_policy="omit")
+        kurtosis= st.kurtosis(r.astype(float), fisher=True, bias=False, nan_policy="omit")  # excess kurtosis
 
         _, mdd = drawdown(r)
         max_dd = mdd * 100
@@ -87,12 +87,8 @@ def compute_realized_metrics(ret: pd.DataFrame,
             except ValueError:
                 benchmark_idx = None
         
-        if benchmark_idx is not None and R is not None:
-            beta_ndx = ols_beta(r, R[:, benchmark_idx])[0]
-            beta_spy = ols_beta(r, R[:, benchmark_idx])[0]  # Same for SPY
-        else:
-            beta_ndx = np.nan
-            beta_spy = np.nan
+        # Beta vs benchmark (calculate once)
+        beta_spy = ols_beta(r, R[:, benchmark_idx])[0] if benchmark_idx is not None and R is not None else np.nan
 
         # Up/Down capture
         if benchmark_idx is not None and R is not None:
@@ -135,13 +131,13 @@ def compute_realized_metrics(ret: pd.DataFrame,
         tbl.append([tkr, mu_a, vol_a, sharpe, sortino,
                     skew, kurtosis, max_dd,
                     var_pct, cvar_pct, hit_ratio,
-                    beta_ndx,
+                    beta_spy,
                     up_cap, down_cap, te, ir])
 
     cols = ["Ticker", "Ann.Return%", "Ann.Volatility%", "Sharpe", "Sortino",
-            "Skew", "Kurtosis", "Max Drawdown%",
-            "VaR(5%)%", "CVaR(95%)%", "Hit Ratio%",
-            "Beta (SPY)",  # Removed duplicate
-            "Up Capture (SPY)%", "Down Capture (SPY)%",  # Changed from NDX to SPY
+            "Skew", "Excess Kurtosis", "Max Drawdown%",
+            "VaR(5%)%", "CVaR(5%)%", "Hit Ratio%",
+            "Beta (SPY)",
+            "Up Capture (SPY)%", "Down Capture (SPY)%",
             "Tracking Error%", "Information Ratio"]
     return pd.DataFrame(tbl, columns=cols).set_index("Ticker")

@@ -25,9 +25,16 @@ def build_cov(vol_vec, corr_mat):
 
 def risk_contribution(weights, cov):
     w = np.asarray(weights, dtype=float)
-    var_p = w @ cov @ w
-    if var_p <= 0:
-        raise ValueError("Portfolio variance must be positive")
+    cov = np.asarray(cov, dtype=float)
+    
+    # Sanity checks
+    if cov.shape[0] != cov.shape[1] or cov.shape[0] != w.size:
+        raise ValueError("Dimension mismatch weights/cov")
+    cov = 0.5 * (cov + cov.T)  # ensure symmetry
+    
+    var_p = float(w @ cov @ w)
+    if var_p <= 0 or not np.isfinite(var_p):
+        raise ValueError("Portfolio variance must be positive and finite")
     sigma_p = np.sqrt(var_p)
 
     mrc = (cov @ w) / sigma_p      # marginal contribution

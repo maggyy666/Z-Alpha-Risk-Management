@@ -18,6 +18,11 @@ def scenario_pnl(R: np.ndarray, w: np.ndarray) -> tuple[float, float]:
     if R.size == 0 or len(w) == 0:
         return 0.0, 0.0
     
+    # Local weight renormalization
+    w = np.asarray(w, dtype=float)
+    if w.sum() != 0:
+        w = w / w.sum()
+    
     # Portfolio returns for the scenario
     rp = R @ w
     

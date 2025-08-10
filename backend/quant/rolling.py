@@ -35,16 +35,16 @@ def rolling_metric(ret: pd.DataFrame,
         from .drawdown import drawdown
         f = lambda x: drawdown(x)[1]*100
     elif metric == "beta":
-        from .linear import ols_beta
-        def beta_func(x):
-            if len(x) < window:
-                return np.nan
-            # Get benchmark data for same period
-            benchmark = ret["SPY"].loc[x.index]  # Changed from NDX to SPY
-            if len(benchmark) != len(x):
-                return np.nan
-            return ols_beta(x.values, benchmark.values)[0]
-        f = beta_func
+        # Fast beta calculation using rolling covariance/variance
+        r = ret[ticker].astype(float)
+        b = ret["SPY"].astype(float)
+        aligned = r.dropna().index.intersection(b.dropna().index)
+        r = r.loc[aligned]
+        b = b.loc[aligned]
+        cov_rb = r.rolling(window).cov(b)
+        var_b = b.rolling(window).var()
+        ser = cov_rb / var_b
+        return ser.dropna()
     else:
         raise ValueError("Unsupported metric")
 

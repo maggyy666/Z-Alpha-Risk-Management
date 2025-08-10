@@ -26,23 +26,27 @@ def regime_metrics(R: np.ndarray, w: np.ndarray, regime_thresh: dict) -> tuple[f
     # 1. Volatility (annualized)
     vol_ann = float(np.std(rp, ddof=1) * np.sqrt(252))
     
-    # 2. Average correlation
-    corr_matrix = np.corrcoef(R.T)
-    # Remove diagonal and get upper triangle
-    upper_tri = corr_matrix[np.triu_indices_from(corr_matrix, k=1)]
-    avg_corr = float(np.mean(upper_tri[np.isfinite(upper_tri)]))
+    # 2. Average correlation (filter zero-variance columns)
+    var_mask = np.var(R, axis=0) > 1e-12
+    if var_mask.any():
+        R_sub = R[:, var_mask]
+        corr_matrix = np.corrcoef(R_sub.T)
+        upper_tri = corr_matrix[np.triu_indices_from(corr_matrix, k=1)]
+        avg_corr = float(np.nanmean(upper_tri[np.isfinite(upper_tri)])) if upper_tri.size else 0.0
+    else:
+        avg_corr = 0.0
     
-    # 3. Momentum (20-day)
+    # 3. Momentum (20-day cumulative)
     window = min(20, len(rp))
     if window >= 5:
-        mom = float(np.mean(rp[-window:]))
+        mom = float(np.exp(np.sum(rp[-window:])) - 1)  # cumulative return
     else:
         mom = 0.0
     
     # 4. Radar metrics (normalized 0-1)
     radar = {
         "volatility": float(np.clip(vol_ann / 0.4, 0, 1)),  # Normalize to 40% max
-        "correlation": float(np.clip(avg_corr, 0, 1)),
+        "correlation": float(np.clip((avg_corr + 1) / 2, 0, 1)),  # Map [-1,1] to [0,1]
         "momentum": float(np.clip((mom + 0.1) / 0.2, 0, 1))  # Normalize momentum
     }
     
