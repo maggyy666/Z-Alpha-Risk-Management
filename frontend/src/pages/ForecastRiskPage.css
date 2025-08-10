@@ -43,6 +43,17 @@
   gap: clamp(10px, 2vw, 20px);
 }
 
+.controls-container {
+  display: flex;
+  gap: clamp(15px, 3vw, 30px);
+  align-items: flex-end;
+  flex-wrap: wrap;
+}
+
+.ticker-selection-container {
+  min-width: 250px;
+}
+
 .section-header h2 {
   font-size: clamp(1.5rem, 3vw, 2.5rem);
   font-weight: 700;

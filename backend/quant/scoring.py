@@ -9,66 +9,68 @@ def weighted_avg(values: dict[str, float], weights: dict[str, float]) -> float:
     w_sum = sum(weights.get(k, 1.0) for k in values)
     return sum(values[k] * weights.get(k, 1.0) for k in values) / w_sum if w_sum else 0.0
 
-def risk_mix(raw_metrics: dict, normalization: dict, weights: dict) -> tuple[dict, dict]:
+def risk_mix(raw: dict, norm: dict, weights: dict) -> tuple[dict, dict]:
     """
-    Normalize and mix risk metrics into scores
-    Returns: (component_scores, risk_contribution_pct)
+    Normalize metrics to [0,1] (1 = better), calculate weighted score and component contributions.
+    Expected input keys (raw):
+      hhi, vol_ann_pct, beta_market, avg_pair_corr, max_drawdown_pct, factor_l1, stress_loss_pct
+    Weights keys: concentration, volatility, market, correlation, drawdown, factor, stress
     """
-    # 1. Normalize raw metrics to 0-1 scale
-    scores = {}
-    
-    # Concentration metrics
-    hhi_norm = (raw_metrics["hhi"] - normalization["HHI_LOW"]) / (normalization["HHI_HIGH"] - normalization["HHI_LOW"])
-    scores["concentration"] = clip01(1 - hhi_norm)  # Invert: lower HHI = better
-    
-    # Volatility metric
-    vol_norm = raw_metrics["vol_ann_pct"] / normalization["VOL_MAX"]
-    scores["volatility"] = clip01(1 - vol_norm)  # Invert: lower vol = better
-    
-    # Beta metric
-    beta_norm = abs(raw_metrics["beta_market"]) / normalization["BETA_ABS_MAX"]
-    scores["beta"] = clip01(1 - beta_norm)  # Invert: lower beta = better
-    
-    # Correlation metric
-    corr_norm = raw_metrics["avg_pair_corr"]
-    scores["correlation"] = clip01(1 - corr_norm)  # Invert: lower corr = better
-    
-    # Drawdown metric
-    dd_norm = abs(raw_metrics["max_drawdown_pct"]) / normalization["STRESS_5PCT_FULLSCORE"]
-    scores["drawdown"] = clip01(1 - dd_norm)  # Invert: lower DD = better
-    
-    # Factor exposure metric
-    factor_norm = raw_metrics.get("factor_l1", 0) / normalization["FACTOR_L1_MAX"]
-    scores["factor_exposure"] = clip01(1 - factor_norm)  # Invert: lower exposure = better
+    # 1) Normalizations -> [0..1] scales, where 1=better
+    # HHI: smaller is better
+    hhi_norm = (raw.get("hhi", 0.0) - norm["HHI_LOW"]) / (norm["HHI_HIGH"] - norm["HHI_LOW"])
+    concentration = clip01(1.0 - hhi_norm)
 
-    # ─── Stress-test metric ────────────────────────────────────────────────
-    #  worst_loss_pct – dodatnia liczba % straty (np. 0.08 = -8 %)
-    worst_loss_pct = abs(raw_metrics.get("stress_loss_pct", 0.0))
-    stress_norm = worst_loss_pct / normalization["STRESS_5PCT_FULLSCORE"]
-    scores["stress"] = clip01(1 - stress_norm)          # Invert: mniejsza strata = lepiej
-    
-    # 2. Calculate weighted scores
-    weighted_scores = {}
-    for component, score in scores.items():
-        weight = weights.get(component, 1.0)
-        weighted_scores[component] = score * weight
-    
-    # 3. Calculate risk contribution percentages
+    # Vol: smaller is better
+    vol_norm = raw.get("vol_ann_pct", 0.0) / norm["VOL_MAX"]
+    volatility = clip01(1.0 - vol_norm)
+
+    # Beta: |beta| smaller is better
+    beta_norm = abs(raw.get("beta_market", 0.0)) / norm["BETA_ABS_MAX"]
+    market = clip01(1.0 - beta_norm)
+
+    # Corr: map [-1,1] -> [0,1] and invert (lower correlation is better)
+    corr = float(raw.get("avg_pair_corr", 0.0))
+    corr_01 = (corr + 1.0) * 0.5
+    correlation = clip01(1.0 - corr_01)
+
+    # Max DD: larger drawdown is worse - HAVE SEPARATE threshold in normalization!
+    dd_full = norm.get("MAXDD_FULLSCORE", norm["STRESS_5PCT_FULLSCORE"])  # fallback to old
+    dd_norm = abs(raw.get("max_drawdown_pct", 0.0)) / dd_full
+    drawdown = clip01(1.0 - dd_norm)
+
+    # Factor L1: lower is better
+    factor_norm = raw.get("factor_l1", 0.0) / norm["FACTOR_L1_MAX"]
+    factor = clip01(1.0 - factor_norm)
+
+    # Stress: larger (positive) loss is worse
+    worst_loss = abs(raw.get("stress_loss_pct", 0.0))  # e.g. 0.08 = -8%
+    stress_norm = worst_loss / norm["STRESS_5PCT_FULLSCORE"]
+    stress = clip01(1.0 - stress_norm)
+
+    scores = {
+        "concentration": concentration,
+        "volatility":   volatility,
+        "market":       market,
+        "correlation":  correlation,
+        "drawdown":     drawdown,
+        "factor":       factor,
+        "stress":       stress,
+    }
+
+    # 2) Apply weights only to known keys
+    w_used = {k: float(weights.get(k, 0.0)) for k in scores.keys()}
+    w_sum = sum(w_used.values()) or 1.0
+    weighted_scores = {k: scores[k] * w_used[k] for k in scores}
+
+    # 3) Percentage contribution (sums to 100%)
     total_weighted = sum(weighted_scores.values())
-    contrib_pct = {}
-    for component, weighted_score in weighted_scores.items():
-        contrib_pct[component] = (weighted_score / total_weighted * 100) if total_weighted > 0 else 0
-    
-    # 4. Calculate overall score with validation
-    overall_score = weighted_avg(scores, weights)
-    
-    # Sanity check: ensure overall score is in valid range
-    if not (0.0 <= overall_score <= 1.0):
-        print(f"Warning: Overall score out of range: {overall_score}, clipping to [0,1]")
-        overall_score = clip01(overall_score)
-    
-    scores["overall"] = overall_score
-    
+    contrib_pct = {k: (weighted_scores[k] / total_weighted * 100.0) if total_weighted > 0 else 0.0
+                   for k in scores}
+
+    # 4) Overall = sum(score*weight) / sum(weights)
+    overall = sum(weighted_scores.values()) / w_sum
+    scores["overall"] = clip01(float(overall))
     return scores, contrib_pct
 
 
@@ -90,15 +92,17 @@ def test_risk_mix_overall():
         "VOL_MAX": 50.0,
         "BETA_ABS_MAX": 2.0,
         "STRESS_5PCT_FULLSCORE": 20.0,
-        "FACTOR_L1_MAX": 2.0
+        "FACTOR_L1_MAX": 2.0,
+        "MAXDD_FULLSCORE": 20.0
     }
     
     weights = {
-        "concentration": 0.3,
-        "volatility": 0.25,
-        "beta": 0.2,
+        "concentration": 0.25,
+        "volatility": 0.20,
+        "factor": 0.20,
         "correlation": 0.15,
-        "drawdown": 0.1
+        "market": 0.10,
+        "stress": 0.10
     }
     
     scores, contrib = risk_mix(raw_metrics, normalization, weights)

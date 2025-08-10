@@ -8,8 +8,7 @@ import warnings
 # Helpers
 
 def lambda_from_half_life(days: int) -> float:
-    """λ = 2^(-1/HL)"""
-    return exp(-log(2) / max(1, days))
+    return 0.5 ** (1.0 / max(1, days))  # corrected formula
 
 
 def log_returns(prices):
@@ -61,29 +60,35 @@ def annualized_vol(returns: np.ndarray) -> float:
 
 def forecast_sigma(returns: np.ndarray, model: str = "EWMA (5D)") -> float:
     """
-    Forecast volatility using specified model.
-    Returns annualized volatility as decimal (e.g., 0.25 for 25%).
+    Return annualized σ (decimal). For EWMA uses half-life.
     """
-    if len(returns) < 30:
-        return np.std(returns) * np.sqrt(252)
+    # Map frontend model names to internal names
+    model_mapping = {
+        "Garch Volatility": "GARCH",
+        "E-Garch Volatility": "EGARCH"
+    }
+    model = model_mapping.get(model, model)
     
+    r = np.asarray(returns, dtype=float)
+    r = r[np.isfinite(r)]
+    if r.size < 30:
+        return float(np.std(r, ddof=1) * np.sqrt(252.0))
+
     if model.startswith("EWMA"):
-        # Extract lambda from model name
         if "(5D)" in model:
-            lam = np.exp(-1/5)
+            lam = lambda_from_half_life(5)
         elif "(20D)" in model:
-            lam = np.exp(-1/20)
+            lam = lambda_from_half_life(20)
         else:
             lam = 0.94  # default
-            
-        # EWMA calculation
-        weights = np.array([(1-lam) * lam**i for i in range(len(returns))])
-        weights = weights / weights.sum()
-        
-        # Calculate weighted variance
-        mean_return = np.mean(returns)
-        variance = np.sum(weights * (returns - mean_return)**2)
-        return np.sqrt(variance * 252)
+
+        # classical EWMA on variance (zero-mean)
+        var = float(r[0] ** 2)
+        one_minus = 1.0 - lam
+        for x in r[1:]:
+            var = lam * var + one_minus * (x * x)
+        sigma_d = np.sqrt(var)
+        return float(sigma_d * np.sqrt(252.0))
     
     elif model in ["GARCH", "EGARCH"]:
         try:

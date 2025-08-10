@@ -236,12 +236,17 @@ def get_covariance_matrix(
 @app.get("/forecast-risk-contribution")
 def get_forecast_risk_contribution(
     vol_model: str = 'EWMA (5D)',
+    tickers: str = Query("", description="Comma-separated list of tickers (empty = all portfolio)"),
+    include_portfolio_bar: bool = Query(True, description="Include PORTFOLIO as first bar in charts"),
     username: str = "admin",
     db: Session = Depends(get_db)
 ):
     """Get Forecast Risk Contribution data for portfolio"""
     try:
-        data = data_service.get_forecast_risk_contribution(db, username, vol_model)
+        # Parse tickers from comma-separated string
+        ticker_list = [t.strip().upper() for t in tickers.split(",") if t.strip()] if tickers else []
+        
+        data = data_service.get_forecast_risk_contribution(db, username, vol_model, ticker_list, include_portfolio_bar)
         if "error" in data:
             raise HTTPException(status_code=400, detail=data["error"])
         return data
@@ -259,6 +264,15 @@ def clear_cache(pattern: str = None):
     try:
         data_service._clear_cache(pattern)
         return {"message": f"Cache cleared for pattern: {pattern or 'all'}"}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/invalidate-user/{username}")
+def invalidate_user(username: str):
+    """Invalidate all cache entries for a specific user"""
+    try:
+        data_service._clear_cache(f"*{username}*")
+        return {"ok": True, "message": f"Cache invalidated for user: {username}"}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -323,8 +337,13 @@ def get_portfolio_summary(username: str = "admin", db: Session = Depends(get_db)
 def get_user_portfolio(username: str, db: Session = Depends(get_db)):
     """Get user's portfolio data"""
     try:
+        # Get user first
+        user = db.query(User).filter(User.username == username).first()
+        if not user:
+            raise HTTPException(status_code=404, detail=f"User {username} not found")
+        
         # Get portfolio from database
-        portfolio_items = db.query(Portfolio).filter(Portfolio.user_id == username).all()
+        portfolio_items = db.query(Portfolio).filter(Portfolio.user_id == user.id).all()
         
         # Get ticker info for each item
         portfolio_data = []
@@ -335,12 +354,12 @@ def get_user_portfolio(username: str, db: Session = Depends(get_db)):
             ticker_data = db.query(TickerData).filter(TickerData.ticker_symbol == item.ticker_symbol).order_by(TickerData.date.desc()).first()
             
             if ticker_data:
-                market_value = ticker_data.close_price * 1000  # Assuming 1000 shares
+                market_value = ticker_data.close_price * item.shares  # Use actual shares from database
                 total_market_value += market_value
                 
                 portfolio_data.append({
                     "ticker": item.ticker_symbol,
-                    "shares": 1000,
+                    "shares": item.shares,  # Use actual shares from database
                     "price": ticker_data.close_price,
                     "market_value": market_value,
                     "sector": ticker_info.sector if ticker_info else "Unknown",
@@ -355,6 +374,85 @@ def get_user_portfolio(username: str, db: Session = Depends(get_db)):
         }
         
     except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/user-portfolio/{username}")
+def update_user_portfolio(username: str, portfolio_data: List[dict], db: Session = Depends(get_db)):
+    """Update user's portfolio data"""
+    try:
+        # Get user first
+        user = db.query(User).filter(User.username == username).first()
+        if not user:
+            raise HTTPException(status_code=404, detail=f"User {username} not found")
+        
+        # Get existing portfolio items
+        existing_items = db.query(Portfolio).filter(Portfolio.user_id == user.id).all()
+        existing_tickers = {item.ticker_symbol: item for item in existing_items}
+        
+        updated_count = 0
+        new_count = 0
+        
+        # Update or add portfolio items
+        for item in portfolio_data:
+            if 'ticker' in item and 'shares' in item:
+                ticker = item['ticker']
+                shares = int(item['shares'])
+                
+                if ticker in existing_tickers:
+                    # Update existing item
+                    existing_tickers[ticker].shares = shares
+                    updated_count += 1
+                else:
+                    # Add new item
+                    portfolio_item = Portfolio(
+                        user_id=user.id,
+                        ticker_symbol=ticker,
+                        shares=shares
+                    )
+                    db.add(portfolio_item)
+                    new_count += 1
+        
+        db.commit()
+        
+        # Clear cache for this user's portfolio data
+        print(f"🔄 Clearing cache for user {username} after portfolio update...")
+        data_service._clear_cache(f"*{username}*")
+        print(f"✅ Cache cleared for user {username} after portfolio update")
+        
+        # Update JSON file
+        import json
+        import os
+        
+        # Handle both cases: running from project root or from backend/
+        json_file = f"../data/{username}_portfolio.json"
+        if not os.path.exists(json_file):
+            json_file = f"data/{username}_portfolio.json"
+        
+        # Get all current portfolio items (including existing ones)
+        all_items = db.query(Portfolio).filter(Portfolio.user_id == user.id).all()
+        
+        # Prepare data for JSON file
+        json_data = []
+        for item in all_items:
+            json_data.append({
+                "ticker": item.ticker_symbol,
+                "shares": item.shares
+            })
+        
+        # Write to JSON file
+        with open(json_file, 'w') as f:
+            json.dump(json_data, f, indent=2)
+        
+        return {
+            "success": True,
+            "message": f"Portfolio updated for {username}",
+            "updated_items": updated_count,
+            "new_items": new_count,
+            "total_items": len(json_data)
+        }
+        
+    except Exception as e:
+        db.rollback()
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.get("/realized-metrics")
@@ -402,6 +500,46 @@ def liquidity_volume_analysis(username: str = "admin", db: Session = Depends(get
 def liquidity_alerts(username: str = "admin", db: Session = Depends(get_db)):
     """Get liquidity alerts for portfolio"""
     return data_service.get_liquidity_alerts(db, username)
+
+@app.get("/ticker-search")
+def search_tickers(query: str = Query(..., min_length=1, max_length=10)):
+    """Search for tickers using yfinance"""
+    try:
+        suggestions = data_service.search_tickers(query)
+        return {"suggestions": suggestions}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/add-ticker/{username}")
+def add_ticker_to_portfolio(
+    username: str, 
+    ticker: str = Query(..., min_length=1, max_length=10),
+    shares: int = Query(100, ge=1),
+    db: Session = Depends(get_db)
+):
+    """Add ticker to user's portfolio with data fetching"""
+    try:
+        result = data_service.add_ticker_to_portfolio(db, username, ticker, shares)
+        if "error" in result:
+            raise HTTPException(status_code=400, detail=result["error"])
+        return result
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.delete("/remove-ticker/{username}")
+def remove_ticker_from_portfolio(
+    username: str,
+    ticker: str = Query(..., min_length=1, max_length=10),
+    db: Session = Depends(get_db)
+):
+    """Remove ticker from user's portfolio"""
+    try:
+        result = data_service.remove_ticker_from_portfolio(db, username, ticker)
+        if "error" in result:
+            raise HTTPException(status_code=400, detail=result["error"])
+        return result
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
 if __name__ == "__main__":
     uvicorn.run(app, host="0.0.0.0", port=8000) 
