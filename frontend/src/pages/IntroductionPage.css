@@ -659,7 +659,7 @@
 }
 
 .stat-number {
-  font-size: clamp(12px, 2.5vw, 18px);
+  font-size: clamp(16px, 3vw, 24px);
   font-weight: 700;
   color: #FF6B6B;
   margin-bottom: 4px;
@@ -667,7 +667,7 @@
 }
 
 .stat-label {
-  font-size: clamp(5px, 0.7vw, 7px);
+  font-size: clamp(10px, 1.2vw, 14px);
   font-weight: 400;
   color: #888888;
   text-transform: uppercase;
@@ -680,6 +680,53 @@
   padding: 0 1px;
   max-width: 100%;
   display: block;
+}
+
+/* Section Dividers */
+.section-divider {
+  width: 100%;
+  height: 1px;
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    rgba(255, 107, 107, 0.1) 20%,
+    rgba(255, 107, 107, 0.2) 50%,
+    rgba(255, 107, 107, 0.1) 80%,
+    transparent 100%
+  );
+  margin: clamp(30px, 5vw, 50px) 0;
+  position: relative;
+}
+
+.section-divider::before {
+  content: '';
+  position: absolute;
+  top: -2px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 4px;
+  height: 4px;
+  background: rgba(255, 107, 107, 0.3);
+  border-radius: 50%;
+  box-shadow: 0 0 8px rgba(255, 107, 107, 0.4);
+}
+
+.section-divider.thick {
+  height: 2px;
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    rgba(255, 107, 107, 0.15) 20%,
+    rgba(255, 107, 107, 0.3) 50%,
+    rgba(255, 107, 107, 0.15) 80%,
+    transparent 100%
+  );
+}
+
+.section-divider.thick::before {
+  width: 6px;
+  height: 6px;
+  top: -3px;
 }
 
 /* Responsive adjustments for hero */

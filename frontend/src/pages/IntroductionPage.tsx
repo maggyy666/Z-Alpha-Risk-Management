@@ -457,6 +457,8 @@ const IntroductionPage: React.FC = () => {
             sizing for maximum risk-adjusted returns.
           </p>
 
+          <div className="section-divider"></div>
+
           <div className="sections-grid">
             <div className={`section-card ${expandedCard === 'portfolio-summary' ? 'expanded' : ''}`}>
               <h3 className="section-title">Portfolio Summary</h3>
@@ -900,6 +902,8 @@ const IntroductionPage: React.FC = () => {
             </div>
           </div>
 
+          <div className="section-divider thick"></div>
+
           <div className="methodology-section">
             <h2 className="methodology-title">Real-World Problems We Solve</h2>
             <p className="methodology-description">
@@ -915,6 +919,8 @@ const IntroductionPage: React.FC = () => {
               <li><strong>Problem:</strong> "We didn't know our true risk-adjusted returns" → <strong>Solution:</strong> Comprehensive risk-adjusted performance metrics</li>
             </ul>
           </div>
+
+          <div className="section-divider"></div>
 
           <div className="interpretation-section">
             <h2 className="interpretation-title">Actionable Risk Intelligence</h2>
