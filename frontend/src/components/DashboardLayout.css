@@ -29,11 +29,15 @@
   box-sizing: border-box;
   width: 100%;
   margin: 0;
+  flex-wrap: nowrap;
+  white-space: nowrap;
 }
 
 .logo-container {
   display: flex;
   align-items: center;
+  min-width: 320px;
+  flex-shrink: 0;
 }
 
 .logo {
@@ -42,7 +46,8 @@
   gap: 16px;
   font-family: 'Times New Roman', 'Georgia', serif;
   white-space: nowrap;
-  min-width: 280px;
+  min-width: 320px;
+  flex-shrink: 0;
 }
 
 .logo-icon {
@@ -181,6 +186,14 @@
     padding: 12px clamp(8px, 2.5vw, 15px);
   }
   
+  .logo-container {
+    min-width: 280px;
+  }
+  
+  .logo {
+    min-width: 280px;
+  }
+  
   .nav-tabs {
     padding: 0 clamp(8px, 2.5vw, 15px);
   }
@@ -194,6 +207,15 @@
   .top-navbar {
     padding: 10px clamp(6px, 2vw, 12px);
     min-height: 50px;
+  }
+  
+  .logo-container {
+    min-width: 240px;
+  }
+  
+  .logo {
+    min-width: 240px;
+    gap: 12px;
   }
   
   .nav-tabs {
@@ -214,6 +236,15 @@
   .top-navbar {
     padding: 8px clamp(4px, 1.5vw, 10px);
     min-height: 45px;
+  }
+  
+  .logo-container {
+    min-width: 200px;
+  }
+  
+  .logo {
+    min-width: 200px;
+    gap: 8px;
   }
   
   .nav-tabs {
@@ -246,7 +277,7 @@
 }
 
 .nav-tab {
-  padding: clamp(8px, 1.5vw, 15px) clamp(12px, 2vw, 20px);
+  padding: clamp(8px, 1.5vw, 15px) clamp(10px, 1.8vw, 16px);
   color: #cccccc;
   cursor: pointer;
   border-bottom: 3px solid transparent;
@@ -256,27 +287,32 @@
   display: inline-block;
   font-size: clamp(0.7rem, 1.5vw, 0.9rem);
   font-weight: 500;
+  flex-shrink: 0;
 }
 
 @media (max-width: 768px) {
   .nav-tabs {
-    padding: 0 15px;
-  }
-  
-  .nav-tab {
-    padding: 10px 12px;
-    font-size: 0.9rem;
-  }
-}
-
-@media (max-width: 480px) {
-  .nav-tabs {
-    padding: 0 12px;
+    padding: 0 10px;
+    justify-content: flex-start;
   }
   
   .nav-tab {
     padding: 8px 10px;
     font-size: 0.8rem;
+    flex-shrink: 0;
+  }
+}
+
+@media (max-width: 480px) {
+  .nav-tabs {
+    padding: 0 8px;
+    justify-content: flex-start;
+  }
+  
+  .nav-tab {
+    padding: 6px 8px;
+    font-size: 0.75rem;
+    flex-shrink: 0;
   }
 }
 
@@ -317,4 +353,153 @@
 
 .nav-tabs::-webkit-scrollbar-thumb:hover {
   background: #555;
+} 
+
+/* NIE zawijaj nic w top barze */
+.top-navbar { 
+  flex-wrap: nowrap;
+  white-space: nowrap;
+}
+
+/* Logo i jego tekst nigdy nie może przejść do nowej linii */
+.logo, .logo-text {
+  display: flex;
+  align-items: center;
+  flex-wrap: nowrap !important;
+  white-space: nowrap !important;
+}
+
+.logo-text > * {
+  flex: 0 0 auto;          /* nie ściskaj dzieci */
+  white-space: nowrap;
+  word-break: keep-all;     /* nie łam na łącznikach/hyfenach */
+  overflow-wrap: normal;
+  line-height: 1;           /* na wszelki wypadek, żeby nie „rosło" w pionie */
+}
+
+/* Opcjonalnie: jeśli coś nadal ściska logo, pozwól mu mieć własną szerokość */
+.logo-container, .logo { 
+  min-width: fit-content; 
+}
+
+/* Awaryjne skalowanie dla bardzo wąskich ekranów */
+@media (max-width: 640px) {
+  .logo-main { 
+    font-size: 1.1rem; 
+  }
+  .logo-separator { 
+    font-size: 1rem; 
+  }
+  .logo-sub { 
+    font-size: 0.95rem; 
+  }
+}
+
+/* AGRESYWNE NAPRAWKI - nadpisują wszystko */
+.top-navbar {
+  flex-wrap: nowrap !important;
+  white-space: nowrap !important;
+  overflow: hidden;
+}
+
+.logo-container {
+  flex-shrink: 0 !important;
+  min-width: fit-content !important;
+  max-width: none !important;
+}
+
+.logo {
+  flex-shrink: 0 !important;
+  min-width: fit-content !important;
+  max-width: none !important;
+  flex-wrap: nowrap !important;
+  white-space: nowrap !important;
+}
+
+.logo-text {
+  flex-shrink: 0 !important;
+  min-width: fit-content !important;
+  max-width: none !important;
+  flex-wrap: nowrap !important;
+  white-space: nowrap !important;
+  display: flex !important;
+  align-items: center !important;
+}
+
+.logo-main,
+.logo-separator,
+.logo-sub {
+  flex-shrink: 0 !important;
+  white-space: nowrap !important;
+  word-break: keep-all !important;
+  overflow-wrap: normal !important;
+  line-height: 1 !important;
+  display: inline-block !important;
+}
+
+/* Wymuszenie jednej linii dla całego top-navbar */
+.top-navbar > * {
+  flex-shrink: 0 !important;
+  white-space: nowrap !important;
+}
+
+/* OSTATECZNA NAPRAWKA - wymuszenie jednej linii */
+.top-navbar {
+  display: flex !important;
+  flex-direction: row !important;
+  flex-wrap: nowrap !important;
+  white-space: nowrap !important;
+  overflow: hidden !important;
+  width: 100% !important;
+}
+
+.logo-container {
+  display: flex !important;
+  flex-shrink: 0 !important;
+  min-width: fit-content !important;
+  max-width: none !important;
+  white-space: nowrap !important;
+}
+
+.logo {
+  display: flex !important;
+  flex-direction: row !important;
+  flex-shrink: 0 !important;
+  min-width: fit-content !important;
+  max-width: none !important;
+  flex-wrap: nowrap !important;
+  white-space: nowrap !important;
+  align-items: center !important;
+}
+
+.logo-text {
+  display: flex !important;
+  flex-direction: row !important;
+  flex-shrink: 0 !important;
+  min-width: fit-content !important;
+  max-width: none !important;
+  flex-wrap: nowrap !important;
+  white-space: nowrap !important;
+  align-items: center !important;
+  gap: 8px !important;
+}
+
+.logo-main,
+.logo-separator,
+.logo-sub {
+  display: inline-block !important;
+  flex-shrink: 0 !important;
+  white-space: nowrap !important;
+  word-break: keep-all !important;
+  overflow-wrap: normal !important;
+  line-height: 1 !important;
+  margin: 0 !important;
+  padding: 0 !important;
+}
+
+.user-info {
+  display: flex !important;
+  flex-shrink: 0 !important;
+  white-space: nowrap !important;
+  min-width: fit-content !important;
 } 

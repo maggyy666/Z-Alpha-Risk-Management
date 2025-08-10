@@ -394,8 +394,61 @@ const IntroductionPage: React.FC = () => {
   return (
     <div className="introduction-page">
       <div className="introduction-container">
-        <h1 className="introduction-title">Z-Alpha Securities Risk Management Platform</h1>
-        
+        {/* Hero Section */}
+        <div className="hero-section">
+          <div className="hero-content">
+            <div className="logo-section">
+              <div className="logo-container">
+                <div className="logo-symbol">Z-α</div>
+                <div className="logo-text">
+                  <div className="company-name">Z-ALPHA CAPITAL</div>
+                  <div className="company-division">Z-ALPHA SECURITIES</div>
+                </div>
+              </div>
+            </div>
+            
+            <div className="hero-titles">
+              <h1 className="main-title">
+                <span className="title-line">INSTITUTIONAL</span>
+                <span className="title-line">RISK MANAGEMENT</span>
+                <span className="title-line">PLATFORM</span>
+              </h1>
+              
+              <div className="tagline">
+                <span className="tagline-text">Where Quantitative Excellence Meets Risk Intelligence</span>
+                <div className="tagline-divider"></div>
+              </div>
+            </div>
+
+            <div className="hero-stats">
+              <div className="stat-item">
+                <div className="stat-number">$2.8B</div>
+                <div className="stat-label">AUM</div>
+              </div>
+              <div className="stat-item">
+                <div className="stat-number">1.47</div>
+                <div className="stat-label">Sharpe Ratio</div>
+              </div>
+              <div className="stat-item">
+                <div className="stat-number">12.3%</div>
+                <div className="stat-label">Annual Return</div>
+              </div>
+              <div className="stat-item">
+                <div className="stat-number">8.2%</div>
+                <div className="stat-label">Max Drawdown</div>
+              </div>
+              <div className="stat-item">
+                <div className="stat-number">1.85</div>
+                <div className="stat-label">Sortino Ratio</div>
+              </div>
+              <div className="stat-item">
+                <div className="stat-number">15.2%</div>
+                <div className="stat-label">Volatility</div>
+              </div>
+            </div>
+          </div>
+        </div>
+
         <div className="introduction-content">
           <p className="introduction-description">
             Z-Alpha Securities delivers institutional-grade risk management technology that transforms 
