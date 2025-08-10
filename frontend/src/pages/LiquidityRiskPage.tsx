@@ -49,6 +49,21 @@ const LiquidityRiskPage: React.FC = () => {
     fetchLiquidityData();
   }, [fetchLiquidityData]);
 
+  // Listen for portfolio changes
+  useEffect(() => {
+    const handlePortfolioChange = () => {
+      console.log('Portfolio changed, refreshing liquidity data...');
+      fetchLiquidityData();
+    };
+
+    // Listen for custom event
+    window.addEventListener('portfolio-updated', handlePortfolioChange);
+
+    return () => {
+      window.removeEventListener('portfolio-updated', handlePortfolioChange);
+    };
+  }, [fetchLiquidityData]);
+
   const getRiskLevelColor = (level: string) => {
     switch (level) {
       case 'LOW': return '#4caf50';

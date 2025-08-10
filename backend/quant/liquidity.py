@@ -23,6 +23,10 @@ from database.models.user import User
 _N_VOL = 21
 _N_SPR = 10
 
+# New thresholds for USD-based volume analysis
+VOL_THR_HIGH_USD = 50e6   # High: ≥ $50m ADV
+VOL_THR_MED_USD  = 10e6   # Medium: ≥ $10m ADV
+
 def _get_series(db: Session, symbol: str, field: str, lookback: int):
     """Get time series for a specific field from database"""
     rows = (db.query(TickerData)
@@ -35,8 +39,22 @@ def _get_series(db: Session, symbol: str, field: str, lookback: int):
         return np.array([])
     return np.array([getattr(r, field) for r in rows], dtype=float)
 
+def _adv_shares(db, symbol):
+    """Calculate average daily volume in shares over last N_VOL days"""
+    vols = _get_series(db, symbol, "volume", 63)
+    return float(np.nanmedian(vols[-_N_VOL:])) if len(vols) >= _N_VOL else 0.0
+
+def _adv_usd(db, symbol):
+    """Calculate average daily volume in USD over last N_VOL days"""
+    vols = _get_series(db, symbol, "volume", 63)
+    px   = _get_series(db, symbol, "close_price", 63)
+    if len(vols) >= _N_VOL and len(px) >= _N_VOL:
+        advusd = np.nanmedian(vols[-_N_VOL:] * px[-_N_VOL:])
+        return float(advusd)
+    return 0.0
+
 def _avg_volume(db, symbol):       
-    """Calculate average daily volume over last N_VOL days"""
+    """Calculate average daily volume over last N_VOL days (legacy - shares)"""
     vol_series = _get_series(db, symbol, "volume", 180)
     if len(vol_series) < _N_VOL:
         return 0.0
@@ -80,16 +98,25 @@ def _spread_pct(db, symbol):
     return np.nanmean(spr)
 
 def _vol_score(avg_vol):
-    """Calculate volume score (1-10) based on average volume"""
+    """Calculate volume score (1-10) based on average volume in shares (legacy)"""
     if avg_vol <= 0:
         return 1.0
     return float(np.clip(2 * np.log10(avg_vol / 1e5) + 1, 1, 10))
 
+def _vol_score_usd(adv_usd):
+    """Calculate volume score (1-10) based on average volume in USD"""
+    if adv_usd <= 0:
+        return 1.0
+    # 1 mln $ → ~3 pkt, 10 mln $ → ~5 pkt, 100 mln $ → ~7 pkt, 1 mld $ → ~9 pkt
+    return float(np.clip(2 * np.log10(adv_usd / 1e6) + 1, 1, 10))
+
 def _spr_score(spread):
-    """Calculate spread score (1-10) based on spread percentage"""
+    """Calculate spread score (1-10) based on spread percentage (improved)"""
     if not np.isfinite(spread) or spread <= 0:
-        return 1.0  # no data/zero data = worst score
-    return float(np.clip(10 - 400 * spread, 1, 10))
+        return 7.5  # no data ≈ neutral, not worst score
+    # spread in scale 0-3% mapped softly
+    # 0.2% → ~9.5, 1% → ~8, 2% → ~6, 3% → ~4
+    return float(np.clip(10 - 200 * spread, 1, 10))
 
 
 
@@ -147,24 +174,30 @@ def liquidity_metrics(
     
     for p in pos:
         w = p["weight_frac"]
-        avol = _avg_volume(db, p["ticker"])
+        adv_sh = _adv_shares(db, p["ticker"])
+        adv_usd = _adv_usd(db, p["ticker"])
         cvol = _curr_volume(db, p["ticker"])
         spr = _spread_pct(db, p["ticker"])   # may return np.nan
 
-        v_cat = "High" if avol > vol_thr_high else ("Medium" if avol > vol_thr_med else "Low")
-        v_scr = _vol_score(avol)
-        s_scr = _spr_score(spr)              # converts nan/0 to score=1
-        liq = 0.7 * v_scr + 0.3 * s_scr
+        # Sanity check for debugging
+        if adv_usd > 0 and adv_sh > 0:
+            last_price = _get_series(db, p["ticker"], "close_price", 1)[-1] if len(_get_series(db, p["ticker"], "close_price", 1)) > 0 else 0
+            print(f"[LIQ-SANITY] {p['ticker']}: ADV_sh={adv_sh:,.0f}, ADV$={adv_usd/1e6:.1f}M, Px*ADV_sh={(last_price*adv_sh)/1e6:.1f}M")
 
-        # liquidation time (adv_frac * ADV per day)
-        if avol <= 1:
+        v_cat = "High" if adv_usd >= VOL_THR_HIGH_USD else ("Medium" if adv_usd >= VOL_THR_MED_USD else "Low")
+        v_scr = _vol_score_usd(adv_usd)
+        s_scr = _spr_score(spr)              # converts nan/0 to score=7.5
+        liq = 0.9 * v_scr + 0.1 * s_scr      # reduced spread weight from 30% to 10%
+
+        # liquidation time in USD (adv_frac * ADV$ per day)
+        if adv_usd <= 0:
             days = int(1e9)
             alerts.append({
                 "severity": "HIGH",
-                "text": f"Zero/low volume: {p['ticker']} (ADV: {avol:.0f})"
+                "text": f"Zero/low volume: {p['ticker']} (ADV$: ${adv_usd/1e6:.1f}M)"
             })
         else:
-            days = int(np.ceil(p["shares"] / (adv_frac * avol)))
+            days = int(np.ceil(p["market_value"] / (adv_frac * adv_usd)))
         days = max(days, 1)
 
         # Bucket assignment
@@ -199,7 +232,8 @@ def liquidity_metrics(
         details.append({
             **p,
             "weight_pct": round(w * 100, 2),
-            "avg_volume": int(avol),
+            "avg_volume": int(adv_sh),  # shares for backward compatibility
+            "avg_volume_usd": int(adv_usd),  # USD volume
             "current_volume": int(cvol),
             "spread_pct": round(spr * 100, 2) if np.isfinite(spr) else 0.0,
             "volume_category": v_cat,
@@ -229,9 +263,9 @@ def liquidity_metrics(
     else:
         liq_time = f"{max_liq_days} days"
 
-    # volume_weighted_avg — use exact weights
-    avg_volume_global = int(np.mean([p['avg_volume'] for p in details]))
-    volume_weighted_avg = int(sum(p['avg_volume'] * p['weight_frac'] for p in details))
+    # volume_weighted_avg — use exact weights (USD-based)
+    avg_volume_global = int(np.mean([p['avg_volume_usd'] for p in details]))
+    volume_weighted_avg = int(sum(p['avg_volume_usd'] * p['weight_frac'] for p in details))
 
     return {
         "overview": {

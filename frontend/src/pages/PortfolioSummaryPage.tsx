@@ -32,6 +32,8 @@ const PortfolioSummaryPage: React.FC = () => {
     try {
       setLoading(true);
       const username = getCurrentUsername();
+      // Add timestamp to prevent caching
+      const timestamp = Date.now();
       const response = await apiService.getPortfolioSummary(username);
       setData(response);
       setError(null);
@@ -41,6 +43,7 @@ const PortfolioSummaryPage: React.FC = () => {
       console.log('Risk Score:', response.risk_score);
       console.log('Portfolio Overview:', response.portfolio_overview);
       console.log('Raw data available in Network tab');
+      console.log('📅 Fetch timestamp:', timestamp);
       
     } catch (err) {
       setError('Failed to load portfolio summary data');
@@ -52,6 +55,23 @@ const PortfolioSummaryPage: React.FC = () => {
 
   useEffect(() => {
     fetchPortfolioSummary();
+  }, [fetchPortfolioSummary]);
+
+  // Listen for portfolio changes
+  useEffect(() => {
+    const handlePortfolioChange = () => {
+      console.log('📊 Portfolio Summary: Portfolio changed, refreshing summary data...');
+      fetchPortfolioSummary();
+    };
+
+    // Listen for custom event
+    window.addEventListener('portfolio-updated', handlePortfolioChange);
+    console.log('👂 Portfolio Summary: Event listener added for portfolio-updated');
+
+    return () => {
+      window.removeEventListener('portfolio-updated', handlePortfolioChange);
+      console.log('👂 Portfolio Summary: Event listener removed');
+    };
   }, [fetchPortfolioSummary]);
 
   const getRiskLevelColor = (level: string) => {

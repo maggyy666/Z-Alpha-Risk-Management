@@ -15,6 +15,7 @@ interface SessionContextType {
   setCurrentUser: (username: string) => void;
   setDefaultSession: () => void;
   getCurrentUsername: () => string;
+  refreshPortfolioData: () => void;
 }
 
 const SessionContext = createContext<SessionContextType | undefined>(undefined);
@@ -130,6 +131,12 @@ export const SessionProvider: React.FC<SessionProviderProps> = ({ children }) =>
     return session?.username || 'admin';
   };
 
+  const refreshPortfolioData = () => {
+    // Force a page reload to refresh all portfolio data
+    // This is a fallback - individual components should handle their own refresh
+    window.location.reload();
+  };
+
   const value = {
     session,
     loading,
@@ -137,7 +144,8 @@ export const SessionProvider: React.FC<SessionProviderProps> = ({ children }) =>
     logout,
     setCurrentUser,
     setDefaultSession,
-    getCurrentUsername
+    getCurrentUsername,
+    refreshPortfolioData
   };
 
   return (
