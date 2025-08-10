@@ -12,6 +12,7 @@ import {
 } from 'chart.js';
 import apiService, { ForecastRiskContributionResponse } from '../services/api';
 import { useSession } from '../contexts/SessionContext';
+
 import ForecastMetricsPage from './ForecastMetricsPage';
 import './ForecastRiskPage.css';
 
@@ -31,15 +32,20 @@ const ForecastRiskPage: React.FC = () => {
   const [data, setData] = useState<ForecastRiskContributionResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [selectedModel, setSelectedModel] = useState<string>('EWMA (5D)');
+
   const [activeTab, setActiveTab] = useState<TabType>('metrics');
+
   const { getCurrentUsername } = useSession();
 
   const fetchForecastRiskData = useCallback(async () => {
     try {
       setLoading(true);
       const username = getCurrentUsername();
-      const response = await apiService.getForecastRiskContributionData(selectedModel, username);
+      
+      // Pobierz wszystkie tickery z portfolio - backend pokaże wszystkie
+      const response = await apiService.getForecastRiskContributionData('EWMA (5D)', [], true, username);
+      console.log('[FORECAST-RISK-FRONTEND] API response:', response);
+      
       setData(response);
       setError(null);
     } catch (err) {
@@ -48,21 +54,28 @@ const ForecastRiskPage: React.FC = () => {
     } finally {
       setLoading(false);
     }
-  }, [selectedModel, getCurrentUsername]);
+  }, [getCurrentUsername]);
 
   useEffect(() => {
     fetchForecastRiskData();
   }, [fetchForecastRiskData]);
 
   const createMarginalRiskChartData = () => {
-    if (!data) return null;
+    if (!data) {
+      console.log('[FORECAST-RISK-FRONTEND] No data available for chart');
+      return null;
+    }
+
+    console.log('[FORECAST-RISK-FRONTEND] Creating marginal risk chart with data:', data);
+    console.log('[FORECAST-RISK-FRONTEND] data.tickers:', data.tickers);
+    console.log('[FORECAST-RISK-FRONTEND] data.marginal_rc_pct:', data.marginal_rc_pct);
 
     // Color coding: positive = blue, negative = red (hedging)
     const colors = data.marginal_rc_pct.map(value => 
       value >= 0 ? 'rgba(54, 162, 235, 0.8)' : 'rgba(255, 99, 132, 0.8)'
     );
 
-    return {
+    const chartData = {
       labels: data.tickers,
       datasets: [
         {
@@ -76,6 +89,9 @@ const ForecastRiskPage: React.FC = () => {
         },
       ],
     };
+    
+    console.log('[FORECAST-RISK-FRONTEND] Marginal risk chart data:', chartData);
+    return chartData;
   };
 
   const createTotalRiskChartData = () => {
@@ -333,20 +349,6 @@ const ForecastRiskPage: React.FC = () => {
         <>
           <div className="section-header">
             <h2>Forecast Risk Contribution</h2>
-            <div className="dropdown-container">
-              <label>Select Model for Risk Contribution:</label>
-              <select 
-                className="model-dropdown"
-                value={selectedModel}
-                onChange={(e) => setSelectedModel(e.target.value)}
-              >
-                <option value="EWMA (5D)">EWMA (5D)</option>
-                <option value="EWMA (30D)">EWMA (30D)</option>
-                <option value="EWMA (200D)">EWMA (200D)</option>
-                <option value="Garch Volatility">Garch Volatility</option>
-                <option value="E-Garch Volatility">E-Garch Volatility</option>
-              </select>
-            </div>
           </div>
 
       <div className="forecast-summary">

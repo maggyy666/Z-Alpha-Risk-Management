@@ -1,5 +1,7 @@
 import numpy as np
 import pandas as pd
+import os
+import fnmatch
 from typing import List, Dict, Any, Optional
 from sqlalchemy.orm import Session
 from database.models.user import User
@@ -108,18 +110,26 @@ class DataService:
             self._cache_timestamps[key] = time.time()
     
     def _clear_cache(self, pattern: str = None) -> None:
-        """Clear cache entries matching pattern"""
+        """Clear cache entries matching pattern using fnmatch for wildcard support"""
         with self._cache_lock:
             if pattern:
-                keys_to_remove = [k for k in self._cache.keys() if pattern in k]
+                # Use fnmatch for proper wildcard matching
+                keys_to_remove = [k for k in self._cache.keys() if fnmatch.fnmatch(k, pattern)]
             else:
                 keys_to_remove = list(self._cache.keys())
             
+            print(f"🧹 Clearing cache for pattern '{pattern}': {len(keys_to_remove)} keys")
             for key in keys_to_remove:
                 if key in self._cache:
                     del self._cache[key]
+                    print(f"   🗑️  Removed: {key}")
                 if key in self._cache_timestamps:
                     del self._cache_timestamps[key]
+            
+            # Also clear global volatility cache
+            global _vol_cache
+            _vol_cache.clear()
+            print(f"   🗑️  Cleared global volatility cache ({len(_vol_cache)} entries)")
     
     def _get_cached_volatility(self, symbol: str, model: str, returns: np.ndarray) -> float:
         """Get cached volatility calculation or compute and cache"""
@@ -387,34 +397,34 @@ class DataService:
             
             portfolio_data = []
 
-            # Get all tickers: user portfolio + static tickers
-            all_tickers = self.get_all_tickers(db, username)
-            if not all_tickers:
-                print(f"No tickers found for user {username}")
+            # Get only user's portfolio tickers (no static tickers)
+            portfolio_tickers = self.get_user_portfolio_tickers(db, username)
+            if not portfolio_tickers:
+                print(f"No portfolio tickers found for user {username}")
                 result = []
                 self._set_cache(cache_key, result)
                 return result
 
-            # Get portfolio items with shares info (only for user's portfolio)
+            # Get portfolio items with shares info
             user = db.query(User).filter(User.username == username).first()
             portfolio_items = db.query(Portfolio).filter(Portfolio.user_id == user.id).all()
             shares_map = {item.ticker_symbol: item.shares for item in portfolio_items}
 
-        # 1) collect metrics for all tickers
-            for symbol in all_tickers:
+        # 1) collect metrics for user's portfolio tickers only
+            for symbol in portfolio_tickers:
                 print(f"Processing {symbol}...")
                 m = self.calculate_volatility_metrics(db, symbol, forecast_model, risk_free_annual)
                 print(f"{symbol} metrics: {m}")
                 if m:
-                    # For static tickers use default shares count
-                    shares = shares_map.get(symbol, 1000) if symbol in shares_map else 1000
+                    # All tickers are from user's portfolio
+                    shares = shares_map.get(symbol, 1000)
                     portfolio_data.append({
                         'symbol': symbol,
                         'forecast_volatility_pct': float(m.get('volatility_pct', 0.0)),
                         'last_price': float(m.get('last_price', 0.0)),
                         'sharpe_ratio': float(m.get('sharpe_ratio', 0.0)),
                         'shares': shares,
-                        'is_static': symbol in self.STATIC_TICKERS
+                        'is_static': False  # All tickers are from user's portfolio
                     })
                 else:
                     print(f"No metrics for {symbol}")
@@ -528,6 +538,196 @@ class DataService:
             db.rollback()
             return False 
 
+    def import_ticker_data_from_file(self, db: Session, symbol: str) -> bool:
+        """Import historical data for a ticker from JSON/CSV file"""
+        try:
+            # Check if data already exists
+            existing_count = db.query(TickerData).filter(TickerData.ticker_symbol == symbol).count()
+            if existing_count > 0:
+                print(f"{symbol}: Already has {existing_count} records")
+                return True
+
+            # Look for data files in data/ directory
+            # Handle both cases: running from project root or from backend/
+            data_dir = "data"
+            if not os.path.exists(data_dir):
+                data_dir = "../data"
+                if not os.path.exists(data_dir):
+                    print(f"Data directory not found (tried 'data/' and '../data/')")
+                    return False
+
+            # Try JSON first, then CSV
+            json_file = os.path.join(data_dir, f"{symbol}.json")
+            csv_file = os.path.join(data_dir, f"{symbol}.csv")
+            
+            if os.path.exists(json_file):
+                return self._import_from_json(db, symbol, json_file)
+            elif os.path.exists(csv_file):
+                return self._import_from_csv(db, symbol, csv_file)
+            else:
+                print(f"No data file found for {symbol} in {data_dir}/")
+                print(f"Expected: {json_file} or {csv_file}")
+                return False
+
+        except Exception as e:
+            print(f"Error importing data for {symbol}: {e}")
+            return False
+
+    def _import_from_json(self, db: Session, symbol: str, file_path: str) -> bool:
+        """Import data from JSON file with new structure: {fundamental: {...}, stock: [...]}"""
+        try:
+            import json
+            with open(file_path, 'r') as f:
+                data = json.load(f)
+            
+            # Check if it's the new combined format
+            if isinstance(data, dict) and 'fundamental' in data and 'stock' in data:
+                # New format: {fundamental: {...}, stock: [...]}
+                fundamental_data = data['fundamental']
+                stock_data = data['stock']
+                
+                # Import fundamental data first
+                if fundamental_data:
+                    self._ensure_ticker_info(db, symbol, preloaded=fundamental_data)
+                
+                # Import stock data
+                if not isinstance(stock_data, list):
+                    print(f"Invalid stock data format for {symbol}: expected list of records")
+                    return False
+                
+                records_added = 0
+                for record in stock_data:
+                    try:
+                        # Parse date - handle both YYYY-MM-DD and YYYYMMDD formats
+                        if isinstance(record['date'], str):
+                            date_str = record['date']
+                            if len(date_str) == 8 and date_str.isdigit():
+                                # Format: YYYYMMDD
+                                date_obj = datetime.strptime(date_str, '%Y%m%d').date()
+                            else:
+                                # Format: YYYY-MM-DD
+                                date_obj = datetime.strptime(date_str, '%Y-%m-%d').date()
+                        else:
+                            date_obj = record['date']
+                        
+                        # Create ticker record
+                        ticker_record = TickerData(
+                            ticker_symbol=symbol,
+                            date=date_obj,
+                            open_price=float(record['open']),
+                            close_price=float(record['close']),
+                            high_price=float(record['high']),
+                            low_price=float(record['low']),
+                            volume=int(record['volume'])
+                        )
+                        db.add(ticker_record)
+                        records_added += 1
+                        
+                    except (KeyError, ValueError) as e:
+                        print(f"Error parsing record for {symbol}: {e}")
+                        continue
+                
+                db.commit()
+                print(f"Imported {records_added} records for {symbol} from JSON (new format)")
+                return True
+                
+            elif isinstance(data, list):
+                # Old format: list of dicts with date, open, high, low, close, volume
+                records_added = 0
+                for record in data:
+                    try:
+                        # Parse date - handle both YYYY-MM-DD and YYYYMMDD formats
+                        if isinstance(record['date'], str):
+                            date_str = record['date']
+                            if len(date_str) == 8 and date_str.isdigit():
+                                # Format: YYYYMMDD
+                                date_obj = datetime.strptime(date_str, '%Y%m%d').date()
+                            else:
+                                # Format: YYYY-MM-DD
+                                date_obj = datetime.strptime(date_str, '%Y-%m-%d').date()
+                        else:
+                            date_obj = record['date']
+                        
+                        # Create ticker record
+                        ticker_record = TickerData(
+                            ticker_symbol=symbol,
+                            date=date_obj,
+                            open_price=float(record['open']),
+                            close_price=float(record['close']),
+                            high_price=float(record['high']),
+                            low_price=float(record['low']),
+                            volume=int(record['volume'])
+                        )
+                        db.add(ticker_record)
+                        records_added += 1
+                        
+                    except (KeyError, ValueError) as e:
+                        print(f"Error parsing record for {symbol}: {e}")
+                        continue
+                
+                db.commit()
+                print(f"Imported {records_added} records for {symbol} from JSON (old format)")
+                return True
+            else:
+                print(f"Invalid JSON format for {symbol}: expected dict with fundamental/stock or list of records")
+                return False
+            
+        except Exception as e:
+            print(f"Error importing from JSON for {symbol}: {e}")
+            db.rollback()
+            return False
+
+    def _import_from_csv(self, db: Session, symbol: str, file_path: str) -> bool:
+        """Import data from CSV file"""
+        try:
+            import pandas as pd
+            
+            # Read CSV with pandas
+            df = pd.read_csv(file_path)
+            
+            # Expected columns: date, open, high, low, close, volume
+            required_cols = ['date', 'open', 'high', 'low', 'close', 'volume']
+            if not all(col in df.columns for col in required_cols):
+                print(f"Invalid CSV format for {symbol}: missing required columns")
+                print(f"Expected: {required_cols}")
+                print(f"Found: {list(df.columns)}")
+                return False
+            
+            records_added = 0
+            for _, row in df.iterrows():
+                try:
+                    # Parse date
+                    if isinstance(row['date'], str):
+                        date_obj = datetime.strptime(row['date'], '%Y-%m-%d').date()
+                    else:
+                        date_obj = pd.to_datetime(row['date']).date()
+                    
+                    # Create ticker record
+                    ticker_record = TickerData(
+                        ticker_symbol=symbol,
+                        date=date_obj,
+                        open_price=float(row['open']),
+                        close_price=float(row['close']),
+                        high_price=float(row['high']),
+                        low_price=float(row['low']),
+                        volume=int(row['volume'])
+                    )
+                    db.add(ticker_record)
+                    records_added += 1
+                    
+                except (ValueError, TypeError) as e:
+                    print(f"Error parsing row for {symbol}: {e}")
+                    continue
+            
+            db.commit()
+            print(f"✅ Imported {records_added} records for {symbol} from CSV")
+            return True
+            
+        except Exception as e:
+            print(f"Error importing from CSV for {symbol}: {e}")
+            db.rollback()
+            return False 
+
     def _get_close_series(self, db: Session, symbol: str):
         """Return (dates, closes) ascending; filter NaN and non-positive prices."""
         rows = (db.query(TickerData)
@@ -535,7 +735,9 @@ class DataService:
                   .order_by(TickerData.date)
                   .all())
         if not rows:
-            print(f"Debug: No TickerData found for {symbol}")
+            # Don't print debug for synthetic tickers like PORTFOLIO
+            if symbol != "PORTFOLIO":
+                print(f"Debug: No TickerData found for {symbol}")
             return [], np.array([])
         dates = [r.date for r in rows]
         closes = np.array([float(r.close_price) for r in rows], dtype=float)
@@ -1114,7 +1316,7 @@ class DataService:
                     "effective_positions": round(effective_positions, 1)
                 },
                 "sector_concentration": sector_concentration,
-                "market_cap_concentration": market_cap_concentration,  # NOWE!
+                "market_cap_concentration": market_cap_concentration,
                 "total_market_value": total_mv
             }
             
@@ -1133,6 +1335,11 @@ class DataService:
         """Zwraca dict: symbol -> (dates, returns) z ostatnich ~lookback dni. Prosto i szybko."""
         ret_map = {}
         for s in symbols:
+            # skip pseudo symbols
+            if s in ("PORTFOLIO", None, ""):
+                ret_map[s] = ([], np.array([]))
+                continue
+                
             print(f"Debug: Getting data for {s}")
             dates, closes = self._get_close_series(db, s)
             print(f"Debug: {s} - dates: {len(dates)}, closes: {len(closes)}")
@@ -1147,6 +1354,93 @@ class DataService:
             print(f"Debug: {s} - returns: {len(r)}")
             ret_map[s] = (rd, r)
         return ret_map
+
+    def _align_on_reference(self, ret_map, symbols, ref_symbol="SPY", min_obs=40):
+        """
+        Zwraca: (dates_ref, M[T x N] z NaN, active_syms)
+        Kalendarz = daty SPY (ostatnie dostępne), kolumny = symbole z >= min_obs wspólnych punktów vs SPY.
+        """
+        if ref_symbol not in ret_map:
+            return [], np.empty((0, 0)), []
+        dates_ref, r_ref = ret_map[ref_symbol]
+        if len(dates_ref) == 0:
+            return [], np.empty((0, 0)), []
+
+        idx_ref = {d:i for i, d in enumerate(dates_ref)}
+        T = len(dates_ref)
+        cols = []
+        X = []
+
+        for s in symbols:
+            if s == ref_symbol or s not in ret_map:
+                continue
+            dts, r = ret_map[s]
+            if len(r) == 0:
+                continue
+            # align na kalendarz SPY
+            x = np.full(T, np.nan, dtype=float)
+            idx_s = {d:i for i, d in enumerate(dts)}
+            common = [d for d in dates_ref if d in idx_s]
+            if len(common) >= min_obs:
+                for d in common:
+                    x[idx_ref[d]] = r[idx_s[d]]
+                cols.append(s)
+                X.append(x)
+
+        if not cols:
+            return [], np.empty((0, 0)), []
+
+        M = np.column_stack(X)  # [T x N] z NaN
+        return dates_ref, M, cols
+
+    def _portfolio_series_with_coverage(self, dates, R, weights_map, symbols, min_weight_cov=0.6):
+        """
+        Liczy serię portfela po kalendarzu 'dates', renormalizując wagi
+        w każdym dniu po dostępnych papierach. R – [T x N] z NaN.
+        Zwraca (dates_used, rp), gdzie day coverage >= min_weight_cov.
+        """
+        if R.size == 0:
+            return [], np.array([])
+        N = R.shape[1]
+        # wagi w kolejności kolumn
+        w_full = np.array([weights_map.get(s, 0.0) for s in symbols], dtype=float)
+        w_full = w_full / (w_full.sum() if w_full.sum() > 0 else 1.0)
+
+        rp = []
+        used_dates = []
+        for t in range(R.shape[0]):
+            row = R[t, :]
+            mask = np.isfinite(row)
+            cov = w_full[mask].sum()
+            if cov >= min_weight_cov and mask.any():
+                w_t = w_full[mask] / cov
+                rp.append(float((row[mask] * w_t).sum()))
+                used_dates.append(dates[t])
+        return used_dates, np.array(rp, dtype=float)
+
+    def _pairwise_corr_nan_safe(self, R: np.ndarray, min_periods: int = 30):
+        """
+        Zwraca (avg_corr, total_pairs, high_pairs>=0.7) licząc korelacje pairwise na wspólnych datach.
+        """
+        if R.size == 0:
+            return 0.0, 0, 0
+        N = R.shape[1]
+        vals = []
+        high = 0
+        for i in range(N):
+            xi = R[:, i]
+            for j in range(i+1, N):
+                xj = R[:, j]
+                m = np.isfinite(xi) & np.isfinite(xj)
+                if m.sum() >= min_periods:
+                    c = np.corrcoef(xi[m], xj[m])[0, 1]
+                    if np.isfinite(c):
+                        vals.append(c)
+                        if c >= 0.7:
+                            high += 1
+        if not vals:
+            return 0.0, 0, 0
+        return float(np.mean(vals)), len(vals), int(high)
 
     def _intersect_and_stack(self, ret_map: Dict[str, Any], symbols: List[str]):
         """Return (dates, R, active) with common dates; R is [T x N] by symbols."""
@@ -1196,7 +1490,18 @@ class DataService:
             return {"start_date": None, "end_date": None, "total_days": 0}
 
     def get_risk_scoring(self, db: Session, username: str = "admin") -> Dict[str, Any]:
-        """MVP risk scoring: szybko i bez spiny."""
+        """Compute risk scoring metrics for the user's portfolio.
+
+        Args/Inputs:
+            db (Session): SQLAlchemy database session.
+            username (str): Username for which to compute risk scoring.
+
+        Provides:
+            Portfolio risk metrics based on recent returns and exposures.
+
+        Returns:
+            Dict[str, Any]: Risk scoring results or error message.
+        """
         # 1) user weights and tickers list
         conc = self.get_concentration_risk_data(db, username)
         if "error" in conc: 
@@ -1212,38 +1517,27 @@ class DataService:
         needed = list(set(tickers + ["SPY"] + list(factor_proxies.values())))
         ret_map = self._get_return_series_map(db, needed, lookback_days=180)
 
-        # 3) position returns matrix, common dates (last ~60)
-        dates, R, active = self._intersect_and_stack(ret_map, tickers)
-        if R.size == 0 or len(dates) < 40:
-            return {"error":"Insufficient overlapping history"}
-        
-        # scale weights to active tickers only
-        w_map = {p["ticker"]: p["weight_frac"] for p in positions}
-        w = np.array([w_map[s] for s in active], dtype=float)
-        w = w / w.sum()  # renormalizuj
-        
-        # portfolio returns with fixed weights (snapshot)
-        R = clamp(R, STRESS_LIMITS["clamp_return_abs"])  # align with regime/scenarios
-        rp = (R @ w)  # T x 1
-        T = len(rp)
-        # przytnij do 60dni
-        window = min(60, T)
-        dates_win = dates[-window:]
+        # 3) position returns matrix, align on SPY calendar
+        dates_ref, R_all, active = self._align_on_reference(ret_map, tickers + ["SPY"], ref_symbol="SPY", min_obs=40)
+        if R_all.size == 0 or len(dates_ref) < 40:
+            return {"error":"Insufficient overlapping history (vs SPY)"}
 
-        # SPY alignment
+        # wagi na aktywne
+        w_map = {p["ticker"]: p["weight_frac"] for p in positions}
+        # seria portfela z pokryciem >=60%
+        dates_win, rp = self._portfolio_series_with_coverage(dates_ref, R_all, w_map, active, min_weight_cov=0.60)
+        if len(rp) < 40:
+            return {"error": "Too few portfolio days after coverage filter"}
+
+        # SPY na te daty:
         d_spy, r_spy_full = ret_map.get("SPY", ([], np.array([])))
-        spy_idx = {d:i for i,d in enumerate(d_spy)}
-        dates_mkt = [d for d in dates_win if d in spy_idx]
-        if len(dates_mkt) < 30:
-            # degrade gracefully
-            dates_mkt = dates_win  # fallback
-            r_spy = np.zeros(len(dates_mkt))
-        else:
-            r_spy = np.array([r_spy_full[spy_idx[d]] for d in dates_mkt], dtype=float)
-        
-        # Map dates_win to rp indices
-        idx_win = {d:i for i,d in enumerate(dates_win)}
-        rp_win = np.array([rp[idx_win[d]] for d in dates_mkt], dtype=float)
+        idx_spy = {d:i for i,d in enumerate(d_spy)}
+        r_spy = np.array([r_spy_full[idx_spy[d]] for d in dates_win if d in idx_spy], dtype=float)
+        # dopasuj rp do tych samych dat (mogło odpaść kilka dni)
+        dates_common = [d for d in dates_win if d in idx_spy]
+        rp_win = np.array([rp[dates_win.index(d)] for d in dates_common], dtype=float)
+        if len(rp_win) < 30 or len(r_spy) < 30:
+            return {"error":"Insufficient market overlap"}
 
         # 4) raw metrics
         # vol ann
@@ -1256,19 +1550,20 @@ class DataService:
         for fac, etf in factor_proxies.items():
             d_f, r_f_full = ret_map.get(etf, ([], np.array([])))
             f_idx = {d:i for i,d in enumerate(d_f)}
-            dates_fac = [d for d in dates_mkt if d in f_idx]
+            dates_fac = [d for d in dates_common if d in f_idx]
             if len(dates_fac) < 30:
                 betas[fac] = 0.0
                 continue
             rf = np.array([r_f_full[f_idx[d]] for d in dates_fac], dtype=float)
-            rs = np.array([r_spy[dates_mkt.index(d)] for d in dates_fac], dtype=float)
-            rp_fac = np.array([rp_win[dates_mkt.index(d)] for d in dates_fac], dtype=float)
+            rs = np.array([r_spy[dates_common.index(d)] for d in dates_fac], dtype=float)
+            rp_fac = np.array([rp_win[dates_common.index(d)] for d in dates_fac], dtype=float)
             f_mn = rf - rs
             betas[fac] = ols_beta(rp_fac, f_mn)[0]
 
-        # correlations (NaN-safe, drop zero-variance columns)
-        R_sub = R[-window:, :]
-        avg_corr, pairs, high_pairs = avg_and_high_corr(R_sub, threshold=0.7)
+        # 5) korelacje pairwise na tym samym oknie (ostatnie 60 dni z kalendarza ref)
+        win = min(60, len(dates_ref))
+        R_win = R_all[-win:, :]
+        avg_corr, pairs, high_pairs = self._pairwise_corr_nan_safe(R_win, min_periods=30)
 
         # max drawdown on rp_win
         _, max_dd = drawdown(rp_win)
@@ -1394,19 +1689,21 @@ class DataService:
             return {"error":"No positions"}
 
         tickers = [p["ticker"] for p in positions]
-        w = np.array([p["weight_frac"] for p in positions], dtype=float)
+        w_map = {p["ticker"]: p["weight_frac"] for p in positions}
 
-        # zwroty z ostatnich dni
+        # zwroty z ostatnich dni + SPY jako referencja
         lookback = STRESS_LIMITS["lookback_regime_days"] + 2
-        ret_map = self._get_return_series_map(db, tickers, lookback_days=lookback)
-        dates, R, active = self._intersect_and_stack(ret_map, tickers)
-        if R.size == 0 or len(dates) < 40:
+        needed = tickers + ["SPY"]
+        ret_map = self._get_return_series_map(db, needed, lookback_days=lookback)
+
+        # align on SPY instead of full intersection
+        dates_ref, R, active = self._align_on_reference(ret_map, needed, ref_symbol="SPY", min_obs=30)
+        if R.size == 0 or len(dates_ref) < 40:
             return {"error":"Insufficient data for regime"}
 
-        # rescale weights for active tickers
-        w_map = {p["ticker"]: p["weight_frac"] for p in positions}
-        w = np.array([w_map[s] for s in active], dtype=float)
-        w = w / w.sum()  # renormalizuj
+        # reweight on active names
+        w = np.array([w_map.get(s, 0.0) for s in active], dtype=float)
+        w = w / (w.sum() if w.sum() > 0 else 1.0)
 
         R = clamp(R, STRESS_LIMITS["clamp_return_abs"])
         window = STRESS_LIMITS["lookback_regime_days"]
@@ -1439,7 +1736,7 @@ class DataService:
         for sc in scenarios:
             name, start_d, end_d = sc["name"], sc["start"], sc["end"]
 
-            # pobierz zwroty w oknie
+            # pobierz zwroty w oknie + SPY jako referencja
             ret_map = {}
             included, w_cov = [], 0.0
             for t in tickers:
@@ -1449,6 +1746,11 @@ class DataService:
                     included.append(t)
                     w_cov += w_map.get(t, 0.0)
 
+            # add SPY as reference calendar
+            d_spy, r_spy = self._get_returns_between_dates(db, "SPY", start_d, end_d)
+            if len(r_spy) >= STRESS_LIMITS["scenario_min_days"]:
+                ret_map["SPY"] = (d_spy, r_spy)
+
             if w_cov < STRESS_LIMITS["scenario_min_weight_coverage"]:
                 excluded.append({"name": name, "reason": f"Low weight coverage ({w_cov*100:.0f}%)"})
                 continue
@@ -1457,24 +1759,34 @@ class DataService:
                 excluded.append({"name": name, "reason": "No overlapping data"})
                 continue
 
-            # common dates and matrix
-            dates, R, active = self._intersect_and_stack(ret_map, included)
-            if len(dates) < STRESS_LIMITS["scenario_min_days"]:
-                excluded.append({"name": name, "reason": f"Too few common dates ({len(dates)})"})
+            # align on SPY instead of full intersection
+            dates_ref, R, active = self._align_on_reference(
+                ret_map, included + ["SPY"], ref_symbol="SPY",
+                min_obs=STRESS_LIMITS["scenario_min_days"]
+            )
+            if R.size == 0 or len(dates_ref) < STRESS_LIMITS["scenario_min_days"]:
+                excluded.append({"name": name, "reason": "Too few aligned dates"})
                 continue
 
-            # przeskaluj wagi tylko na aktywne tickery
-            w = np.array([w_map[t] for t in active], dtype=float)
-            w = w / w.sum()
+            # build portfolio series with per-day weight renormalization + coverage
+            dates_used, rp = self._portfolio_series_with_coverage(
+                dates_ref, R, w_map, active,
+                min_weight_cov=STRESS_LIMITS["scenario_min_weight_coverage"]
+            )
+            if len(rp) < STRESS_LIMITS["scenario_min_days"]:
+                excluded.append({"name": name, "reason": "Coverage below threshold after alignment"})
+                continue
 
-            # Calculate scenario PnL and drawdown (no clamp to keep historical fidelity)
-            ret_pct, max_dd = scenario_pnl(R, w)
+            # compute PnL / DD from rp (log-returns)
+            ret_pct = (np.exp(rp.sum()) - 1.0) * 100.0
+            _, max_dd = drawdown(rp)
+            max_dd *= 100.0
 
             analyzed.append({
                 "name": name,
                 "start": start_d.isoformat(),
                 "end": end_d.isoformat(),
-                "days": len(dates),
+                "days": len(dates_used),
                 "weight_coverage_pct": w_cov * 100.0,
                 "return_pct": ret_pct,
                 "max_drawdown_pct": max_dd
@@ -1501,6 +1813,8 @@ class DataService:
         if not tickers:
             return np.empty((0, 0))
         
+        print(f"[COV-MATRIX] Building for tickers: {tickers}")
+        
         # Get volatility forecasts for each ticker
         vol_vec = []
         for ticker in tickers:
@@ -1512,51 +1826,106 @@ class DataService:
         D = np.diag(vol_vec)  # D = diag(σ)
         
         # Get historical returns for correlation calculation
-        ret_map = self._get_return_series_map(db, tickers, lookback_days=252)  # 1 year
-        dates, R, active = self._intersect_and_stack(ret_map, tickers)
+        ret_map = self._get_return_series_map(db, list(set(tickers + ["SPY"])), lookback_days=252)  # 1 year
+        
+        # Use _align_on_reference instead of _intersect_and_stack for better robustness
+        dates, R, active = self._align_on_reference(ret_map, list(set(tickers + ["SPY"])), ref_symbol="SPY", min_obs=40)
         
         if R.size == 0 or len(dates) < 60:
-            # Fallback to diagonal correlation if insufficient data
             print("Warning: Insufficient data for correlation, using diagonal matrix")
-            n = len(tickers)
-            corr_matrix = np.eye(n)
+            corr_matrix = np.eye(len(tickers))
         else:
-            # Calculate EWMA correlation matrix
-            print(f"Calculating EWMA correlation for {len(active)} tickers with {len(dates)} observations")
-            corr_matrix = ewma_corr(R, lam=0.94)
+            # pairwise corr z Pandas + PD-clip
+            import pandas as pd
+            df = pd.DataFrame(R, index=dates, columns=active)
+            C_df = df.corr(min_periods=40)
+            
+            # reindex do pełnego porządku "tickers"
+            C_df = C_df.reindex(index=tickers, columns=tickers)
+            C_df = C_df.fillna(0.0)
+            np.fill_diagonal(C_df.values, 1.0)
+            C = C_df.values
+            
+            # zamień NaN na 0 (brak info) i napraw PD
+            C = np.nan_to_num(C, nan=0.0)
+            C = 0.5*(C + C.T)
+            # PD-clip
+            eigvals, eigvecs = np.linalg.eigh(C)
+            eigvals = np.clip(eigvals, 1e-6, None)
+            C = eigvecs @ np.diag(eigvals) @ eigvecs.T
+            # normalizacja diagonali
+            d = np.sqrt(np.clip(np.diag(C), 1e-12, None))
+            C = C / np.outer(d, d)
+            np.fill_diagonal(C, 1.0)
+            corr_matrix = C
         
         # Build covariance matrix using quant.risk
-        return build_cov(vol_vec, corr_matrix)
+        cov_matrix = build_cov(vol_vec, corr_matrix)
+        print(f"[COV-MATRIX] Final covariance matrix shape: {cov_matrix.shape}")
+        return cov_matrix
 
     # calculate_risk_contribution moved to quant.risk
 
     def get_forecast_risk_contribution(self, db: Session, username: str = "admin", 
-                                      vol_model: str = 'EWMA (5D)') -> Dict[str, Any]:
+                                      vol_model: str = 'EWMA (5D)', tickers: List[str] = None,
+                                      include_portfolio_bar: bool = True) -> Dict[str, Any]:
         """Get Forecast Risk Contribution data for portfolio"""
         try:
+            print(f"[FORECAST-RISK] Starting with tickers: {tickers}, include_portfolio_bar: {include_portfolio_bar}")
+            
             # Get portfolio data
             conc = self.get_concentration_risk_data(db, username)
             if "error" in conc:
                 return {"error": conc["error"]}
-            
+
             portfolio_data = conc["portfolio_data"]
             if not portfolio_data:
                 return {"error": "No portfolio data"}
+
+            # Calculate FULL portfolio volatility (before filtering)
+            all_positions = portfolio_data  # pełny portfel
+            full_tickers = [p['ticker'] for p in all_positions]
+            full_w = np.array([float(p['weight_frac']) for p in all_positions], dtype=float)
+            full_w = full_w / full_w.sum()
             
-            # Extract tickers and weights
+            print(f"[FORECAST-RISK] Full portfolio - tickers: {full_tickers}, weights: {full_w}")
+            
+            # Build full covariance matrix and calculate full portfolio volatility
+            cov_full = self.build_covariance_matrix(db, full_tickers, vol_model)
+            if cov_full.size == 0:
+                return {"error": "Failed to build full covariance matrix"}
+            
+            _, _, sigma_full = risk_contribution(full_w, cov_full)
+            print(f"[FORECAST-RISK] Full portfolio volatility: {sigma_full}")
+
+            # Extract tickers and weights for ALL portfolio positions (no filtering)
             tickers = [item['ticker'] for item in portfolio_data]
-            weights = [item['weight_frac'] for item in portfolio_data]  # Already 0-1
+            weights = np.array([float(item['weight_frac']) for item in portfolio_data], dtype=float)
+            
+            # Sanityzacja wag
+            weights[~np.isfinite(weights)] = 0.0
+            s = float(weights.sum())
+            if s <= 0:
+                return {"error": "Invalid weights (sum <= 0)"}
+            weights = weights / s  # renormalizacja
+            
+            print(f"[FORECAST-RISK] Using tickers: {tickers}, weights: {weights}")
             
             # Build covariance matrix
             cov_matrix = self.build_covariance_matrix(db, tickers, vol_model)
             if cov_matrix.size == 0:
                 return {"error": "Failed to build covariance matrix"}
             
+            print(f"[FORECAST-RISK] Covariance matrix shape: {cov_matrix.shape}")
+            print(f"[FORECAST-RISK] Weights shape: {weights.shape}")
+            
             # Calculate risk contributions using quant.risk
             try:
                 mrc, pct_rc, sigma_p = risk_contribution(weights, cov_matrix)
                 risk_data = {"marginal_rc": mrc, "total_rc_pct": pct_rc, "portfolio_vol": sigma_p}
+                print(f"[FORECAST-RISK] Risk contributions calculated - MRC: {mrc}, Total RC: {pct_rc}, Portfolio Vol: {sigma_p}")
             except ValueError as e:
+                print(f"[FORECAST-RISK] Error in risk_contribution: {e}")
                 return {"error": str(e)}
             
             # Prepare response data
@@ -1576,14 +1945,33 @@ class DataService:
             # Sort by marginal risk contribution (descending)
             chart_data.sort(key=lambda x: x["marginal_rc_pct"], reverse=True)
             
-            return {
+                        # Add synthetic PORTFOLIO row at the top (using FULL portfolio volatility)
+            if include_portfolio_bar:
+                portfolio_row = {
+                    "ticker": "PORTFOLIO",
+                    # Show FULL portfolio volatility (annualized) as "marginal_rc_pct"
+                    # to have one comparable number on the chart
+                    "marginal_rc_pct": float(sigma_full * 100.0),  # ZAWSZE pełny portfel
+                    "total_rc_pct": 100.0,   # Portfolio share = 100%
+                    "weight_pct": 100.0      # Portfolio weight = 100%
+                }
+                print(f"[FORECAST-RISK] Adding PORTFOLIO row (full portfolio): {portfolio_row}")
+                chart_data.insert(0, portfolio_row)
+            
+            result = {
                 "tickers": [item["ticker"] for item in chart_data],
-                "marginal_rc_pct": [item["marginal_rc_pct"] for item in chart_data],
-                "total_rc_pct": [item["total_rc_pct"] for item in chart_data],
-                "weights_pct": [item["weight_pct"] for item in chart_data],
-                "portfolio_vol": risk_data["portfolio_vol"],
-                "vol_model": vol_model
+                "marginal_rc_pct": [float(item["marginal_rc_pct"]) for item in chart_data],
+                "total_rc_pct": [float(item["total_rc_pct"]) for item in chart_data],
+                "weights_pct": [float(item["weight_pct"]) for item in chart_data],
+                "portfolio_vol": float(risk_data["portfolio_vol"]),
+                "vol_model": vol_model,
+                # Convenient addition if frontend prefers percentages
+                "portfolio_vol_pct": float(risk_data["portfolio_vol"] * 100.0)
             }
+            
+            print(f"[FORECAST-RISK] Final result - tickers: {result['tickers']}")
+            print(f"[FORECAST-RISK] Final result - marginal_rc_pct: {result['marginal_rc_pct']}")
+            return result
             
         except Exception as e:
             print(f"Error calculating forecast risk contribution: {e}")
@@ -1692,6 +2080,19 @@ class DataService:
                     else:
                         common_dates = common_dates.intersection(set(dates))
             
+            # jeśli tylko PORTFOLIO → seedujemy common_dates datami portfela
+            if common_dates is None and "PORTFOLIO" in tickers:
+                conc = self.get_concentration_risk_data(db, username)
+                if "error" not in conc and conc["portfolio_data"]:
+                    w_map = {p["ticker"]: p["weight_frac"] for p in conc["portfolio_data"]}
+                    active = list(w_map.keys())
+                    # doładuj brakujące serie
+                    ret_map.update(self._get_return_series_map(db, list(set(active + ["SPY"])), lookback_days=lookback))
+                    dates_ref, R, active_aligned = self._align_on_reference(ret_map, active, ref_symbol="SPY", min_obs=window)
+                    dates_p, rp = self._portfolio_series_with_coverage(dates_ref, R, w_map, active_aligned, min_weight_cov=0.60)
+                    common_dates = set(dates_p)  # ← seed
+                    print(f"[ROLLING-FORECAST] Using portfolio dates as common_dates: {len(common_dates)} dates")
+            
             if common_dates is None:
                 return {"data": [], "model": model, "window": window}
             
@@ -1715,12 +2116,12 @@ class DataService:
                         if i >= window:  # Ensure we have enough data for rolling window
                             σ = forecast_sigma(rets[i-window:i], model) * 100
                             out.append({
-                                "date": date,
+                                "date": date.isoformat() if hasattr(date, 'isoformat') else str(date),
                                 "ticker": tkr,
                                 "vol_pct": round(float(σ), 4)
                             })
 
-            # 4) "PORTFOLIO" line (optional)
+            # 4) "PORTFOLIO" line (optional) - using _portfolio_series_with_coverage
             if "PORTFOLIO" in tickers:
                 conc = self.get_concentration_risk_data(db, username)
                 if "error" not in conc and conc["portfolio_data"]:
@@ -1728,23 +2129,23 @@ class DataService:
                     active = list(w_map.keys())
                     # fill ret_map if any active ticker missing
                     if any(a not in ret_map for a in active):
-                        ret_map.update(self._get_return_series_map(db, active, lookback_days=lookback))
+                        ret_map.update(self._get_return_series_map(db, list(set(active + ["SPY"])), lookback_days=lookback))
 
-                    dates, R, active_aligned = self._intersect_and_stack(ret_map, active)
-                    if len(dates) >= window:
-                        w = np.array([w_map[x] for x in active_aligned])
+                    dates_ref, R, active_aligned = self._align_on_reference(ret_map, active, ref_symbol="SPY", min_obs=window)
+                    if len(dates_ref) >= window:
+                        # Use _portfolio_series_with_coverage for NaN-safe portfolio returns
+                        dates_p, rp = self._portfolio_series_with_coverage(dates_ref, R, w_map, active_aligned, min_weight_cov=0.60)
                         
                         # Create date index for portfolio
-                        portfolio_date_idx = {d: i for i, d in enumerate(dates)}
+                        portfolio_date_idx = {d: i for i, d in enumerate(dates_p)}
                         
                         for date in common_dates:
                             if date in portfolio_date_idx:
-                                i = portfolio_date_idx[date]
-                                if i >= window:  # Ensure we have enough data for rolling window
-                                    rp = R[i-window:i] @ w
-                                    σ = forecast_sigma(rp, model) * 100
+                                j = portfolio_date_idx[date]
+                                if j >= window:  # Ensure we have enough data for rolling window
+                                    σ = forecast_sigma(rp[j-window:j], model) * 100
                                     out.append({
-                                        "date": date,
+                                        "date": date.isoformat() if hasattr(date, 'isoformat') else str(date),
                                         "ticker": "PORTFOLIO",
                                         "vol_pct": round(float(σ), 4)
                                     })
@@ -1835,22 +2236,37 @@ class DataService:
             # 1) Risk Scoring
             risk_data = self.get_risk_scoring(db, username)
             if "error" in risk_data:
-                return {"error": risk_data["error"]}
+                print(f"Warning: Risk scoring failed: {risk_data['error']}")
+                risk_data = {
+                    "component_scores": {"overall": 0.5},
+                    "risk_contribution_pct": {"market": 25.0, "concentration": 25.0, "volatility": 25.0, "liquidity": 25.0}
+                }
             
             # 2) Concentration Risk
             conc_data = self.get_concentration_risk_data(db, username)
             if "error" in conc_data:
-                return {"error": conc_data["error"]}
+                print(f"Warning: Concentration risk failed: {conc_data['error']}")
+                conc_data = {
+                    "total_market_value": 0,
+                    "portfolio_data": [],
+                    "concentration_metrics": {"largest_position": 0, "top_3_concentration": 0}
+                }
             
             # 3) Forecast Risk Contribution (EGARCH)
             forecast_contribution = self.get_forecast_risk_contribution(db, username, vol_model="EGARCH")
             if "error" in forecast_contribution:
-                return {"error": forecast_contribution["error"]}
+                print(f"Warning: Forecast risk contribution failed: {forecast_contribution['error']}")
+                forecast_contribution = {
+                    "portfolio_vol": 0.15,
+                    "tickers": ["N/A"],
+                    "marginal_rc_pct": [0.0]
+                }
             
             # 4) Forecast Metrics (dla CVaR)
             forecast_metrics = self.get_forecast_metrics(db, username)
             if "error" in forecast_metrics:
-                return {"error": forecast_metrics["error"]}
+                print(f"Warning: Forecast metrics failed: {forecast_metrics['error']}")
+                forecast_metrics = {"metrics": []}
             
             # 5) Agregacja CVaR
             total_cvar_usd = sum(item.get("cvar_usd", 0) for item in forecast_metrics.get("metrics", []))
@@ -1910,12 +2326,12 @@ class DataService:
                     "total_positions": len(portfolio_positions),
                     "largest_position": round(conc_data.get("concentration_metrics", {}).get("largest_position", 0), 1),
                     "top_3_concentration": round(conc_data.get("concentration_metrics", {}).get("top_3_concentration", 0), 1),
-                    "volatility_egarch": round(volatility_egarch, 1),
+                    "volatility_egarch": round(forecast_contribution.get("portfolio_vol_pct", volatility_egarch * 100), 1),
                     "cvar_percentage": round(total_cvar_pct, 1),
                     "cvar_usd": round(total_cvar_usd, 0),
                     "top_risk_contributor": {
-                        "ticker": forecast_contribution.get("tickers", ["N/A"])[0] if forecast_contribution.get("tickers") else "N/A",
-                        "vol_contribution_pct": forecast_contribution.get("marginal_rc_pct", [0.0])[0] if forecast_contribution.get("marginal_rc_pct") else 0.0
+                        "ticker": self._get_top_risk_contributor(forecast_contribution)[0],
+                        "vol_contribution_pct": self._get_top_risk_contributor(forecast_contribution)[1]
                     }
                 },
                 "portfolio_positions": portfolio_positions,
@@ -1926,158 +2342,159 @@ class DataService:
             print(f"Error getting portfolio summary: {e}")
             return {"error": str(e)}
 
-    def get_realized_metrics(self, db: Session, username: str = "admin") -> Dict[str, Any]:
-        """Get realized risk metrics for portfolio and individual tickers"""
-        cache_key = self._get_cache_key("realized_metrics", username)
-        cached = self._get_from_cache(cache_key)
-        if cached:
-            return cached
+    def _get_top_risk_contributor(self, forecast_contribution: Dict[str, Any]) -> tuple:
+        """Get top risk contributor based on total_rc_pct, excluding PORTFOLIO row"""
+        import numpy as np
         
-        # Get portfolio data
-        portfolio_positions, ok = self._portfolio_snapshot(db, username)
-        if not ok or not portfolio_positions:
-            return {"metrics": []}
+        tickers = forecast_contribution.get("tickers", [])
+        trc = forecast_contribution.get("total_rc_pct", [])
         
-        portfolio_tickers = [item["ticker"] for item in portfolio_positions]
-        print(f"Debug: Portfolio tickers: {portfolio_tickers}")
+        # Skip PORTFOLIO row if it's first
+        start = 1 if tickers and tickers[0] == "PORTFOLIO" else 0
         
-        # Get return series for all needed tickers (portfolio + SPY)
-        needed_tickers = portfolio_tickers + ["SPY"]
-        ret_map = self._get_return_series_map(db, needed_tickers)
+        if trc and len(trc) > start:
+            # Find max total risk contribution among real tickers
+            idx_rel = int(np.argmax(trc[start:]))
+            idx = start + idx_rel
+            top_ticker = tickers[idx]
+            top_pct = float(trc[idx])  # This is the risk contribution percentage
+        else:
+            top_ticker, top_pct = "N/A", 0.0
         
-        # Check if we have data for all tickers
-        missing_tickers = [t for t in needed_tickers if t not in ret_map]
-        if missing_tickers:
-            print(f"Debug: Missing data for tickers: {missing_tickers}")
-            return self._get_sample_realized_metrics(portfolio_tickers)
-        
-        # Calculate metrics for each ticker individually (ticker ↔ SPY)
-        print(f"Debug: Calculating metrics for each ticker individually")
-        ticker_metrics = []
-        
-        for ticker in portfolio_tickers:
-            print(f"Debug: Processing ticker: {ticker}")
-            # Build matrix only for TICKER + SPY
-            ticker_spy_map = {k: ret_map[k] for k in [ticker, "SPY"] if k in ret_map}
-            if len(ticker_spy_map) < 2:
-                print(f"Warning: {ticker} or SPY not found in ret_map")
-                continue
-                
-            dates_2, R_2, active_2 = self._intersect_and_stack(ticker_spy_map, [ticker, "SPY"])
-            print(f"Debug: {ticker} + SPY: {len(dates_2)} dates, R shape: {R_2.shape}")
-            
-            if R_2.size < 30:
-                print(f"Warning: {ticker}: <30 common observations, skipping")
-                continue
+        return top_ticker, round(top_pct, 1)
 
-            # Calculate metrics for this ticker
-            from quant.realized import compute_realized_metrics
+    def get_realized_metrics(self, db: Session, username: str = "admin") -> Dict[str, Any]:
+        """Get realized risk metrics for portfolio and individual tickers (NaN-tolerant, aligned to SPY)."""
+        try:
             import pandas as pd
             import numpy as np
-            ticker_df = compute_realized_metrics(
-                pd.DataFrame({ticker: R_2[:,0]}, index=dates_2),
-                benchmark_ndx="SPY",
-                R=R_2,
-                active=[ticker, "SPY"]
-            )
+            from quant.realized import compute_realized_metrics
             
-            if not ticker_df.empty:
-                # Only take the ticker row, not SPY
-                if ticker in ticker_df.index:
-                    ticker_metrics.append(ticker_df.loc[[ticker]])
+            cache_key = self._get_cache_key("realized_metrics", username)
+            cached = self._get_from_cache(cache_key)
+            if cached:
+                return cached
         
-        # Calculate portfolio metrics (PORTFOLIO ↔ SPY)
-        print(f"Debug: Calculating portfolio metrics")
-        
-        # Calculate portfolio returns (weighted average)
-        weights = {item["ticker"]: item["weight_frac"] for item in portfolio_positions}
-        
-        # Get common dates for portfolio calculation
-        portfolio_dates = None
-        portfolio_returns = None
-        
-        for ticker in portfolio_tickers:
-            if ticker in ret_map:
-                dates, returns = ret_map[ticker]
-                if portfolio_dates is None:
-                    portfolio_dates = set(dates)
-                else:
-                    portfolio_dates = portfolio_dates.intersection(set(dates))
-        
-        if portfolio_dates:
-            portfolio_dates = sorted(list(portfolio_dates))
-            portfolio_returns = np.zeros(len(portfolio_dates))
+            # 1) snapshot portfela
+            portfolio_positions, ok = self._portfolio_snapshot(db, username)
+            if not ok or not portfolio_positions:
+                return {"metrics": []}
             
-            for ticker in portfolio_tickers:
-                if ticker in ret_map:
-                    dates, returns = ret_map[ticker]
-                    date_idx = {d: i for i, d in enumerate(dates)}
-                    weight = weights.get(ticker, 0.0)
-                    
-                    for i, date in enumerate(portfolio_dates):
-                        if date in date_idx:
-                            portfolio_returns[i] += returns[date_idx[date]] * weight
+            portfolio_tickers = [p["ticker"] for p in portfolio_positions]
+            weights_map = {p["ticker"]: p["weight_frac"] for p in portfolio_positions}
+
+            # 2) Zwroty – dłuższe okno i kalendarz SPY
+            needed = portfolio_tickers + ["SPY"]
+            ret_map = self._get_return_series_map(db, needed, lookback_days=252*2)  # 2 lata
+            dates_ref, M, active = self._align_on_reference(ret_map, needed, ref_symbol="SPY", min_obs=30)
+            if M.size == 0 or len(dates_ref) < 30 or "SPY" not in ret_map or len(ret_map["SPY"][0]) == 0:
+                # brak sensownego pokrycia → demo
+                return self._get_sample_realized_metrics(portfolio_tickers)
         
-        if portfolio_returns is not None and len(portfolio_returns) >= 30:
-            portfolio_spy_map = {"PORTFOLIO": (portfolio_dates, portfolio_returns), "SPY": ret_map["SPY"]}
-            dates_p, R_p, active_p = self._intersect_and_stack(portfolio_spy_map, ["PORTFOLIO", "SPY"])
-            print(f"Debug: PORTFOLIO + SPY: {len(dates_p)} dates, R shape: {R_p.shape}")
+            # SPY w kalendarzu ref
+            spy_dates, spy_ret = ret_map["SPY"]
+            idx_spy = {d: i for i, d in enumerate(spy_dates)}
+            spy_aligned = np.array([spy_ret[idx_spy[d]] if d in idx_spy else np.nan for d in dates_ref], dtype=float)
+
+            metrics_frames = []
+
+            # 3) Metryki dla każdego tickera vs SPY (bez twardego przecięcia całego koszyka)
+
+            # mapowanie kolumn matrixu M do symboli (bez SPY)
+            sym_cols = [s for s in active if s != "SPY"]
+            if not sym_cols:
+                return self._get_sample_realized_metrics(portfolio_tickers)
+
+            for j, sym in enumerate(sym_cols):
+                x = M[:, j]  # zwroty tickera w kalendarzu SPY (z NaN)
+                m = np.isfinite(x) & np.isfinite(spy_aligned)
+                if m.sum() < 30:
+                    continue
+                d_use = [dates_ref[k] for k in range(len(dates_ref)) if m[k]]
+                df = pd.DataFrame({sym: x[m], "SPY": spy_aligned[m]}, index=d_use)
+
+                # compute_realized_metrics oczekuje pełnego DataFrame z benchmarkiem
+                try:
+                    res = compute_realized_metrics(df, benchmark_ndx="SPY", R=df.values, active=[sym, "SPY"])
+                    if not res.empty and sym in res.index:
+                        metrics_frames.append(res.loc[[sym]])
+                except Exception as e:
+                    print(f"[realized] {sym} failed: {e}")
+                    continue
+
+            # 4) Metryki PORTFOLIO vs SPY – renormalizacja wag po dostępnych papierach w danym dniu
+            dates_p, rp = self._portfolio_series_with_coverage(dates_ref, M, weights_map, sym_cols, min_weight_cov=0.60)
+            if len(rp) >= 30:
+                # dopasuj SPY do tych dni
+                i_spy = {d: i for i, d in enumerate(dates_ref)}
+                spy_p = []
+                d_common = []
+                for d in dates_p:
+                    if d in i_spy and np.isfinite(spy_aligned[i_spy[d]]):
+                        spy_p.append(spy_aligned[i_spy[d]])
+                        d_common.append(d)
+                spy_p = np.array(spy_p, dtype=float)
+                rp = np.array([rp[dates_p.index(d)] for d in d_common], dtype=float)
+
+                if len(rp) >= 30 and len(spy_p) >= 30:
+                    dfp = pd.DataFrame({"PORTFOLIO": rp, "SPY": spy_p}, index=d_common)
+                    try:
+                        res_p = compute_realized_metrics(dfp, benchmark_ndx="SPY",
+                                                         R=dfp.values, active=["PORTFOLIO", "SPY"])
+                        if not res_p.empty and "PORTFOLIO" in res_p.index:
+                            metrics_frames.append(res_p.loc[["PORTFOLIO"]])
+                    except Exception as e:
+                        print(f"[realized] PORTFOLIO failed: {e}")
+                        pass
+
+            # 5) Fallback jeżeli nic nie wyszło
+            if not metrics_frames:
+                return self._get_sample_realized_metrics(portfolio_tickers)
+        
+            # 6) Spakuj wyniki w listę dictów dla API
+            out = []
+            for df in metrics_frames:
+                for sym in df.index:
+                    row = df.loc[sym]
+                    def safe(x, default=0.0):
+                        try:
+                            return float(x) if pd.notna(x) and np.isfinite(x) else default
+                        except Exception:
+                            return default
+                    out.append({
+                        "ticker": sym,
+                        "ann_return_pct": safe(row.get("Ann.Return%", 0.0)),
+                        "volatility_pct": safe(row.get("Ann.Volatility%", 0.0)),
+                        "sharpe_ratio": safe(row.get("Sharpe", 0.0)),
+                        "sortino_ratio": safe(row.get("Sortino", 0.0)),
+                        "skewness": safe(row.get("Skew", 0.0)),
+                        "kurtosis": safe(row.get("Kurtosis", 0.0)),
+                        "max_drawdown_pct": safe(row.get("Max Drawdown%", 0.0)),
+                        "var_95_pct": safe(row.get("VaR(5%)%", 0.0)),
+                        "cvar_95_pct": safe(row.get("CVaR(95%)%", 0.0)),
+                        "hit_ratio_pct": safe(row.get("Hit Ratio%", 0.0)),
+                        "beta_ndx": safe(row.get("Beta (SPY)", 0.0)),
+                        "up_capture_ndx_pct": safe(row.get("Up Capture (SPY)%", 0.0)),
+                        "down_capture_ndx_pct": safe(row.get("Down Capture (SPY)%", 0.0)),
+                        "tracking_error_pct": safe(row.get("Tracking Error%", 0.0)),
+                        "information_ratio": safe(row.get("Information Ratio", 0.0)),
+                    })
+
+            result = {"metrics": out}
+            self._set_cache(cache_key, result)
+            return result
             
-            if R_p.size >= 30:
-                portfolio_df = compute_realized_metrics(
-                    pd.DataFrame({"PORTFOLIO": R_p[:,0]}, index=dates_p),
-                    benchmark_ndx="SPY",
-                    R=R_p,
-                    active=["PORTFOLIO", "SPY"]
-                )
-                if not portfolio_df.empty:
-                    # Only take the PORTFOLIO row, not SPY
-                    if "PORTFOLIO" in portfolio_df.index:
-                        ticker_metrics.append(portfolio_df.loc[["PORTFOLIO"]])
-        
-        if not ticker_metrics:
-            print(f"Debug: No valid metrics calculated, falling back to sample data")
-            return self._get_sample_realized_metrics(portfolio_tickers)
-        
-        # Convert to list of dictionaries for API response
-        metrics_list = []
-        
-        for df in ticker_metrics:
-            for ticker in df.index:
-                row = df.loc[ticker]
-                # Helper function to handle NaN values
-                def safe_float(value, default=0.0):
-                    if pd.isna(value) or np.isnan(value):
-                        return default
-                    return float(value)
-                
-                metrics_dict = {
-                    "ticker": ticker,
-                    "ann_return_pct": safe_float(row.get("Ann.Return%", 0.0)),
-                    "volatility_pct": safe_float(row.get("Ann.Volatility%", 0.0)),
-                    "sharpe_ratio": safe_float(row.get("Sharpe", 0.0)),
-                    "sortino_ratio": safe_float(row.get("Sortino", 0.0)),
-                    "skewness": safe_float(row.get("Skew", 0.0)),
-                    "kurtosis": safe_float(row.get("Kurtosis", 0.0)),
-                    "max_drawdown_pct": safe_float(row.get("Max Drawdown%", 0.0)),
-                    "var_95_pct": safe_float(row.get("VaR(5%)%", 0.0)),
-                    "cvar_95_pct": safe_float(row.get("CVaR(95%)%", 0.0)),
-                    "hit_ratio_pct": safe_float(row.get("Hit Ratio%", 0.0)),
-                    "beta_ndx": safe_float(row.get("Beta (SPY)", 0.0)),
-                    "up_capture_ndx_pct": safe_float(row.get("Up Capture (SPY)%", 0.0)),
-                    "down_capture_ndx_pct": safe_float(row.get("Down Capture (SPY)%", 0.0)),
-                    "tracking_error_pct": safe_float(row.get("Tracking Error%", 0.0)),
-                    "information_ratio": safe_float(row.get("Information Ratio", 0.0))
-                }
-                metrics_list.append(metrics_dict)
-        
-        result = {"metrics": metrics_list}
-        self._set_cache(cache_key, result)
-        return result
+        except Exception as e:
+            print(f"[realized] Global error: {e}")
+            return self._get_sample_realized_metrics(portfolio_tickers if 'portfolio_tickers' in locals() else [])
 
     def get_rolling_metric(self, db: Session, metric: str = "vol", window: int = 21,
                           tickers: List[str] = None, username: str = "admin") -> Dict[str, Any]:
         """Get rolling metric data for charting"""
+        import numpy as np
+        import pandas as pd
+        from math import isfinite
+        
         try:
             # Use provided tickers or default to PORTFOLIO
             if tickers is None:
@@ -2099,38 +2516,93 @@ class DataService:
             
             # Get return series map
             ret_map = self._get_return_series_map(db, all_tickers, lookback_days=252*5)
-            dates, R, active = self._intersect_and_stack(ret_map, all_tickers)
+            print(f"Ret map keys: {list(ret_map.keys())}")
+            
+            # Use new alignment method instead of old intersection
+            dates, R, active = self._align_on_reference(ret_map, all_tickers, ref_symbol="SPY", min_obs=40)
+            print(f"Align result - dates: {len(dates)}, R shape: {R.shape}, active: {active}")
+            
+            if R.size == 0 or len(dates) < 40:
+                return {"error": "Insufficient overlapping history (vs SPY)"}
             
             # Create portfolio returns if needed
+            ret_df = pd.DataFrame(R, index=dates, columns=active)
+            print(f"ret_df shape: {ret_df.shape}")
+            print(f"ret_df columns: {list(ret_df.columns)}")
+            print(f"ret_df index type: {type(ret_df.index)}")
+
+            # Add SPY column if needed for beta calculation
+            if metric == "beta" and "SPY" not in ret_df.columns and "SPY" in ret_map:
+                spy_dates, spy_returns = ret_map["SPY"]
+                spy_series = pd.Series(index=dates, dtype=float)
+                spy_idx = {d: i for i, d in enumerate(spy_dates)}
+                for i, date in enumerate(dates):
+                    if date in spy_idx:
+                        spy_series.iloc[i] = spy_returns[spy_idx[date]]
+                ret_df["SPY"] = spy_series.values
+                print(f"Added SPY column to ret_df, columns: {list(ret_df.columns)}")
+
             if "PORTFOLIO" in tickers:
-                portfolio_weights = {}
-                portfolio_data = self.get_concentration_risk_data(db, username)
-                if "portfolio_data" in portfolio_data:
-                    for item in portfolio_data["portfolio_data"]:
-                        portfolio_weights[item["ticker"]] = item["weight_frac"]
+                # wagi portfela
+                portfolio_weights = {
+                    it["ticker"]: it["weight_frac"]
+                    for it in self.get_concentration_risk_data(db, username).get("portfolio_data", [])
+                }
+                print(f"Portfolio weights: {portfolio_weights}")
+                print(f"Active symbols: {active}")
                 
-                portfolio_returns = np.zeros(len(R))
-                for i, ticker_name in enumerate(active):
-                    if ticker_name in portfolio_weights:
-                        portfolio_returns += R[:, i] * portfolio_weights[ticker_name]
-                
-                ret_df = pd.DataFrame(R, index=dates, columns=active)
-                ret_df["PORTFOLIO"] = portfolio_returns
-            else:
-                ret_df = pd.DataFrame(R, index=dates, columns=active)
+                # sprawdź czy są wspólne symbole
+                common_symbols = set(portfolio_weights.keys()) & set(active)
+                print(f"Common symbols: {common_symbols}")
+
+                # policz serię portfola z dzienną renormalizacją wag i progiem pokrycia
+                try:
+                    dates_p, rp = self._portfolio_series_with_coverage(
+                        dates, R, portfolio_weights, active, min_weight_cov=0.60
+                    )
+                    print(f"Portfolio series - dates: {len(dates_p)}, returns: {len(rp)}")
+
+                    # wstaw do pełnego kalendarza (NaN tam, gdzie pokrycie < 60%)
+                    port = pd.Series(index=dates, dtype=float)
+                    port.loc[dates_p] = rp
+                    ret_df["PORTFOLIO"] = port.values
+                except Exception as e:
+                    print(f"Error in portfolio series calculation: {e}")
+                    # fallback - użyj prostego podejścia
+                    portfolio_returns = np.zeros(len(R))
+                    for i, ticker_name in enumerate(active):
+                        if ticker_name in portfolio_weights:
+                            portfolio_returns += R[:, i] * portfolio_weights[ticker_name]
+                    ret_df["PORTFOLIO"] = portfolio_returns
+                    
+                # sanityzacja inf -> nan
+                ret_df = ret_df.replace([np.inf, -np.inf], np.nan)
             
             # Compute rolling metrics for all requested tickers
             from quant.rolling import rolling_metric
+            
             datasets = []
             
             for ticker in tickers:
-                if ticker in ret_df.columns:
-                    ser = rolling_metric(ret_df, metric, window, ticker)
-                    datasets.append({
-                        "ticker": ticker,
-                        "dates": [str(d) for d in ser.index] if hasattr(ser.index, '__iter__') else [],
-                        "values": ser.values.tolist()
-                    })
+                try:
+                    if ticker in ret_df.columns:
+                        ser = rolling_metric(ret_df, metric, window, ticker)
+                        # gwarancja Series + wyrzucenie inf do NaN
+                        if not isinstance(ser, pd.Series):
+                            ser = pd.Series(ser, index=ret_df.index)
+                        ser = ser.replace([np.inf, -np.inf], np.nan)
+
+                        dates = [str(d) for d in ser.index]
+                        values = [None if pd.isna(v) or not isfinite(float(v)) else float(v) for v in ser.values]
+
+                        datasets.append({
+                            "ticker": ticker,
+                            "dates": dates,
+                            "values": values
+                        })
+                except Exception as e:
+                    print(f"Error computing rolling metric for {ticker}: {e}")
+                    continue
             
             # Get common date range for all tickers
             common_date_range = self._get_common_date_range(db, all_tickers)
@@ -2189,17 +2661,16 @@ class DataService:
         portfolio_metrics = {
             "ticker": "PORTFOLIO",
             "ann_return_pct": 38.89,
-            "ann_volatility_pct": 29.67,
-            "sharpe": 0.94,
-            "sortino": 1.55,
-            "skew": 4.38,
+            "volatility_pct": 29.67,
+            "sharpe_ratio": 0.94,
+            "sortino_ratio": 1.55,
+            "skewness": 4.38,
             "kurtosis": 52.47,
             "max_drawdown_pct": -35.08,
             "var_95_pct": -2.41,
             "cvar_95_pct": -3.44,
             "hit_ratio_pct": 47.75,
             "beta_ndx": 1.02,
-            "beta_spy": 1.29,
             "up_capture_ndx_pct": 113.10,
             "down_capture_ndx_pct": 92.35,
             "tracking_error_pct": 1.39,
@@ -2216,17 +2687,16 @@ class DataService:
             ticker_metrics = {
                 "ticker": ticker,
                 "ann_return_pct": round(random.uniform(15, 60), 2),
-                "ann_volatility_pct": round(random.uniform(20, 50), 2),
-                "sharpe": round(random.uniform(0.5, 2.0), 2),
-                "sortino": round(random.uniform(0.8, 2.5), 2),
-                "skew": round(random.uniform(-2, 5), 2),
+                "volatility_pct": round(random.uniform(20, 50), 2),
+                "sharpe_ratio": round(random.uniform(0.5, 2.0), 2),
+                "sortino_ratio": round(random.uniform(0.8, 2.5), 2),
+                "skewness": round(random.uniform(-2, 5), 2),
                 "kurtosis": round(random.uniform(10, 60), 2),
                 "max_drawdown_pct": round(random.uniform(-50, -15), 2),
                 "var_95_pct": round(random.uniform(-4, -1), 2),
                 "cvar_95_pct": round(random.uniform(-6, -2), 2),
                 "hit_ratio_pct": round(random.uniform(40, 60), 2),
                 "beta_ndx": round(random.uniform(0.5, 2.0), 2),
-                "beta_spy": round(random.uniform(0.8, 2.5), 2),
                 "up_capture_ndx_pct": round(random.uniform(80, 130), 2),
                 "down_capture_ndx_pct": round(random.uniform(70, 110), 2),
                 "tracking_error_pct": round(random.uniform(1, 5), 2),
@@ -2242,3 +2712,283 @@ class DataService:
                 "total_days": 252
             }
         }
+
+    def search_tickers(self, query: str) -> List[Dict[str, str]]:
+        """Search for tickers using yfinance"""
+        try:
+            import yfinance as yf
+            
+            # Common ticker patterns to try
+            patterns = [
+                query.upper(),
+                f"{query.upper()}.TO",  # Toronto
+                f"{query.upper()}.L",   # London
+                f"{query.upper()}.PA",  # Paris
+                f"{query.upper()}.DE",  # Frankfurt
+                f"{query.upper()}.SW",  # Swiss
+                f"{query.upper()}.AS",  # Amsterdam
+            ]
+            
+            suggestions = []
+            seen_tickers = set()
+            
+            for pattern in patterns:
+                try:
+                    ticker = yf.Ticker(pattern)
+                    info = ticker.info
+                    
+                    if info and 'symbol' in info and info['symbol'] not in seen_tickers:
+                        seen_tickers.add(info['symbol'])
+                        suggestions.append({
+                            "symbol": info['symbol'],
+                            "name": info.get('longName', info.get('shortName', 'Unknown')),
+                            "exchange": info.get('exchange', 'Unknown'),
+                            "type": info.get('quoteType', 'Unknown')
+                        })
+                        
+                        # Limit to 10 suggestions
+                        if len(suggestions) >= 10:
+                            break
+                            
+                except Exception as e:
+                    continue
+            
+            return suggestions
+            
+        except Exception as e:
+            print(f"Error searching tickers: {e}")
+            return []
+
+    def check_ibkr_connection(self) -> bool:
+        """Check if IBKR TWS is running and accessible"""
+        try:
+            # Create a temporary test script to check IBKR connection
+            test_script = """
+import sys
+import os
+sys.path.append(os.path.join(os.path.dirname(__file__), 'backend'))
+
+try:
+    from services.ibkr_service import IBKRService
+    ibkr = IBKRService()
+    connected = ibkr.connect(timeout=10)
+    print(f"Connected: {connected}")
+    if connected:
+        ibkr.disconnect()
+    sys.exit(0 if connected else 1)
+except Exception as e:
+    print(f"Error: {e}")
+    sys.exit(1)
+"""
+
+            # Write the test script to a temporary file
+            test_file = "test_ibkr_connection.py"
+            with open(test_file, 'w') as f:
+                f.write(test_script)
+
+            try:
+                # Run the test script
+                import subprocess
+                result = subprocess.run(
+                    ["poetry", "run", "python", test_file],
+                    shell=True, capture_output=True, text=True, timeout=15
+                )
+
+                # Clean up the test file
+                if os.path.exists(test_file):
+                    os.remove(test_file)
+
+                if result.returncode == 0 and "Connected: True" in result.stdout:
+                    return True
+                else:
+                    return False
+
+            except subprocess.TimeoutExpired:
+                return False
+            finally:
+                # Ensure test file is cleaned up
+                if os.path.exists(test_file):
+                    os.remove(test_file)
+
+        except Exception as e:
+            print(f"Error checking IBKR connection: {e}")
+            return False
+
+    def add_ticker_to_portfolio(self, db: Session, username: str, ticker: str, shares: int) -> Dict[str, Any]:
+        """Add ticker to user's portfolio with intelligent data fetching"""
+        try:
+            # Normalize ticker
+            ticker = ticker.upper().strip()
+            
+            # Check if ticker already exists in portfolio
+            user = db.query(User).filter(User.username == username).first()
+            if not user:
+                return {"error": f"User {username} not found"}
+            
+            existing = db.query(Portfolio).filter(
+                Portfolio.user_id == user.id,
+                Portfolio.ticker_symbol == ticker
+            ).first()
+            
+            if existing:
+                return {"error": f"Ticker {ticker} already exists in portfolio"}
+            
+            # Check IBKR connection first
+            ibkr_available = self.check_ibkr_connection()
+            
+            if ibkr_available:
+                # Try to fetch from IBKR
+                print(f"IBKR available, fetching data for {ticker}")
+                success = self.fetch_and_store_historical_data(db, ticker)
+                if success:
+                    # Add to portfolio
+                    portfolio_item = Portfolio(
+                        user_id=user.id,
+                        ticker_symbol=ticker,
+                        shares=shares
+                    )
+                    db.add(portfolio_item)
+                    db.commit()
+                    
+                    # Update JSON file
+                    self._update_portfolio_json(username, db)
+                    
+                    # Clear cache for this user
+                    self._clear_cache(f"*{username}*")
+                    print(f"Cache cleared for user {username} after adding ticker {ticker}")
+                    
+                    return {
+                        "success": True,
+                        "message": f"Ticker {ticker} added successfully with {shares} shares (data from IBKR)",
+                        "data_source": "IBKR",
+                        "ticker": ticker,
+                        "shares": shares
+                    }
+                else:
+                    return {"error": f"Failed to fetch data for {ticker} from IBKR"}
+            
+            else:
+                # IBKR not available, try fallback files
+                print(f"IBKR not available, checking fallback files for {ticker}")
+                
+                # Check if fallback file exists
+                data_dir = "data"
+                if not os.path.exists(data_dir):
+                    data_dir = "../data"
+                
+                json_file = os.path.join(data_dir, f"{ticker}.json")
+                csv_file = os.path.join(data_dir, f"{ticker}.csv")
+                
+                if os.path.exists(json_file) or os.path.exists(csv_file):
+                    # Import from fallback file
+                    success = self.import_ticker_data_from_file(db, ticker)
+                    if success:
+                        # Add to portfolio
+                        portfolio_item = Portfolio(
+                            user_id=user.id,
+                            ticker_symbol=ticker,
+                            shares=shares
+                        )
+                        db.add(portfolio_item)
+                        db.commit()
+                        
+                        # Update JSON file
+                        self._update_portfolio_json(username, db)
+                        
+                        # Clear cache for this user
+                        self._clear_cache(f"*{username}*")
+                        print(f"Cache cleared for user {username} after adding ticker {ticker}")
+                        
+                        return {
+                            "success": True,
+                            "message": f"Ticker {ticker} added successfully with {shares} shares (data from fallback)",
+                            "data_source": "fallback",
+                            "ticker": ticker,
+                            "shares": shares
+                        }
+                    else:
+                        return {"error": f"Failed to import data for {ticker} from fallback file"}
+                else:
+                    return {
+                        "error": f"Ticker {ticker} not available in fallback files and no IBKR connection"
+                    }
+                    
+        except Exception as e:
+            db.rollback()
+            print(f"Error adding ticker to portfolio: {e}")
+            return {"error": str(e)}
+
+    def _update_portfolio_json(self, username: str, db: Session):
+        """Update user's portfolio JSON file"""
+        try:
+            import json
+            import os
+            
+            # Get user
+            user = db.query(User).filter(User.username == username).first()
+            if not user:
+                return
+            
+            # Get all portfolio items
+            all_items = db.query(Portfolio).filter(Portfolio.user_id == user.id).all()
+            
+            # Prepare data for JSON file
+            json_data = []
+            for item in all_items:
+                json_data.append({
+                    "ticker": item.ticker_symbol,
+                    "shares": item.shares
+                })
+            
+            # Write to JSON file
+            json_file = f"../data/{username}_portfolio.json"
+            if not os.path.exists(json_file):
+                json_file = f"data/{username}_portfolio.json"
+            
+            with open(json_file, 'w') as f:
+                json.dump(json_data, f, indent=2)
+                
+        except Exception as e:
+            print(f"Error updating portfolio JSON: {e}")
+
+    def remove_ticker_from_portfolio(self, db: Session, username: str, ticker: str) -> Dict[str, Any]:
+        """Remove ticker from user's portfolio"""
+        try:
+            # Normalize ticker
+            ticker = ticker.upper().strip()
+            
+            # Check if user exists
+            user = db.query(User).filter(User.username == username).first()
+            if not user:
+                return {"error": f"User {username} not found"}
+            
+            # Check if ticker exists in portfolio
+            portfolio_item = db.query(Portfolio).filter(
+                Portfolio.user_id == user.id,
+                Portfolio.ticker_symbol == ticker
+            ).first()
+            
+            if not portfolio_item:
+                return {"error": f"Ticker {ticker} not found in portfolio"}
+            
+            # Remove from database
+            db.delete(portfolio_item)
+            db.commit()
+            
+            # Update JSON file
+            self._update_portfolio_json(username, db)
+            
+            # Clear cache for this user
+            self._clear_cache(f"*{username}*")
+            print(f"Cache cleared for user {username} after removing ticker {ticker}")
+            
+            return {
+                "success": True,
+                "message": f"Ticker {ticker} removed successfully from portfolio",
+                "ticker": ticker
+            }
+                    
+        except Exception as e:
+            db.rollback()
+            print(f"Error removing ticker from portfolio: {e}")
+            return {"error": str(e)}
