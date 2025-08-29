@@ -1,0 +1,213 @@
+/* Navbar styles - specyficzne dla landing page */
+.landing-page-navbar {
+  background-color: #ffffff;
+  border-bottom: 1px solid #e0e0e0;
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 1000;
+  width: 100%;
+}
+
+.landing-page-navbar .landing-page-container {
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 0 20px;
+}
+
+.landing-page-navbar .landing-page-navbar-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  height: 70px;
+  width: 100%;
+}
+
+.landing-page-navbar .landing-page-brand {
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 12px 16px;
+  display: flex;
+  align-items: center;
+  gap: 20px;
+  text-decoration: none;
+  color: inherit;
+  flex-shrink: 0;
+}
+
+.landing-page-navbar .landing-page-brand::-moz-focus-inner { border: 0; }
+
+/* Enhanced logo style - bigger and more prominent */
+.landing-page-navbar .landing-page-logo { 
+  display: flex; 
+  align-items: center; 
+  gap: 20px; 
+  flex-shrink: 0;
+  white-space: nowrap;
+  min-width: fit-content;
+}
+
+.landing-page-navbar .landing-page-logo-symbol { 
+  font-size: 32px;
+  font-weight: 700; 
+  color: #1976d2;
+  font-family: 'Times New Roman', serif; 
+  width: 40px;
+  height: 40px;
+  background-color: #1976d2;
+  color: white;
+  border-radius: 6px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.landing-page-navbar .landing-page-logo-text { 
+  display: flex; 
+  align-items: center; 
+  gap: 6px; 
+  flex-shrink: 0;
+  white-space: nowrap;
+  flex-direction: row;
+}
+
+.landing-page-navbar .landing-page-logo-main { 
+  font-size: 16px;
+  font-weight: 700; 
+  color: #1976d2;
+  letter-spacing: 0.5px; 
+  text-transform: uppercase;
+  flex-shrink: 0;
+  white-space: nowrap;
+  display: inline;
+}
+
+.landing-page-navbar .landing-page-logo-separator { 
+  font-size: 14px;
+  color: #1976d2; 
+  font-weight: 300; 
+  flex-shrink: 0;
+  white-space: nowrap;
+  display: inline;
+}
+
+.landing-page-navbar .landing-page-logo-sub { 
+  font-size: 14px;
+  color: #1976d2; 
+  font-weight: 400; 
+  font-family: serif;
+  flex-shrink: 0;
+  white-space: nowrap;
+  display: inline;
+}
+
+/* Brand address below logo */
+
+.landing-page-navbar .landing-page-desktop-nav { 
+  display: none; 
+  gap: 24px; 
+  justify-self: center; 
+}
+
+.landing-page-navbar .landing-page-desktop-right { 
+  display: none; 
+  gap: 16px; 
+  align-items: center; 
+  justify-self: end; 
+}
+
+.landing-page-navbar .landing-page-nav-link {
+  color: #1976d2;
+  text-decoration: none;
+  padding: 8px 12px;
+  font-size: 0.875rem;
+  font-weight: 500;
+  transition: all 0.2s ease;
+}
+
+.landing-page-navbar .landing-page-nav-link.hover { 
+  text-decoration: underline; 
+  text-underline-offset: 4px; 
+}
+
+.landing-page-navbar .landing-page-lang { 
+  display: flex; 
+  align-items: center; 
+  gap: 4px; 
+  color: #1976d2; 
+  font-size: 0.875rem; 
+  font-weight: 500; 
+}
+
+.landing-page-navbar .landing-page-login-btn {
+  background: #ffffff;
+  border: 1px solid #1976d2;
+  color: #1976d2;
+  padding: 8px 16px;
+  border-radius: 4px;
+  font-size: 0.875rem;
+  font-weight: 500;
+  cursor: pointer;
+}
+
+.landing-page-navbar .landing-page-mobile-menu-btn button{ 
+  color:#1976d2; 
+  padding:8px; 
+  background:none; 
+  border:none; 
+  cursor:pointer; 
+}
+
+.landing-page-navbar .landing-page-mobile-nav { 
+  padding: 8px 0 12px; 
+  background: #ffffff; 
+}
+
+.landing-page-navbar .landing-page-mobile-actions { 
+  display:flex; 
+  align-items:center; 
+  justify-content: space-between; 
+  padding: 8px 12px; 
+  margin-top: 8px; 
+  border-top: 1px solid #dadce0; 
+}
+
+@media (min-width: 900px) {
+  .landing-page-navbar .landing-page-desktop-nav { display: flex; }
+  .landing-page-navbar .landing-page-desktop-right { display: flex; }
+  .landing-page-navbar .landing-page-mobile-menu-btn { display: none; }
+}
+
+@media (max-width: 768px) {
+  .landing-page-navbar .landing-page-navbar-row {
+    height: 60px;
+    padding: 0 15px 0 0;
+  }
+  
+  .landing-page-navbar .landing-page-brand {
+    padding: 0 0 0 15px;
+    gap: 12px;
+  }
+  
+  .landing-page-navbar .landing-page-logo-symbol {
+    font-size: 28px;
+    width: 35px;
+    height: 35px;
+  }
+  
+  .landing-page-navbar .landing-page-logo-main {
+    font-size: 18px;
+  }
+  
+  .landing-page-navbar .landing-page-logo-separator {
+    font-size: 16px;
+  }
+  
+  .landing-page-navbar .landing-page-logo-sub {
+    font-size: 16px;
+  }
+}
+
+
