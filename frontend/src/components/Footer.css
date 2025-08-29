@@ -1,160 +1,106 @@
-.footer {
-  background: linear-gradient(135deg, #0a0a0a 0%, #1a1a1a 100%);
-  border-top: 1px solid #333;
-  padding: 40px 0 30px 0;
-  margin-top: auto;
-  position: relative;
-  z-index: 10;
-  width: 100%;
-  margin-left: 0;
-  margin-right: 0;
+/* Footer styles - specific for dashboard */
+.dashboard-footer {
+  background: #1a1a1a !important;
+  color: #ffffff !important;
+  padding: 40px 0 20px 0 !important;
+  border-top: 1px solid #333 !important;
+  width: 100% !important;
+  margin: 0 !important;
+  box-sizing: border-box !important;
+  position: relative !important;
+  z-index: 100 !important;
+  bottom: 0 !important;
+  left: 0 !important;
+  right: 0 !important;
 }
 
-.footer::before {
-  content: '';
-  position: absolute;
-  top: 0;
-  left: 0;
-  right: 0;
-  height: 1px;
-  background: linear-gradient(90deg, transparent 0%, #FF6B6B 50%, transparent 100%);
+.dashboard-footer-content {
+  max-width: 1200px !important;
+  margin: 0 auto !important;
+  padding: 0 20px !important;
+  display: flex !important;
+  justify-content: space-between !important;
+  align-items: flex-start !important;
+  gap: 32px !important;
+  flex-wrap: wrap !important;
+  box-sizing: border-box !important;
 }
 
-.footer-content {
-  max-width: 1200px;
-  margin: 0 auto;
-  padding: 0 clamp(15px, 4vw, 30px);
-  display: flex;
-  justify-content: space-between;
-  align-items: flex-start;
-  flex-wrap: wrap;
-  gap: clamp(20px, 5vw, 40px);
+.dashboard-footer-section {
+  flex: 1 !important;
+  min-width: 250px !important;
+  box-sizing: border-box !important;
 }
 
-.footer-section {
-  flex: 1;
-  min-width: 250px;
+.dashboard-company-info {
+  display: flex !important;
+  flex-direction: column !important;
+  gap: 8px !important;
 }
 
-.company-info {
-  margin-bottom: 20px;
-}
-
-.company-name {
-  color: #FF6B6B;
-  font-size: 24px;
-  font-weight: 700;
-  margin: 0 0 15px 0;
-  letter-spacing: 0.5px;
-  text-transform: uppercase;
-}
-
-.company-address {
-  color: #cccccc;
-  font-size: 14px;
-  line-height: 1.6;
-  margin: 0;
-  font-weight: 300;
-}
-
-.contact-info {
-  text-align: center;
-}
-
-.contact-info p {
-  color: #cccccc;
-  font-size: 14px;
-  margin: 8px 0;
-  font-weight: 400;
-}
-
-.phone {
+.dashboard-company-name {
+  font-size: 1.25rem !important;
+  font-weight: 700 !important;
   color: #FF6B6B !important;
-  font-weight: 600 !important;
-  font-size: 16px !important;
+  margin: 0 !important;
+  text-transform: uppercase !important;
+  letter-spacing: 0.5px !important;
+  line-height: 1.2 !important;
 }
 
-.email {
+.dashboard-company-address {
+  color: #cccccc !important;
+  font-size: 0.875rem !important;
+  line-height: 1.6 !important;
+  margin: 0 !important;
+}
+
+.dashboard-contact-info {
+  display: flex !important;
+  flex-direction: column !important;
+  gap: 8px !important;
+}
+
+.dashboard-phone, .dashboard-email {
+  color: #cccccc !important;
+  font-size: 0.875rem !important;
+  margin: 0 !important;
+  line-height: 1.4 !important;
+}
+
+.dashboard-legal-info {
+  display: flex !important;
+  flex-direction: column !important;
+  gap: 8px !important;
+}
+
+.dashboard-copyright, .dashboard-registration {
   color: #888888 !important;
-  font-size: 13px !important;
-}
-
-.legal-info {
-  text-align: right;
-}
-
-.copyright {
-  color: #888888;
-  font-size: 12px;
-  margin: 0 0 8px 0;
-  font-weight: 300;
-}
-
-.registration {
-  color: #666666;
-  font-size: 11px;
-  margin: 0;
-  font-weight: 300;
-  text-transform: uppercase;
-  letter-spacing: 0.5px;
+  font-size: 0.875rem !important;
+  margin: 0 !important;
+  line-height: 1.4 !important;
 }
 
 /* Responsive design */
 @media (max-width: 768px) {
-  .footer-content {
-    flex-direction: column;
-    text-align: center;
-    gap: 30px;
+  .dashboard-footer {
+    padding: 30px 0 15px 0 !important;
   }
   
-  .footer-section {
-    min-width: auto;
+  .dashboard-footer-content {
+    flex-direction: column !important;
+    gap: 24px !important;
+    text-align: center !important;
+    padding: 0 15px !important;
   }
   
-  .legal-info {
-    text-align: center;
+  .dashboard-footer-section {
+    min-width: auto !important;
   }
   
-  .company-name {
-    font-size: 20px;
-  }
-  
-  .footer {
-    padding: 30px 0 20px 0;
+  .dashboard-company-name {
+    font-size: 1.1rem !important;
   }
 }
 
-@media (max-width: 480px) {
-  .footer-content {
-    padding: 0 15px;
-    gap: 25px;
-  }
-  
-  .company-name {
-    font-size: 18px;
-  }
-  
-  .company-address {
-    font-size: 13px;
-  }
-  
-  .contact-info p {
-    font-size: 13px;
-  }
-  
-  .phone {
-    font-size: 15px !important;
-  }
-  
-  .email {
-    font-size: 12px !important;
-  }
-  
-  .copyright {
-    font-size: 11px;
-  }
-  
-  .registration {
-    font-size: 10px;
-  }
-} 
+

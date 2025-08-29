@@ -1,3 +1,4 @@
+/* Dashboard Layout - wszystkie style muszą być specyficzne dla dashboard */
 .dashboard-layout {
   min-height: 100vh;
   background-color: #0a0a0a;
@@ -9,7 +10,7 @@
   padding: 0;
 }
 
-.header {
+.dashboard-layout .header {
   background-color: #1a1a1a;
   border-bottom: 1px solid #333;
   width: 100%;
@@ -18,7 +19,7 @@
 }
 
 /* Top navbar - Logo and User Info */
-.top-navbar {
+.dashboard-layout .top-navbar {
   display: flex;
   justify-content: space-between;
   align-items: center;
@@ -33,14 +34,14 @@
   white-space: nowrap;
 }
 
-.logo-container {
+.dashboard-layout .logo-container {
   display: flex;
   align-items: center;
   min-width: 320px;
   flex-shrink: 0;
 }
 
-.logo {
+.dashboard-layout .logo {
   display: flex;
   align-items: center;
   gap: 16px;
@@ -50,7 +51,7 @@
   flex-shrink: 0;
 }
 
-.logo-icon {
+.dashboard-layout .logo-icon {
   font-size: clamp(1.8rem, 3.5vw, 2.5rem);
   font-weight: 700;
   color: #FF6B6B;
@@ -67,7 +68,7 @@
   margin-top: 0;
 }
 
-.logo-text {
+.dashboard-layout .logo-text {
   display: flex;
   align-items: center;
   gap: 8px;
@@ -75,7 +76,7 @@
   letter-spacing: 0.5px;
 }
 
-.logo-main {
+.dashboard-layout .logo-main {
   font-size: clamp(1.4rem, 2.8vw, 2.1rem);
   color: #FF6B6B;
   text-transform: uppercase;
@@ -84,14 +85,14 @@
   font-family: 'Helvetica Neue', 'Arial', sans-serif;
 }
 
-.logo-separator {
+.dashboard-layout .logo-separator {
   font-size: clamp(1.2rem, 2.4vw, 1.6rem);
   color: #FF6B6B;
   font-weight: 400;
   font-family: 'Times New Roman', 'Georgia', serif;
 }
 
-.logo-sub {
+.dashboard-layout .logo-sub {
   font-size: clamp(1rem, 2vw, 1.4rem);
   color: #FF6B6B;
   text-transform: none;
@@ -100,7 +101,7 @@
   font-family: 'Times New Roman', 'Georgia', serif;
 }
 
-.user-info {
+.dashboard-layout .user-info {
   display: flex;
   align-items: center;
   gap: clamp(4px, 1vw, 8px);
@@ -108,13 +109,13 @@
   position: relative;
 }
 
-.logged-in-label {
+.dashboard-layout .logged-in-label {
   color: #888888;
   font-size: clamp(0.7rem, 1.5vw, 0.9rem);
   font-weight: 400;
 }
 
-.username {
+.dashboard-layout .username {
   color: #FF6B6B;
   font-size: clamp(0.8rem, 1.8vw, 1rem);
   font-weight: 600;
@@ -122,11 +123,11 @@
   letter-spacing: 0.5px;
 }
 
-.user-button-container {
+.dashboard-layout .user-button-container {
   position: relative;
 }
 
-.user-button {
+.dashboard-layout .user-button {
   background: none;
   border: none;
   color: inherit;
@@ -139,18 +140,18 @@
   transition: background-color 0.2s ease;
 }
 
-.user-button:hover {
+.dashboard-layout .user-button:hover {
   background-color: rgba(255, 107, 107, 0.1);
 }
 
-.dropdown-arrow {
+.dashboard-layout .dropdown-arrow {
   font-size: clamp(0.6rem, 1.2vw, 0.8rem);
   color: #888888;
   transition: transform 0.2s ease;
   margin-left: 4px;
 }
 
-.user-dropdown {
+.dashboard-layout .user-dropdown {
   position: absolute;
   top: 100%;
   right: 0;
@@ -164,7 +165,7 @@
   padding: 4px 0;
 }
 
-.dropdown-item {
+.dashboard-layout .dropdown-item {
   background: none;
   border: none;
   color: #ffffff;
@@ -176,92 +177,13 @@
   transition: background-color 0.2s ease;
 }
 
-.dropdown-item:hover {
+.dashboard-layout .dropdown-item:hover {
   background-color: rgba(255, 107, 107, 0.1);
   color: #FF6B6B;
 }
 
-@media (max-width: 1024px) {
-  .top-navbar {
-    padding: 12px clamp(8px, 2.5vw, 15px);
-  }
-  
-  .logo-container {
-    min-width: 280px;
-  }
-  
-  .logo {
-    min-width: 280px;
-  }
-  
-  .nav-tabs {
-    padding: 0 clamp(8px, 2.5vw, 15px);
-  }
-  
-  .main-content {
-    padding: clamp(12px, 3.5vw, 25px);
-  }
-}
-
-@media (max-width: 768px) {
-  .top-navbar {
-    padding: 10px clamp(6px, 2vw, 12px);
-    min-height: 50px;
-  }
-  
-  .logo-container {
-    min-width: 240px;
-  }
-  
-  .logo {
-    min-width: 240px;
-    gap: 12px;
-  }
-  
-  .nav-tabs {
-    padding: 0 clamp(6px, 2vw, 12px);
-    min-height: 45px;
-  }
-  
-  .nav-tab {
-    padding: clamp(6px, 1.5vw, 10px) clamp(8px, 2vw, 12px);
-  }
-  
-  .main-content {
-    padding: clamp(10px, 3vw, 20px);
-  }
-}
-
-@media (max-width: 480px) {
-  .top-navbar {
-    padding: 8px clamp(4px, 1.5vw, 10px);
-    min-height: 45px;
-  }
-  
-  .logo-container {
-    min-width: 200px;
-  }
-  
-  .logo {
-    min-width: 200px;
-    gap: 8px;
-  }
-  
-  .nav-tabs {
-    padding: 0 clamp(4px, 1.5vw, 8px);
-    min-height: 40px;
-  }
-  
-  .nav-tab {
-    padding: clamp(4px, 1.2vw, 8px) clamp(6px, 1.5vw, 10px);
-  }
-  
-  .main-content {
-    padding: clamp(8px, 2.5vw, 15px);
-  }
-}
-
-.nav-tabs {
+/* Navigation tabs */
+.dashboard-layout .nav-tabs {
   display: flex;
   gap: 0;
   overflow-x: auto;
@@ -276,7 +198,7 @@
   box-sizing: border-box;
 }
 
-.nav-tab {
+.dashboard-layout .nav-tab {
   padding: clamp(8px, 1.5vw, 15px) clamp(10px, 1.8vw, 16px);
   color: #cccccc;
   cursor: pointer;
@@ -290,44 +212,19 @@
   flex-shrink: 0;
 }
 
-@media (max-width: 768px) {
-  .nav-tabs {
-    padding: 0 10px;
-    justify-content: flex-start;
-  }
-  
-  .nav-tab {
-    padding: 8px 10px;
-    font-size: 0.8rem;
-    flex-shrink: 0;
-  }
-}
-
-@media (max-width: 480px) {
-  .nav-tabs {
-    padding: 0 8px;
-    justify-content: flex-start;
-  }
-  
-  .nav-tab {
-    padding: 6px 8px;
-    font-size: 0.75rem;
-    flex-shrink: 0;
-  }
-}
-
-.nav-tab:hover {
+.dashboard-layout .nav-tab:hover {
   color: #ffffff;
   background-color: #2a2a2a;
 }
 
-.nav-tab.active {
+.dashboard-layout .nav-tab.active {
   color: #ffffff;
-  border-bottom-color: #ff0000;
+  border-bottom-color: #FF6B6B;
   background-color: #2a2a2a;
 }
 
-.main-content {
+/* Main content area */
+.dashboard-layout .main-content {
   padding: clamp(15px, 4vw, 30px);
   background-color: #0a0a0a;
   overflow-x: hidden;
@@ -335,171 +232,174 @@
   box-sizing: border-box;
   width: 100%;
   margin: 0;
+  min-height: 0;
+}
+
+/* Footer positioning */
+.dashboard-layout .dashboard-footer {
+  flex-shrink: 0;
+  width: 100%;
+  margin: 0;
+  box-sizing: border-box;
 }
 
 /* Scrollbar styling */
-.nav-tabs::-webkit-scrollbar {
+.dashboard-layout .nav-tabs::-webkit-scrollbar {
   height: 6px;
 }
 
-.nav-tabs::-webkit-scrollbar-track {
+.dashboard-layout .nav-tabs::-webkit-scrollbar-track {
   background: #1a1a1a;
 }
 
-.nav-tabs::-webkit-scrollbar-thumb {
+.dashboard-layout .nav-tabs::-webkit-scrollbar-thumb {
   background: #333;
   border-radius: 3px;
 }
 
-.nav-tabs::-webkit-scrollbar-thumb:hover {
+.dashboard-layout .nav-tabs::-webkit-scrollbar-thumb:hover {
   background: #555;
-} 
-
-/* NIE zawijaj nic w top barze */
-.top-navbar { 
-  flex-wrap: nowrap;
-  white-space: nowrap;
 }
 
-/* Logo i jego tekst nigdy nie może przejść do nowej linii */
-.logo, .logo-text {
-  display: flex;
-  align-items: center;
-  flex-wrap: nowrap !important;
-  white-space: nowrap !important;
-}
-
-.logo-text > * {
-  flex: 0 0 auto;          /* nie ściskaj dzieci */
-  white-space: nowrap;
-  word-break: keep-all;     /* nie łam na łącznikach/hyfenach */
-  overflow-wrap: normal;
-  line-height: 1;           /* na wszelki wypadek, żeby nie „rosło" w pionie */
-}
-
-/* Opcjonalnie: jeśli coś nadal ściska logo, pozwól mu mieć własną szerokość */
-.logo-container, .logo { 
-  min-width: fit-content; 
-}
-
-/* Awaryjne skalowanie dla bardzo wąskich ekranów */
-@media (max-width: 640px) {
-  .logo-main { 
-    font-size: 1.1rem; 
+/* Responsive styles */
+@media (max-width: 1024px) {
+  .dashboard-layout .top-navbar {
+    padding: 12px clamp(8px, 2.5vw, 15px);
   }
-  .logo-separator { 
-    font-size: 1rem; 
+  
+  .dashboard-layout .logo-container {
+    min-width: 280px;
   }
-  .logo-sub { 
-    font-size: 0.95rem; 
+  
+  .dashboard-layout .logo {
+    min-width: 280px;
+  }
+  
+  .dashboard-layout .nav-tabs {
+    padding: 0 clamp(8px, 2.5vw, 15px);
+  }
+  
+  .dashboard-layout .main-content {
+    padding: clamp(12px, 3.5vw, 25px);
   }
 }
 
-/* AGRESYWNE NAPRAWKI - nadpisują wszystko */
-.top-navbar {
-  flex-wrap: nowrap !important;
-  white-space: nowrap !important;
-  overflow: hidden;
+@media (max-width: 768px) {
+  .dashboard-layout .top-navbar {
+    padding: 10px clamp(6px, 2vw, 12px);
+    min-height: 50px;
+  }
+  
+  .dashboard-layout .logo-container {
+    min-width: 240px;
+  }
+  
+  .dashboard-layout .logo {
+    min-width: 240px;
+    gap: 12px;
+  }
+  
+  .dashboard-layout .logo-icon {
+    font-size: clamp(1.5rem, 3vw, 2rem);
+  }
+  
+  .dashboard-layout .logo-main {
+    font-size: clamp(1.1rem, 2.2vw, 1.6rem);
+  }
+  
+  .dashboard-layout .logo-separator {
+    font-size: clamp(0.9rem, 1.8vw, 1.2rem);
+  }
+  
+  .dashboard-layout .logo-sub {
+    font-size: clamp(0.8rem, 1.6vw, 1rem);
+  }
+  
+  .dashboard-layout .user-info {
+    gap: 4px;
+  }
+  
+  .dashboard-layout .logged-in-label {
+    font-size: clamp(0.6rem, 1.2vw, 0.8rem);
+  }
+  
+  .dashboard-layout .username {
+    font-size: clamp(0.7rem, 1.4vw, 0.9rem);
+  }
+  
+  .dashboard-layout .nav-tabs {
+    padding: 0 10px;
+    justify-content: flex-start;
+    min-height: 45px;
+  }
+  
+  .dashboard-layout .nav-tab {
+    padding: 8px 10px;
+    font-size: 0.8rem;
+    flex-shrink: 0;
+  }
+  
+  .dashboard-layout .main-content {
+    padding: clamp(10px, 3vw, 20px);
+  }
 }
 
-.logo-container {
-  flex-shrink: 0 !important;
-  min-width: fit-content !important;
-  max-width: none !important;
-}
-
-.logo {
-  flex-shrink: 0 !important;
-  min-width: fit-content !important;
-  max-width: none !important;
-  flex-wrap: nowrap !important;
-  white-space: nowrap !important;
-}
-
-.logo-text {
-  flex-shrink: 0 !important;
-  min-width: fit-content !important;
-  max-width: none !important;
-  flex-wrap: nowrap !important;
-  white-space: nowrap !important;
-  display: flex !important;
-  align-items: center !important;
-}
-
-.logo-main,
-.logo-separator,
-.logo-sub {
-  flex-shrink: 0 !important;
-  white-space: nowrap !important;
-  word-break: keep-all !important;
-  overflow-wrap: normal !important;
-  line-height: 1 !important;
-  display: inline-block !important;
-}
-
-/* Wymuszenie jednej linii dla całego top-navbar */
-.top-navbar > * {
-  flex-shrink: 0 !important;
-  white-space: nowrap !important;
-}
-
-/* OSTATECZNA NAPRAWKA - wymuszenie jednej linii */
-.top-navbar {
-  display: flex !important;
-  flex-direction: row !important;
-  flex-wrap: nowrap !important;
-  white-space: nowrap !important;
-  overflow: hidden !important;
-  width: 100% !important;
-}
-
-.logo-container {
-  display: flex !important;
-  flex-shrink: 0 !important;
-  min-width: fit-content !important;
-  max-width: none !important;
-  white-space: nowrap !important;
-}
-
-.logo {
-  display: flex !important;
-  flex-direction: row !important;
-  flex-shrink: 0 !important;
-  min-width: fit-content !important;
-  max-width: none !important;
-  flex-wrap: nowrap !important;
-  white-space: nowrap !important;
-  align-items: center !important;
-}
-
-.logo-text {
-  display: flex !important;
-  flex-direction: row !important;
-  flex-shrink: 0 !important;
-  min-width: fit-content !important;
-  max-width: none !important;
-  flex-wrap: nowrap !important;
-  white-space: nowrap !important;
-  align-items: center !important;
-  gap: 8px !important;
-}
-
-.logo-main,
-.logo-separator,
-.logo-sub {
-  display: inline-block !important;
-  flex-shrink: 0 !important;
-  white-space: nowrap !important;
-  word-break: keep-all !important;
-  overflow-wrap: normal !important;
-  line-height: 1 !important;
-  margin: 0 !important;
-  padding: 0 !important;
-}
-
-.user-info {
-  display: flex !important;
-  flex-shrink: 0 !important;
-  white-space: nowrap !important;
-  min-width: fit-content !important;
+@media (max-width: 480px) {
+  .dashboard-layout .top-navbar {
+    padding: 8px clamp(4px, 1.5vw, 10px);
+    min-height: 45px;
+  }
+  
+  .dashboard-layout .logo-container {
+    min-width: 200px;
+  }
+  
+  .dashboard-layout .logo {
+    min-width: 200px;
+    gap: 8px;
+  }
+  
+  .dashboard-layout .logo-icon {
+    font-size: clamp(1.3rem, 2.5vw, 1.8rem);
+  }
+  
+  .dashboard-layout .logo-main {
+    font-size: clamp(0.9rem, 1.8vw, 1.3rem);
+  }
+  
+  .dashboard-layout .logo-separator {
+    font-size: clamp(0.7rem, 1.4vw, 1rem);
+  }
+  
+  .dashboard-layout .logo-sub {
+    font-size: clamp(0.6rem, 1.2vw, 0.8rem);
+  }
+  
+  .dashboard-layout .user-info {
+    gap: 2px;
+  }
+  
+  .dashboard-layout .logged-in-label {
+    font-size: clamp(0.5rem, 1vw, 0.7rem);
+  }
+  
+  .dashboard-layout .username {
+    font-size: clamp(0.6rem, 1.2vw, 0.8rem);
+  }
+  
+  .dashboard-layout .nav-tabs {
+    padding: 0 8px;
+    justify-content: flex-start;
+    min-height: 40px;
+  }
+  
+  .dashboard-layout .nav-tab {
+    padding: 6px 8px;
+    font-size: 0.75rem;
+    flex-shrink: 0;
+  }
+  
+  .dashboard-layout .main-content {
+    padding: clamp(8px, 2.5vw, 15px);
+  }
 } 
