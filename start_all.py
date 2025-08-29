@@ -34,7 +34,7 @@ def get_requests():
             import requests
             return requests
     except Exception:
-        import requests
+        import requests 
         return requests
 
 def run_command(command, cwd=None, background=False):
@@ -94,12 +94,9 @@ def install_dependencies():
         return False
 
 def install_js_dependencies():
-    """Install npm deps for landing and frontend"""
+    """Install npm deps for frontend"""
     print("Installing JavaScript dependencies...")
     try:
-        if not run_command("npm install", cwd="landing"):
-            print("Failed to install landing dependencies")
-            return False
         if not run_command("npm install", cwd="frontend"):
             print("Failed to install frontend dependencies")
             return False
@@ -197,13 +194,13 @@ def check_required_files():
     """Check if all required files exist"""
     required_files = [
         "docker-compose.yml",
-        "Dockerfile",
+        "Dockerfile.backend",
+        "Dockerfile.frontend",
         "pyproject.toml",
         "poetry.lock",
         "backend/setup_database.py",
         "backend/api/main.py",
-        "frontend/package.json",
-        "landing/package.json"
+        "frontend/package.json"
     ]
     missing_files = [f for f in required_files if not os.path.exists(f)]
     if missing_files:
@@ -263,7 +260,7 @@ def setup_database(use_file_data=False):
 def check_ports_available():
     """Check if required ports are available"""
     import socket
-    ports_to_check = [3000, 3001, 8000]
+    ports_to_check = [3000, 8000]  # Removed 3001 - no longer needed
     unavailable_ports = []
     for port in ports_to_check:
         try:
@@ -345,6 +342,8 @@ except Exception as e:
 def main():
     print("=" * 60)
     print("Z-ALPHA SECURITIES - DOCKER START ALL")
+    print("NEW CONFIGURATION: Frontend (3000) + Backend (8000)")
+    print("Live-reload enabled for both services")
     print("=" * 60)
     
     print("\nPerforming sanity checks...")
@@ -410,9 +409,10 @@ def main():
     print("=" * 60)
     print("\nFrontend: http://localhost:3000")
     print("Backend API: http://localhost:8000")
-    print("Landing: http://localhost:3001")
     print("\nTo stop all services: docker compose down")
     print("To view logs: docker compose logs -f")
+    print("To view specific service logs: docker compose logs -f frontend")
+    print("To view backend logs: docker compose logs -f backend")
     print("\nPress Ctrl+C to stop all services")
 
     try:

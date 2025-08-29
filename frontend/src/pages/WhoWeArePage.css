@@ -1,0 +1,334 @@
+/* Who We Are Page Styles */
+.who-we-are-page {
+  min-height: 100vh;
+  background-color: #ffffff;
+}
+
+/* Animation keyframes */
+@keyframes slideIn {
+  from {
+    transform: translateX(-100%);
+    opacity: 0;
+  }
+  to {
+    transform: translateX(0);
+    opacity: 1;
+  }
+}
+
+@keyframes fadeInUp {
+  from {
+    transform: translateY(30px);
+    opacity: 0;
+  }
+  to {
+    transform: translateY(0);
+    opacity: 1;
+  }
+}
+
+@keyframes scaleIn {
+  from {
+    transform: scale(0.9);
+    opacity: 0;
+  }
+  to {
+    transform: scale(1);
+    opacity: 1;
+  }
+}
+
+/* Animate on scroll */
+.animate-on-scroll {
+  opacity: 0;
+  transform: translateY(30px);
+  transition: all 0.8s ease-out;
+}
+
+.animate-on-scroll.animate-in {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+/* Leadership section specific styles */
+.leadership-section {
+  position: relative;
+  overflow: hidden;
+}
+
+.leadership-grid {
+  position: relative;
+  z-index: 2;
+}
+
+.leadership-card {
+  transition: all 0.3s ease !important;
+}
+
+.leadership-card:hover {
+  transform: translateY(-8px) !important;
+  box-shadow: 0 16px 48px rgba(0, 0, 0, 0.12) !important;
+}
+
+/* Winding path animation */
+.winding-path {
+  stroke-dasharray: 10, 5;
+  animation: pathFlow 20s linear infinite;
+}
+
+@keyframes pathFlow {
+  0% {
+    stroke-dashoffset: 0;
+  }
+  100% {
+    stroke-dashoffset: -150;
+  }
+}
+
+/* Leadership path positioning for different grid layouts */
+.leadership-path svg {
+  width: 100%;
+  height: 100%;
+}
+
+/* Button hover effects (exclude navbar brand button) */
+.who-we-are-page button:not(.brand):hover {
+  transform: translateY(-2px);
+  box-shadow: 0 8px 24px rgba(25, 118, 210, 0.3);
+  background-color: #1565c0 !important;
+}
+
+/* Ensure brand never gets a blue hover background in this page */
+.who-we-are-page .brand:hover,
+.who-we-are-page .brand:focus,
+.who-we-are-page .brand:active {
+  background: transparent !important;
+  box-shadow: none !important;
+  transform: none !important;
+}
+
+/* Full bleed utility */
+.full-bleed {
+  width: 100vw;
+  margin-left: calc(-50vw + 50%);
+  margin-right: calc(-50vw + 50%);
+}
+
+/* ===== Pioneering Risk Intelligence (modern) ===== */
+.pri-section {
+  padding: 6rem 2rem;
+  background: #ffffff;
+}
+
+.pri-wrap {
+  max-width: 1200px;
+  margin: 0 auto;
+}
+
+.pri-header {
+  text-align: center;
+}
+
+.pri-header h2 {
+  font-size: 3rem;
+  font-weight: 800;
+  color: #202124;
+  margin-bottom: 0.75rem;
+}
+
+.pri-header p {
+  font-size: 1.25rem;
+  color: #5f6368;
+  max-width: 760px;
+  margin: 0 auto;
+}
+
+.pri-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr; /* equal columns to prevent visual drift */
+  gap: 2rem;
+  margin-top: 3rem;
+  align-items: start;
+}
+
+.pri-col { display: grid; gap: 1rem; align-content: start; grid-auto-rows: min-content; }
+
+/* Features in a single horizontal row */
+.pri-features {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+}
+
+.pri-feature {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 1rem;
+  padding: 1.25rem 1.25rem;
+  border: 1px solid #e8eaed;
+  border-radius: 12px;
+  background: #f8f9fa;
+}
+
+.pri-icon {
+  width: 36px; height: 36px;
+  display: grid; place-items: center;
+  border-radius: 8px;
+  background: #e3f2fd;
+  color: #1976d2;
+}
+
+.pri-title { font-size: 1.05rem; font-weight: 700; color: #202124; }
+.pri-desc { font-size: 0.95rem; color: #5f6368; margin-top: 2px; }
+
+.pri-tags { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 8px; }
+.pri-chip {
+  background: #eef2f7;
+  color: #334155;
+  border: 1px solid #e5e7eb;
+  border-radius: 999px;
+  padding: 4px 10px;
+  font-size: 0.8rem;
+  font-weight: 600;
+}
+
+.pri-metric {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 0.75rem;
+  align-items: center;
+  padding: 1rem 1.25rem;
+  border: 1px dashed #e5e7eb;
+  border-radius: 12px;
+}
+
+.pri-metric-icon {
+  width: 36px; height: 36px;
+  display: grid; place-items: center;
+  border-radius: 999px;
+  background: #f0f9ff;
+  color: #0ea5e9;
+}
+
+.pri-metric-value { font-size: 1.35rem; font-weight: 800; color: #111827; }
+.pri-metric-label { font-size: 0.9rem; color: #6b7280; }
+
+.pri-capabilities { 
+  display: flex; 
+  gap: 6px; 
+  flex-wrap: wrap; 
+  margin-top: 0.25rem; 
+  padding: 0.75rem 1rem; 
+  border: 1px dashed #e5e7eb; 
+  border-radius: 12px; 
+}
+
+@media (max-width: 980px) {
+  .pri-grid { grid-template-columns: 1fr; }
+  .pri-feature { padding: 1rem 1rem; }
+  .pri-features { grid-template-columns: 1fr; }
+}
+
+/* Responsive design */
+@media (max-width: 768px) {
+  .who-we-are-page h1 {
+    font-size: 2.5rem !important;
+  }
+  
+  .who-we-are-page h2 {
+    font-size: 2rem !important;
+  }
+
+  .who-we-are-page h3 {
+    font-size: 1.25rem !important;
+  }
+
+  .who-we-are-page [style*="grid-template-columns"] {
+    grid-template-columns: 1fr !important;
+    gap: 2rem !important;
+  }
+
+  .leadership-grid {
+    grid-template-columns: 1fr !important;
+    gap: 2rem !important;
+  }
+
+  .leadership-card {
+    padding: 2rem !important;
+  }
+
+  /* Hide the winding path on mobile for cleaner look */
+  .leadership-path {
+    display: none;
+  }
+
+  .who-we-are-page [style*="padding: 6rem"] {
+    padding: 4rem 1.5rem !important;
+  }
+
+  .who-we-are-page [style*="padding: 3rem"] {
+    padding: 2rem 1.5rem !important;
+  }
+
+  .who-we-are-page [style*="fontSize: 1.5rem"] {
+    font-size: 1.25rem !important;
+  }
+
+  .who-we-are-page [style*="fontSize: 1.25rem"] {
+    font-size: 1.125rem !important;
+  }
+}
+
+@media (max-width: 480px) {
+  .who-we-are-page h1 {
+    font-size: 2rem !important;
+  }
+
+  .who-we-are-page [style*="height: 60vh"] {
+    height: 50vh !important;
+  }
+
+  .leadership-card {
+    padding: 1.5rem !important;
+    text-align: center !important;
+  }
+
+  .who-we-are-page [style*="width: 120px"][style*="height: 120px"] {
+    width: 100px !important;
+    height: 100px !important;
+    font-size: 1.5rem !important;
+  }
+}
+
+/* Leadership card staggered animation */
+.leadership-card:nth-child(1) { animation-delay: 0.1s; }
+.leadership-card:nth-child(2) { animation-delay: 0.2s; }
+.leadership-card:nth-child(3) { animation-delay: 0.3s; }
+.leadership-card:nth-child(4) { animation-delay: 0.4s; }
+.leadership-card:nth-child(5) { animation-delay: 0.5s; }
+.leadership-card:nth-child(6) { animation-delay: 0.6s; }
+.leadership-card:nth-child(7) { animation-delay: 0.7s; }
+.leadership-card:nth-child(8) { animation-delay: 0.8s; }
+
+/* Enhanced transitions for leadership section */
+.leadership-section .animate-on-scroll.animate-in {
+  animation: fadeInUp 0.8s ease-out forwards;
+}
+
+/* Grid layout adjustments for different screen sizes */
+@media (min-width: 1200px) {
+  .leadership-grid {
+    grid-template-columns: repeat(3, 1fr) !important;
+  }
+}
+
+@media (min-width: 900px) and (max-width: 1199px) {
+  .leadership-grid {
+    grid-template-columns: repeat(2, 1fr) !important;
+  }
+}
+
+@media (max-width: 899px) {
+  .leadership-grid {
+    grid-template-columns: 1fr !important;
+  }
+}
