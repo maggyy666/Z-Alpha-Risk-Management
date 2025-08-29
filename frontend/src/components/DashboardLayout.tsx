@@ -64,9 +64,9 @@ const DashboardLayout: React.FC<DashboardLayoutProps> = ({ children }) => {
             <div className="user-button-container">
               <button className="user-button" onClick={toggleDropdown}>
                 <span className="logged-in-label">Logged in:</span>
-                            <span className="username">
-              {session?.username || 'admin'}
-            </span>
+                <span className="username">
+                  {session?.username || 'admin'}
+                </span>
                 <span className="dropdown-arrow">▼</span>
               </button>
               {showDropdown && (

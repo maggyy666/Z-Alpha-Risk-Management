@@ -1,0 +1,80 @@
+.risk-solutions-page {
+  min-height: 100vh;
+  background: #fff;
+}
+
+/* Container */
+.container {
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 0 20px;
+}
+
+/* Animate on scroll */
+.animate-on-scroll {
+  opacity: 0;
+  transform: translateY(30px);
+  transition: opacity 0.6s ease-out, transform 0.6s ease-out;
+}
+
+/* Animation when element comes into view */
+.animate-on-scroll.animate {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+/* Slideshow mobile responsiveness */
+@media (max-width: 768px) {
+  .container {
+    padding: 0 15px;
+  }
+  
+  .risk-solutions-page section {
+    padding: 3rem 0 !important;
+  }
+  
+  .risk-solutions-page h1 {
+    font-size: 2.5rem !important;
+  }
+  
+  .risk-solutions-page h2 {
+    font-size: 2rem !important;
+  }
+  
+  .risk-solutions-page [style*="grid-template-columns"] {
+    grid-template-columns: 1fr !important;
+    gap: 2rem !important;
+  }
+
+  /* Slideshow mobile adjustments */
+  .risk-solutions-page [style*="display: flex"][style*="alignItems: center"][style*="gap: 2rem"] {
+    flex-direction: column !important;
+    gap: 1rem !important;
+  }
+
+  /* Hide external arrows on mobile */
+  .risk-solutions-page [style*="flexShrink: 0"][style*="width: 56px"] {
+    display: none !important;
+  }
+  
+  .risk-solutions-page [style*="padding: 3rem"] {
+    padding: 2rem 1.5rem !important;
+    flex-direction: column !important;
+    text-align: center !important;
+    gap: 1.5rem !important;
+  }
+  
+  .risk-solutions-page [style*="fontSize: 2rem"] {
+    font-size: 1.5rem !important;
+  }
+}
+
+@media (max-width: 480px) {
+  .risk-solutions-page h1 {
+    font-size: 2rem !important;
+  }
+  
+  .risk-solutions-page p {
+    font-size: 1rem !important;
+  }
+}
