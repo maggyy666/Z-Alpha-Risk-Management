@@ -1,0 +1,299 @@
+/* Careers Page Styles */
+.careers-page {
+  min-height: 100vh;
+  background-color: #ffffff;
+}
+
+/* Animation keyframes */
+@keyframes slideIn {
+  from {
+    transform: translateX(-100%);
+    opacity: 0;
+  }
+  to {
+    transform: translateX(0);
+    opacity: 1;
+  }
+}
+
+@keyframes fadeInUp {
+  from {
+    transform: translateY(30px);
+    opacity: 0;
+  }
+  to {
+    transform: translateY(0);
+    opacity: 1;
+  }
+}
+
+@keyframes scaleIn {
+  from {
+    transform: scale(0.9);
+    opacity: 0;
+  }
+  to {
+    transform: scale(1);
+    opacity: 1;
+  }
+}
+
+/* Animate on scroll */
+.animate-on-scroll {
+  opacity: 0;
+  transform: translateY(30px);
+  transition: all 0.8s ease-out;
+}
+
+.animate-on-scroll.animate-in {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+/* University card specific styles */
+.university-card {
+  position: relative;
+  overflow: hidden;
+}
+
+.university-card::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: -100%;
+  width: 100%;
+  height: 100%;
+  background: linear-gradient(90deg, transparent, rgba(25, 118, 210, 0.05), transparent);
+  transition: left 0.5s;
+}
+
+.university-card:hover::before {
+  left: 100%;
+}
+
+/* Section toggle animations */
+.careers-page button {
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1) !important;
+}
+
+.careers-page button:hover {
+  transform: translateY(-2px);
+}
+
+/* Statistics cards hover effects */
+.careers-page [style*="backgroundColor: #f8f9fa"] {
+  transition: all 0.3s ease;
+}
+
+.careers-page [style*="backgroundColor: #f8f9fa"]:hover {
+  background-color: #ffffff !important;
+  box-shadow: 0 12px 24px rgba(0,0,0,0.15) !important;
+  transform: translateY(-4px);
+}
+
+/* Card staggered animation */
+.university-card:nth-child(1) { animation-delay: 0.1s; }
+.university-card:nth-child(2) { animation-delay: 0.2s; }
+.university-card:nth-child(3) { animation-delay: 0.3s; }
+.university-card:nth-child(4) { animation-delay: 0.4s; }
+.university-card:nth-child(5) { animation-delay: 0.5s; }
+.university-card:nth-child(6) { animation-delay: 0.6s; }
+
+/* Enhanced transitions for all interactive elements */
+.careers-page [style*="cursor: pointer"] {
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1) !important;
+}
+
+/* Number counter animation */
+.careers-page [style*="fontSize: 3rem"] {
+  animation: countUp 2s ease-out;
+}
+
+@keyframes countUp {
+  from {
+    opacity: 0;
+    transform: translateY(20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* Acceptance rate badge special styling */
+.careers-page [style*="backgroundColor: #e8f5e8"] {
+  position: relative;
+  overflow: hidden;
+}
+
+.careers-page [style*="backgroundColor: #e8f5e8"]::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  right: 0;
+  width: 0;
+  height: 0;
+  border-style: solid;
+  border-width: 0 15px 15px 0;
+  border-color: transparent #388e3c transparent transparent;
+  opacity: 0.3;
+}
+
+/* Blue highlight section pulse */
+.careers-page [style*="backgroundColor: #1976d2"] {
+  animation: subtlePulse 4s ease-in-out infinite;
+}
+
+@keyframes subtlePulse {
+  0%, 100% {
+    box-shadow: 0 0 0 rgba(25, 118, 210, 0.4);
+  }
+  50% {
+    box-shadow: 0 0 30px rgba(25, 118, 210, 0.2);
+  }
+}
+
+/* Icon container animations */
+.careers-page [style*="borderRadius: 50%"][style*="width: 80px"] {
+  animation: iconFloat 3s ease-in-out infinite;
+}
+
+@keyframes iconFloat {
+  0%, 100% {
+    transform: translateY(0px);
+  }
+  50% {
+    transform: translateY(-10px);
+  }
+}
+
+/* Stagger the icon animations */
+.careers-page [style*="borderRadius: 50%"][style*="width: 80px"]:nth-child(1) {
+  animation-delay: 0s;
+}
+
+.careers-page [style*="borderRadius: 50%"][style*="width: 80px"]:nth-child(2) {
+  animation-delay: 0.5s;
+}
+
+.careers-page [style*="borderRadius: 50%"][style*="width: 80px"]:nth-child(3) {
+  animation-delay: 1s;
+}
+
+/* Responsive design */
+@media (max-width: 768px) {
+  .careers-page h1 {
+    font-size: 2.5rem !important;
+  }
+  
+  .careers-page h2 {
+    font-size: 2rem !important;
+  }
+
+  .careers-page h3 {
+    font-size: 1.25rem !important;
+  }
+
+  .careers-page [style*="grid-template-columns"] {
+    grid-template-columns: 1fr !important;
+    gap: 1.5rem !important;
+  }
+
+  .careers-page [style*="padding: 6rem"] {
+    padding: 4rem 1.5rem !important;
+  }
+
+  .careers-page [style*="padding: 4rem"] {
+    padding: 3rem 1.5rem !important;
+  }
+
+  .careers-page [style*="padding: 3rem"] {
+    padding: 2rem 1.5rem !important;
+  }
+
+  .careers-page [style*="padding: 2.5rem"] {
+    padding: 2rem 1.5rem !important;
+  }
+
+  .careers-page [style*="fontSize: 1.5rem"] {
+    font-size: 1.25rem !important;
+  }
+
+  .careers-page [style*="fontSize: 1.25rem"] {
+    font-size: 1.125rem !important;
+  }
+
+  /* Mobile section toggle */
+  .careers-page [style*="display: inline-flex"][style*="borderRadius: 50px"] {
+    flex-direction: column !important;
+    gap: 8px !important;
+    padding: 12px !important;
+  }
+
+  .careers-page [style*="display: inline-flex"][style*="borderRadius: 50px"] button {
+    margin-right: 0 !important;
+    width: 100% !important;
+  }
+}
+
+@media (max-width: 480px) {
+  .careers-page h1 {
+    font-size: 2rem !important;
+  }
+
+  .careers-page [style*="height: 60vh"] {
+    height: 50vh !important;
+  }
+
+  .careers-page [style*="padding: 4rem"] {
+    padding: 2rem 1rem !important;
+  }
+
+  .careers-page [style*="padding: 3rem"] {
+    padding: 2rem 1rem !important;
+  }
+
+  .careers-page [style*="gap: 2rem"] {
+    gap: 1rem !important;
+  }
+
+  .careers-page [style*="fontSize: 3rem"] {
+    font-size: 2rem !important;
+  }
+
+  /* Smaller icons on mobile */
+  .careers-page [style*="width: 80px"][style*="height: 80px"] {
+    width: 60px !important;
+    height: 60px !important;
+  }
+}
+
+/* Full bleed utility */
+.full-bleed {
+  width: 100vw;
+  margin-left: calc(-50vw + 50%);
+  margin-right: calc(-50vw + 50%);
+}
+
+/* Special highlight for statistics */
+.careers-page [style*="fontSize: 3rem"][style*="color: #d32f2f"] {
+  position: relative;
+}
+
+.careers-page [style*="fontSize: 3rem"][style*="color: #d32f2f"]::after {
+  content: '';
+  position: absolute;
+  top: -10px;
+  right: -20px;
+  font-size: 20px;
+  animation: flame 2s ease-in-out infinite alternate;
+}
+
+@keyframes flame {
+  from {
+    transform: rotate(-5deg) scale(1);
+  }
+  to {
+    transform: rotate(5deg) scale(1.1);
+  }
+}

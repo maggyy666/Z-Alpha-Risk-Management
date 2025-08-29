@@ -392,35 +392,25 @@ const IntroductionPage: React.FC = () => {
   };
 
   return (
-    <div className="introduction-page">
+    <div id="introduction-root" className="introduction-page">
       <div className="introduction-container">
         {/* Hero Section */}
-        <div className="hero-section">
-          <div className="hero-content">
-            <div className="logo-section">
-              <div className="logo-container">
-                <div className="logo-symbol">Z-α</div>
-                <div className="logo-text">
-                  <div className="company-name">Z-ALPHA CAPITAL</div>
-                  <div className="company-division">Z-ALPHA SECURITIES</div>
-                </div>
-              </div>
-            </div>
-            
-            <div className="hero-titles">
-              <h1 className="main-title">
-                <span className="title-line">INSTITUTIONAL</span>
-                <span className="title-line">RISK MANAGEMENT</span>
-                <span className="title-line">PLATFORM</span>
+        <div className="introduction-hero-section">
+          <div className="introduction-hero-content">
+            <div className="introduction-hero-titles">
+              <h1 className="introduction-main-title">
+                <span className="introduction-title-line">INSTITUTIONAL</span>
+                <span className="introduction-title-line">RISK MANAGEMENT</span>
+                <span className="introduction-title-line">PLATFORM</span>
               </h1>
               
-              <div className="tagline">
-                <span className="tagline-text">Where Quantitative Excellence Meets Risk Intelligence</span>
-                <div className="tagline-divider"></div>
+              <div className="introduction-tagline">
+                <span className="introduction-tagline-text">Where Quantitative Excellence Meets Risk Intelligence</span>
+                <div className="introduction-tagline-divider"></div>
               </div>
             </div>
 
-            <div className="hero-stats">
+            <div className="introduction-hero-stats">
               <div className="stat-item">
                 <div className="stat-number">$2.8B</div>
                 <div className="stat-label">AUM</div>
