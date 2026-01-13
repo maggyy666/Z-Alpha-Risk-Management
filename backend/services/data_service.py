@@ -1808,14 +1808,28 @@ class DataService:
             "excluded": excluded
         }
 
+    def _clean_json_values(self, obj):
+        """Clean inf/nan values for JSON serialization"""
+        if isinstance(obj, dict):
+            return {k: self._clean_json_values(v) for k, v in obj.items()}
+        elif isinstance(obj, list):
+            return [self._clean_json_values(v) for v in obj]
+        elif isinstance(obj, float):
+            if np.isnan(obj) or np.isinf(obj):
+                return 0.0
+            return obj
+        else:
+            return obj
+
     def get_stress_testing(self, db: Session, username: str = "admin") -> Dict[str, Any]:
         """Frontend wrapper – combine Market Regime and Historical Scenarios."""
         regime = self.get_market_regime(db, username)
         scenarios = self.get_historical_scenarios(db, username)
-        return {
+        result = {
             "market_regime": regime,
             "scenarios": scenarios
-        } 
+        }
+        return self._clean_json_values(result) 
 
     def build_covariance_matrix(self, db: Session, tickers: List[str], vol_model: str = 'EWMA (5D)') -> np.ndarray:
         """Build covariance matrix Σ = D ρ D where D = diag(σ) and ρ is correlation matrix"""
