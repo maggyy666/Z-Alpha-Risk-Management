@@ -15,6 +15,10 @@ from database.models.ticker import Ticker, TickerInfo
 from database.models.historical_data import HistoricalData
 from datetime import datetime, timedelta
 
+import logging
+
+logger = logging.getLogger(__name__)
+
 class IBKRConnection(EWrapper, EClient):
     def __init__(self):
         EClient.__init__(self, self)
@@ -32,29 +36,29 @@ class IBKRConnection(EWrapper, EClient):
         self.fundamental_error = {}
         
     def error(self, reqId, errorCode, errorString):
-        print(f"Error {errorCode}: {errorString}")
+        logger.error(f"Error {errorCode}: {errorString}")
         # Market data permission denied
         if errorCode == 354:
-            print(f"Market data permission denied for reqId: {reqId}")
+            logger.info(f"Market data permission denied for reqId: {reqId}")
             if reqId in self.market_data_requests:
                 self.market_data_requests[reqId]['error'] = True
         # Fundamentals not allowed (no Reuters subscription on this account)
         # or contract-not-found -- don't wait for timeout, fail fast so we fall back to yfinance
         elif errorCode in (10358, 430, 200):
-            print(f"Fundamentals unavailable (code {errorCode}) for reqId: {reqId}")
+            logger.info(f"Fundamentals unavailable (code {errorCode}) for reqId: {reqId}")
             self.fundamental_error[reqId] = errorCode
         
     def nextValidId(self, orderId):
         self.next_order_id = orderId
-        print(f"Next valid order ID: {orderId}")
+        logger.info(f"Next valid order ID: {orderId}")
         
     def connectAck(self):
         self.connected = True
-        print("Successfully connected to IBKR!")
+        logger.info("Successfully connected to IBKR!")
         
     def connectionClosed(self):
         self.connected = False
-        print("Connection to IBKR closed")
+        logger.info("Connection to IBKR closed")
         
     def historicalData(self, reqId, bar):
         if reqId not in self.historical_data:
@@ -69,11 +73,11 @@ class IBKRConnection(EWrapper, EClient):
         })
         
     def historicalDataEnd(self, reqId, start, end):
-        print(f"Historical data completed for reqId {reqId}: {start} to {end}")
+        logger.info(f"Historical data completed for reqId {reqId}: {start} to {end}")
         
     def contractDetails(self, reqId, contractDetails):
         """Handle contract details response"""
-        print(f"Contract details received for reqId {reqId}")
+        logger.info(f"Contract details received for reqId {reqId}")
         # Store contract details for later use
         if reqId not in self.data:
             self.data[reqId] = []
@@ -81,12 +85,12 @@ class IBKRConnection(EWrapper, EClient):
         
     def fundamentalData(self, reqId, data):
         """Handle fundamental data response (XML)"""
-        print(f"Fundamental data received for reqId {reqId}")
+        logger.info(f"Fundamental data received for reqId {reqId}")
         self.fundamental_xml[reqId] = data
         
     def fundamentalDataEnd(self, reqId):
         """Handle fundamental data end"""
-        print(f"Fundamental data completed for reqId {reqId}")
+        logger.info(f"Fundamental data completed for reqId {reqId}")
         self.fundamental_done[reqId] = True
         
     def tickPrice(self, reqId, tickType, price, attrib):
@@ -96,10 +100,10 @@ class IBKRConnection(EWrapper, EClient):
         
         if tickType == 1:  # Real-time Bid
             self.bid_ask_data[reqId]['bid'] = price
-            print(f"Real-time Bid for reqId {reqId}: {price}")
+            logger.info(f"Real-time Bid for reqId {reqId}: {price}")
         elif tickType == 2:  # Real-time Ask
             self.bid_ask_data[reqId]['ask'] = price
-            print(f"Real-time Ask for reqId {reqId}: {price}")
+            logger.info(f"Real-time Ask for reqId {reqId}: {price}")
         
         # Check if we have both bid and ask
         if (self.bid_ask_data[reqId]['bid'] is not None and 
@@ -109,22 +113,22 @@ class IBKRConnection(EWrapper, EClient):
             mid = (bid + ask) / 2
             spread_pct = ((ask - bid) / mid) * 100
             self.bid_ask_data[reqId]['spread_pct'] = spread_pct
-            print(f"Spread calculated for reqId {reqId}: {spread_pct:.2f}%")
+            logger.info(f"Spread calculated for reqId {reqId}: {spread_pct:.2f}%")
     
     def tickSize(self, reqId, tickType, size):
         """Handle tick size updates (volume)"""
         if reqId in self.bid_ask_data:
             # Handle delayed market data volume tick types
             if tickType == 69:  # Delayed Bid Size
-                print(f"Delayed Bid Size for reqId {reqId}: {size}")
+                logger.info(f"Delayed Bid Size for reqId {reqId}: {size}")
             elif tickType == 70:  # Delayed Ask Size
-                print(f"Delayed Ask Size for reqId {reqId}: {size}")
+                logger.info(f"Delayed Ask Size for reqId {reqId}: {size}")
             elif tickType == 8:  # Real-time Volume
                 self.bid_ask_data[reqId]['volume'] = size
-                print(f"Real-time Volume for reqId {reqId}: {size}")
+                logger.info(f"Real-time Volume for reqId {reqId}: {size}")
             elif tickType == 71:  # Delayed Last Size (volume)
                 self.bid_ask_data[reqId]['volume'] = size
-                print(f"Delayed Volume for reqId {reqId}: {size}")
+                logger.info(f"Delayed Volume for reqId {reqId}: {size}")
     
     def tickString(self, reqId, tickType, value):
         """Handle tick string updates"""
@@ -158,7 +162,7 @@ class IBKRService:
                 client_id = self._get_next_client_id()
                 
             self.connection = IBKRConnection()
-            print(f"Attempting to connect to IBKR at {host}:{port} with client_id {client_id}...")
+            logger.info(f"Attempting to connect to IBKR at {host}:{port} with client_id {client_id}...")
             self.connection.connect(host, port, client_id)
             
             # 🔧 PĘTLA W OSOBNYM WĄTKU
@@ -169,15 +173,15 @@ class IBKRService:
             start_time = time.time()
             while (time.time() - start_time) < timeout:
                 if self.connection.connected and self.connection.next_order_id is not None:
-                    print("IBKR ready, nextValidId =", self.connection.next_order_id)
+                    logger.info(f"IBKR ready, nextValidId = {self.connection.next_order_id}")
                     return True
                 time.sleep(0.05)
             
-            print("Timeout connecting to IBKR or waiting for nextValidId")
+            logger.info("Timeout connecting to IBKR or waiting for nextValidId")
             return False
             
         except Exception as e:
-            print(f"Error connecting to IBKR: {e}")
+            logger.error(f"Error connecting to IBKR: {e}")
             return False
     
     def get_fundamentals(self, symbol: str, report_type: str = "ReportSnapshot") -> Optional[Dict[str, Any]]:
@@ -187,11 +191,11 @@ class IBKRService:
         """
         # Bonus optymalizacja: pomijaj IBKR dla ETF-ów
         if self._looks_like_etf(symbol):
-            print(f"[etf] {symbol} looks like ETF -> skip IBKR")
+            logger.debug(f"[etf] {symbol} looks like ETF -> skip IBKR")
             return {"type": "ETF", "company_name": symbol}
             
         if not self.connection or not self.connection.connected:
-            print("Not connected to IBKR")
+            logger.info("Not connected to IBKR")
             return None
             
         try:
@@ -212,7 +216,7 @@ class IBKRService:
             
             # Request fundamental data
             self.connection.reqFundamentalData(req_id, contract, report_type, [])
-            print(f"Requested fundamental data for {symbol} with reqId: {req_id}")
+            logger.info(f"Requested fundamental data for {symbol} with reqId: {req_id}")
             
             # Wait for fundamental data
             start_time = time.time()
@@ -227,7 +231,7 @@ class IBKRService:
                 elif req_id in self.connection.fundamental_error:
                     error_code = self.connection.fundamental_error[req_id]
                     if error_code == 430:  # fundamentals not available - likely ETF
-                        print(f"Warning: Fundamentals not available for {symbol} (error 430) - likely ETF")
+                        logger.warning(f"Warning: Fundamentals not available for {symbol} (error 430) - likely ETF")
                         self.connection.fundamental_xml.pop(req_id, None)
                         return {
                             'type': 'ETF',
@@ -235,20 +239,20 @@ class IBKRService:
                         }
                     elif error_code == 10358:
                         # No Reuters subscription on this account -- fast-fail to yfinance fallback
-                        print(f"Warning: Fundamentals not allowed (10358) for {symbol} - falling back to yfinance")
+                        logger.warning(f"Warning: Fundamentals not allowed (10358) for {symbol} - falling back to yfinance")
                         return None
                     else:
-                        print(f"Warning: IBKR error {error_code} for {symbol}")
+                        logger.warning(f"Warning: IBKR error {error_code} for {symbol}")
                         break
                 time.sleep(0.1)
             
             # Timeout or error - cancel request and return None
             self.connection.cancelFundamentalData(req_id)
-            print(f"Timeout getting fundamentals for {symbol}")
+            logger.info(f"Timeout getting fundamentals for {symbol}")
             return None
             
         except Exception as e:
-            print(f"Error getting fundamentals for {symbol}: {e}")
+            logger.error(f"Error getting fundamentals for {symbol}: {e}")
             return None
     
     def _parse_simple_xml(self, xml: str, symbol: str) -> dict:
@@ -281,7 +285,7 @@ class IBKRService:
                 }
                 
         except Exception as e:
-            print(f"Error parsing XML for {symbol}: {e}")
+            logger.error(f"Error parsing XML for {symbol}: {e}")
             return {
                 'type': 'STOCK',
                 'company_name': symbol
@@ -296,7 +300,7 @@ class IBKRService:
     def _get_fundamentals_external_only(self, symbol: str) -> Optional[Dict[str, Any]]:
         """Get fundamental data using only external APIs (no IBKR)"""
         try:
-            print(f"🌐 Using external API for {symbol}...")
+            logger.info(f"🌐 Using external API for {symbol}...")
             
             # Add delay to avoid rate limiting
             import time
@@ -316,7 +320,7 @@ class IBKRService:
             }
             
         except Exception as e:
-            print(f"Error getting external data for {symbol}: {e}")
+            logger.error(f"Error getting external data for {symbol}: {e}")
             return None
     
     def _get_sector_industry_external(self, symbol: str) -> tuple:
@@ -333,11 +337,11 @@ class IBKRService:
             if sector == 'Unknown' and industry == 'Unknown':
                 sector, industry = self._map_etf_to_sector_industry(symbol, info)
             
-            print(f"yfinance data for {symbol}: sector={sector}, industry={industry}")
+            logger.info(f"yfinance data for {symbol}: sector={sector}, industry={industry}")
             return sector, industry
             
         except Exception as e:
-            print(f"Warning: Could not get sector/industry for {symbol} with yfinance: {e}")
+            logger.warning(f"Warning: Could not get sector/industry for {symbol} with yfinance: {e}")
         return None, None
     
     def _map_etf_to_sector_industry(self, symbol: str, info: dict) -> tuple:
@@ -404,19 +408,19 @@ class IBKRService:
             
             market_cap = info.get('marketCap')
             if market_cap:
-                print(f"yfinance market cap for {symbol}: {market_cap}")
+                logger.info(f"yfinance market cap for {symbol}: {market_cap}")
                 return float(market_cap)
             else:
-                print(f"Warning: No market cap data for {symbol} in yfinance")
+                logger.warning(f"Warning: No market cap data for {symbol} in yfinance")
                 
         except Exception as e:
-            print(f"Warning: Could not get market cap for {symbol} with yfinance: {e}")
+            logger.warning(f"Warning: Could not get market cap for {symbol} with yfinance: {e}")
         return None
 
     def get_contract_details(self, symbol: str) -> Optional[Dict[str, Any]]:
         """Get contract details for a symbol"""
         if not self.connection or not self.connection.connected:
-            print("Not connected to IBKR")
+            logger.info("Not connected to IBKR")
             return None
             
         try:
@@ -449,25 +453,25 @@ class IBKRService:
                             "market_cap": market_cap,
                             "company_name": symbol
                         }
-                        print(f"Contract details for {symbol}: {result}")
+                        logger.info(f"Contract details for {symbol}: {result}")
                         return result
                     except (IndexError, AttributeError) as e:
-                        print(f"Warning: Contract details parsing error for {symbol}: {e}")
+                        logger.warning(f"Warning: Contract details parsing error for {symbol}: {e}")
                         break
                 time.sleep(0.1)
             
-            print(f"Timeout getting contract details for {symbol}")
+            logger.info(f"Timeout getting contract details for {symbol}")
             return None
             
         except Exception as e:
-            print(f"Error getting contract details for {symbol}: {e}")
+            logger.error(f"Error getting contract details for {symbol}: {e}")
             return None
 
     def get_historical_data(self, symbol: str, duration: str = "9 Y", 
                           bar_size: str = "1 day") -> Optional[list]:
         """Get historical data for a symbol"""
         if not self.connection or not self.connection.connected:
-            print("Not connected to IBKR")
+            logger.info("Not connected to IBKR")
             return None
             
         try:
@@ -483,28 +487,28 @@ class IBKRService:
             
             # Request historical data
             self.connection.reqHistoricalData(req_id, contract, "", duration, bar_size, "TRADES", 1, 1, False, [])
-            print(f"Requested historical data for {symbol} with reqId: {req_id}")
+            logger.info(f"Requested historical data for {symbol} with reqId: {req_id}")
             
             # Wait for data
             start_time = time.time()
             while (time.time() - start_time) < 30:  # 30 second timeout
                 if req_id in self.connection.historical_data:
                     data = self.connection.historical_data.pop(req_id)
-                    print(f"Historical data received for {symbol}: {len(data)} bars")
+                    logger.info(f"Historical data received for {symbol}: {len(data)} bars")
                     return data
                 time.sleep(0.1)
             
-            print(f"Timeout getting historical data for {symbol}")
+            logger.info(f"Timeout getting historical data for {symbol}")
             return None
             
         except Exception as e:
-            print(f"Error getting historical data for {symbol}: {e}")
+            logger.error(f"Error getting historical data for {symbol}: {e}")
             return None
 
     def get_bid_ask_spread(self, symbol: str, timeout: int = 15) -> Optional[Dict[str, Any]]:
         """Get current bid/ask spread for a symbol"""
         if not self.connection or not self.connection.connected:
-            print("Not connected to IBKR")
+            logger.info("Not connected to IBKR")
             return None
             
         try:
@@ -527,7 +531,7 @@ class IBKRService:
             
             # Request market data
             self.connection.reqMktData(req_id, contract, "", False, False, [])
-            print(f"Requested market data for {symbol} with reqId: {req_id}")
+            logger.info(f"Requested market data for {symbol} with reqId: {req_id}")
             
             # Wait for data with longer timeout for delayed data
             start_time = time.time()
@@ -547,7 +551,7 @@ class IBKRService:
                         elif ask is None and bid is not None:
                             ask = bid  # Use bid as ask
                         elif bid is None and ask is None:
-                            print(f"No price data received for {symbol}")
+                            logger.info(f"No price data received for {symbol}")
                             return None
                         
                         spread_pct = ((ask - bid) / ((ask + bid) / 2)) * 100 if ask != bid else 0.0
@@ -564,7 +568,7 @@ class IBKRService:
                 # Check for errors
                 if req_id in self.connection.market_data_requests:
                     if self.connection.market_data_requests[req_id].get('error'):
-                        print(f"Market data error for {symbol}")
+                        logger.info(f"Market data error for {symbol}")
                         self.connection.cancelMktData(req_id)
                         return None
                 
@@ -572,11 +576,11 @@ class IBKRService:
             
             # Timeout - cancel request
             self.connection.cancelMktData(req_id)
-            print(f"Timeout getting bid/ask for {symbol} (no data received)")
+            logger.info(f"Timeout getting bid/ask for {symbol} (no data received)")
             return None
             
         except Exception as e:
-            print(f"Error getting bid/ask for {symbol}: {e}")
+            logger.error(f"Error getting bid/ask for {symbol}: {e}")
             return None
     
     def get_current_price(self, symbol: str) -> Optional[float]:
@@ -608,7 +612,7 @@ class IBKRService:
                 time.sleep(0.05)
             self.connection.cancelMktData(req_id)
         except Exception as e:
-            print("Warning: IBKR snapshot failed:", e)
+            logger.warning("Warning: IBKR snapshot failed:", e)
 
         # -- fallback: yfinance --------------------------
         try:
@@ -616,12 +620,12 @@ class IBKRService:
             ticker = yf.Ticker(symbol)
             price = ticker.info.get("regularMarketPrice")
             if price:
-                print(f"yfinance price for {symbol}: ${price}")
+                logger.info(f"yfinance price for {symbol}: ${price}")
                 return price
             else:
-                print(f"Warning: No price data for {symbol} in yfinance")
+                logger.warning(f"Warning: No price data for {symbol} in yfinance")
         except Exception as e:
-            print(f"Warning: yfinance failed for {symbol}: {e}")
+            logger.warning(f"Warning: yfinance failed for {symbol}: {e}")
         return None
     
     def disconnect(self):

@@ -1,17 +1,12 @@
-"""DataService facade.
+"""Backwards-compatible facade over data access and analytics services.
 
-Backwards-compatible API surface for backend.api.main.py. All heavy lifting
-lives in composed services:
-    * MarketDataService, TickerInfoService, ReturnsService, PortfolioService
-    * analytics.{concentration, volatility, factors, realized, regime,
-                 risk_score, liquidity}
-
-New code should prefer talking to those services directly; this facade is
-kept so the refactor stays a no-op for the HTTP layer.
+New code should talk to the composed services directly; this class exists so
+the refactor remained a no-op for the HTTP layer (backend/api/main.py).
 """
 
 from __future__ import annotations
 
+import logging
 from datetime import date
 from typing import Any, Dict, List, Optional
 
@@ -34,10 +29,10 @@ from services.returns_service import ReturnsService
 from services.ticker_info_service import TickerInfoService
 from utils.json_safe import clean_json_values
 
+logger = logging.getLogger(__name__)
 
-# ----------------------------------------------------------------------
-# Domain configuration (shared between analytics services)
-# ----------------------------------------------------------------------
+
+# Shared domain configuration consumed by analytics services.
 NORMALIZATION = {
     "HHI_LOW": 0.05,
     "HHI_HIGH": 0.30,
@@ -76,19 +71,15 @@ REGIME_THRESH = {
 class DataService:
     def __init__(self):
         self.ibkr_service = IBKRService()
-        # Static tickers always fetched from IBKR (used as factor-exposure ETF proxies).
+        # ETF proxies used for factor exposure regressions.
         self.STATIC_TICKERS = ["SPY", "MTUM", "IWM", "VLUE", "QUAL"]
-
-        # Shared cache for expensive analytics responses.
         self._cache = TTLCache(ttl_seconds=300)
 
-        # Data-access layer
         self._market_data = MarketDataService(self.ibkr_service)
         self._ticker_info = TickerInfoService(self.ibkr_service)
         self._returns = ReturnsService(self._market_data)
         self._portfolios = PortfolioService(self.ibkr_service, self._market_data, self._cache)
 
-        # Analytics layer (each takes self for cache + cross-analytics composition)
         self._a_concentration = ConcentrationAnalytics(self)
         self._a_volatility = VolatilityAnalytics(self)
         self._a_factors = FactorAnalytics(self)
@@ -97,9 +88,7 @@ class DataService:
         self._a_risk_score = RiskScoreAnalytics(self, NORMALIZATION)
         self._a_liquidity = LiquidityAnalytics(self)
 
-    # ------------------------------------------------------------------
-    # Cache facade (analytics services call these through the ds_ref)
-    # ------------------------------------------------------------------
+    # Cache
     def _get_cache_key(self, method: str, username: str, **kwargs) -> str:
         return TTLCache.build_key(method, username, **kwargs)
 
@@ -111,17 +100,15 @@ class DataService:
 
     def _clear_cache(self, pattern: Optional[str] = None) -> None:
         removed = self._cache.clear(pattern)
-        print(f"[cache] cleared pattern={pattern!r}: {removed} entries")
+        logger.debug("cleared pattern=%r: %d entries", pattern, removed)
         vol_n = len(_vol_cache)
         _vol_cache.clear()
-        print(f"[cache] cleared global volatility cache ({vol_n} entries)")
+        logger.debug("cleared global volatility cache (%d entries)", vol_n)
 
     def _clean_json_values(self, obj):
         return clean_json_values(obj)
 
-    # ------------------------------------------------------------------
-    # Ticker metadata + static-ticker list
-    # ------------------------------------------------------------------
+    # Ticker metadata
     def _ensure_ticker_info(self, db: Session, symbol: str, *, preloaded: Optional[dict] = None) -> Optional[TickerInfo]:
         return self._ticker_info.ensure_ticker_info(db, symbol, preloaded=preloaded)
 
@@ -129,28 +116,25 @@ class DataService:
         return TickerInfoService.looks_like_etf(symbol)
 
     def get_all_tickers(self, db: Session, username: str = "admin") -> List[str]:
-        """User portfolio + static ETF proxies, deduplicated."""
-        portfolio_tickers = self.get_user_portfolio_tickers(db, username)
-        return sorted(set(portfolio_tickers + self.STATIC_TICKERS))
+        """User portfolio plus factor-proxy ETFs, deduplicated."""
+        return sorted(set(self.get_user_portfolio_tickers(db, username) + self.STATIC_TICKERS))
 
     def get_static_tickers(self) -> List[str]:
         return self.STATIC_TICKERS.copy()
 
     def add_static_ticker(self, symbol: str) -> bool:
-        if symbol not in self.STATIC_TICKERS:
-            self.STATIC_TICKERS.append(symbol)
-            return True
-        return False
+        if symbol in self.STATIC_TICKERS:
+            return False
+        self.STATIC_TICKERS.append(symbol)
+        return True
 
     def remove_static_ticker(self, symbol: str) -> bool:
-        if symbol in self.STATIC_TICKERS:
-            self.STATIC_TICKERS.remove(symbol)
-            return True
-        return False
+        if symbol not in self.STATIC_TICKERS:
+            return False
+        self.STATIC_TICKERS.remove(symbol)
+        return True
 
-    # ------------------------------------------------------------------
     # Portfolio CRUD
-    # ------------------------------------------------------------------
     def get_user_portfolio_tickers(self, db: Session, username: str = "admin") -> List[str]:
         return self._portfolios.get_user_portfolio_tickers(db, username)
 
@@ -169,9 +153,7 @@ class DataService:
     def check_ibkr_connection(self) -> bool:
         return self._portfolios._check_ibkr_connection()
 
-    # ------------------------------------------------------------------
-    # Market data access
-    # ------------------------------------------------------------------
+    # Market data
     def fetch_and_store_historical_data(self, db: Session, symbol: str) -> bool:
         return self._market_data.fetch_and_store_historical_data(db, symbol)
 
@@ -187,9 +169,7 @@ class DataService:
     def _get_returns_between_dates(self, db: Session, symbol: str, start_d: date, end_d: date):
         return self._market_data.get_returns_between_dates(db, symbol, start_d, end_d)
 
-    # ------------------------------------------------------------------
-    # Returns alignment helpers
-    # ------------------------------------------------------------------
+    # Returns alignment
     def _get_return_series_map(self, db: Session, symbols: List[str], lookback_days: int = 120):
         return self._returns.get_return_series_map(db, symbols, lookback_days)
 
@@ -210,27 +190,19 @@ class DataService:
     def _get_common_date_range(self, db: Session, symbols: List[str]) -> Dict[str, Any]:
         return self._returns.get_common_date_range(db, symbols)
 
-    # ------------------------------------------------------------------
-    # Volatility forecast analytics
-    # ------------------------------------------------------------------
+    # Volatility analytics
     def calculate_volatility_metrics(
-        self,
-        db: Session,
-        symbol: str,
-        forecast_model: str = "EWMA (5D)",
-        risk_free_annual: float = 0.0,
+        self, db: Session, symbol: str,
+        forecast_model: str = "EWMA (5D)", risk_free_annual: float = 0.0,
     ) -> Dict[str, float]:
         return self._a_volatility.calculate_volatility_metrics(
             db, symbol, forecast_model, risk_free_annual
         )
 
     def get_portfolio_volatility_data(
-        self,
-        db: Session,
-        username: str = "admin",
+        self, db: Session, username: str = "admin",
         forecast_model: str = "EWMA (5D)",
-        vol_floor_annual_pct: float = 8.0,
-        risk_free_annual: float = 0.0,
+        vol_floor_annual_pct: float = 8.0, risk_free_annual: float = 0.0,
     ) -> List[Dict[str, Any]]:
         return self._a_volatility.get_portfolio_volatility_data(
             db, username, forecast_model, vol_floor_annual_pct, risk_free_annual
@@ -242,11 +214,8 @@ class DataService:
         return self._a_volatility.build_covariance_matrix(db, tickers, vol_model)
 
     def get_forecast_risk_contribution(
-        self,
-        db: Session,
-        username: str = "admin",
-        vol_model: str = "EWMA (5D)",
-        tickers: Optional[List[str]] = None,
+        self, db: Session, username: str = "admin",
+        vol_model: str = "EWMA (5D)", tickers: Optional[List[str]] = None,
         include_portfolio_bar: bool = True,
     ) -> Dict[str, Any]:
         return self._a_volatility.get_forecast_risk_contribution(
@@ -259,18 +228,12 @@ class DataService:
         return self._a_volatility.get_forecast_metrics(db, username, conf_level)
 
     def get_rolling_forecast(
-        self,
-        db: Session,
-        tickers: List[str],
-        model: str,
-        window: int,
+        self, db: Session, tickers: List[str], model: str, window: int,
         username: str = "admin",
     ) -> Any:
         return self._a_volatility.get_rolling_forecast(db, tickers, model, window, username)
 
-    # ------------------------------------------------------------------
-    # Concentration / factors / risk-score / regime / realized / liquidity
-    # ------------------------------------------------------------------
+    # Concentration / factors / risk score / regime / realized / liquidity
     def get_concentration_risk_data(self, db: Session, username: str = "admin") -> Dict[str, Any]:
         return self._a_concentration.get_concentration_risk_data(db, username)
 
@@ -296,9 +259,7 @@ class DataService:
         return self._a_regime.get_market_regime(db, username)
 
     def get_historical_scenarios(
-        self,
-        db: Session,
-        username: str = "admin",
+        self, db: Session, username: str = "admin",
         scenarios: Optional[List[Dict[str, Any]]] = None,
     ) -> Dict[str, Any]:
         return self._a_regime.get_historical_scenarios(db, username, scenarios)
@@ -310,12 +271,8 @@ class DataService:
         return self._a_realized.get_realized_metrics(db, username)
 
     def get_rolling_metric(
-        self,
-        db: Session,
-        metric: str = "vol",
-        window: int = 21,
-        tickers: Optional[List[str]] = None,
-        username: str = "admin",
+        self, db: Session, metric: str = "vol", window: int = 21,
+        tickers: Optional[List[str]] = None, username: str = "admin",
     ) -> Dict[str, Any]:
         return self._a_realized.get_rolling_metric(db, metric, window, tickers, username)
 

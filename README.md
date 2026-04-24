@@ -1,82 +1,115 @@
 # Z-Alpha Securities - Risk Management System
 
+Portfolio risk analytics platform. Four services on Docker Desktop
+Kubernetes: `frontend` (Next.js), `user-api` (auth + JWT), `backend`
+(portfolio + analytics + IBKR), `postgres`.
+
 ## Prerequisites
 
-1. **Python 3.11** - [Download here](https://python.org/downloads/)
-   * *Note: Python 3.11 is strictly required due to Interactive Brokers (IBKR) API limitations.*
-2. **Node.js 20+** - [Download here](https://nodejs.org/)
-   * *Note: Node.js 20+ is required for the frontend dependencies (e.g., react-router v7).*
-3. **Docker Desktop** - [Download here](https://docker.com/products/docker-desktop)
-4. **TWS (Trader Workstation)** - [Download here](https://www.interactivebrokers.com/]
-   * *Ensure TWS is installed and running for live data connectivity.*
-5. **Poetry** - [Install via pipx or official site](https://python-poetry.org/docs/)
+- **Docker Desktop** with **Kubernetes enabled**
+  (Settings -> Kubernetes -> Enable Kubernetes; wait for the green light)
+- **Python 3.11** -- required by the Interactive Brokers API
+- **Poetry** -- [install](https://python-poetry.org/docs/)
+- **TWS (Trader Workstation)** running on the host with API enabled
+  (live: 7496, paper: 7497). Live accounts with 2FA stay on the host; we
+  do not containerize TWS.
 
-## Quick Start
+## Quick start
 
-1. **Configure Environment Variables**
-   Copy the example environment file and fill in your credentials:
-   ```bash
-   cp .config.env.example .env
-   ```
-   Edit `.env` to set your desired passwords and `AUTH_SECRET`.
+```bash
+# 1. Set passwords + AUTH_SECRET
+cp config.env.example .env
+# edit .env: ADMIN_PASSWORD, USER_PASSWORD, POSTGRES_PASSWORD, AUTH_SECRET
 
-2. **Install Dependencies**
-   ```bash
-   poetry install
-   ```
+# 2. Install Python deps (one-time)
+poetry install
 
-3. **Activate Virtual Environment**
-   **Windows (PowerShell):**
-   ```powershell
-   .venv/Scripts/activate.ps1
-   ```
-   **macOS/Linux:**
-   ```bash
-   source .venv/bin/activate
-   ```
+# 3. Point kubectl at Docker Desktop's cluster (one-time)
+kubectl config use-context docker-desktop
 
-4. **Run the Application**
-   ```bash
-   python start_all.py
-   ```
-   This script will:
-   - Build and start all Docker containers (PostgreSQL, Backend, Frontend).
-   - Seed the database with the configured admin and user accounts.
-   - Launch the application.
+# 4. Go
+python start_all.py
+```
 
-## Access the Application
-- **Frontend**: http://localhost:3000
-- **Backend API**: http://localhost:8000
-- **API Docs**: http://localhost:8000/docs
+`start_all.py` loads `.env`, checks tools and TWS reachability, builds both
+images with a per-run tag, applies the manifests in `deploy/`, seeds the
+database inside the backend pod, and waits for every rollout.
 
-## Default Login Credentials
-The system creates two default users on first run. **Passwords must be configured in your `.env` file** before starting the application.
+## Endpoints
 
-**Admin User:**
-- Username: `admin@zalpha`
-- Password: *(Set in `.env` as `ADMIN_PASSWORD`)*
+- Frontend:    http://localhost:3000
+- Backend API: http://localhost:8000 (docs at `/docs`)
+- User API:    http://localhost:8001
 
-**Analyst User:**
-- Username: `user@zalpha`
-- Password: *(Set in `.env` as `USER_PASSWORD`)*
+All three are `type: LoadBalancer` -- Docker Desktop auto-maps LoadBalancer
+services to `localhost` on the service `port`.
 
-## Environment Configuration (`.env`)
-The application relies on a `.env` file for all sensitive configuration. Copy `.config.env.example` to `.env` and update the following:
-- `POSTGRES_USER`, `POSTGRES_PASSWORD`, `POSTGRES_DB`: Database credentials.
-- `IBKR_HOST`, `IBKR_PORT`: TWS connection settings (`127.0.0.1` + `7496` for live, `7497` for paper).
-- `ADMIN_PASSWORD`, `USER_PASSWORD`: Must be at least 8 characters.
-- `AUTH_SECRET`: Generate a secure random string using: `python -c "import secrets; print(secrets.token_urlsafe(48))"`
+## Default users
 
->  **Note**: `.env` is automatically gitignored. Never commit it to version control.
+`setup_database.py` seeds two users from `.env` on every run (drops and
+recreates the schema, so this is idempotent):
+
+- `admin` / `$ADMIN_PASSWORD`
+- `user`  / `$USER_PASSWORD`
+
+## Verify the JWT flow
+
+```bash
+TOKEN=$(curl -s -X POST http://localhost:8001/auth/login \
+  -H 'Content-Type: application/json' \
+  -d "{\"username\":\"admin\",\"password\":\"$ADMIN_PASSWORD\"}" | jq -r .access_token)
+
+curl -s http://localhost:8001/auth/me     -H "Authorization: Bearer $TOKEN"
+curl -s http://localhost:8000/auth/verify -H "Authorization: Bearer $TOKEN"
+```
+
+`user-api` issues HS256 tokens signed with `AUTH_SECRET`; `backend` verifies
+with the same secret. The shared secret lives in the `zalpha-secrets`
+Kubernetes Secret, generated from `.env` at apply time.
+
+## After code changes
+
+```bash
+python start_all.py
+```
+
+Idempotent. Rebuilds images, bumps `kubectl set image` with a fresh tag,
+re-seeds the DB.
+
+## Teardown
+
+```bash
+kubectl delete namespace zalpha
+```
+
+## Environment variables (`.env`)
+
+| Variable | Purpose |
+| --- | --- |
+| `POSTGRES_PASSWORD` | DB password |
+| `ADMIN_PASSWORD`, `USER_PASSWORD` | Seeded user passwords (>= 8 chars) |
+| `AUTH_SECRET` | JWT signing key -- `python -c "import secrets; print(secrets.token_urlsafe(48))"` |
+| `IBKR_HOST`, `IBKR_PORT` | Default `host.docker.internal:7496` (live) / `7497` (paper) |
+
+`.env` is gitignored -- never commit it.
 
 ## Troubleshooting
-- Ensure **Docker Desktop** is running.
-- Ensure **TWS** is running and connected.
-- Ensure ports **3000** and **8000** are free.
-- If issues persist, stop Docker containers with:
-  ```bash
-  docker compose down
-  ```
-- Make sure your virtual environment is activated before running `python start_all.py`.
-- Verify that `.env` exists and contains valid values.
-- **Windows Users**: If you encounter `UnicodeDecodeError` during startup, ensure your terminal supports UTF-8 or update `start_all.py` to handle encoding explicitly.
+
+- **`Missing CLI tools on PATH: kubectl`** -- install `kubectl`, or restart
+  the shell so PATH refreshes.
+- **`kubectl context is '...', expected 'docker-desktop'`** -- enable
+  Kubernetes in Docker Desktop, then
+  `kubectl config use-context docker-desktop`.
+- **`IBKR TWS not reachable`** -- start TWS, enable API, whitelist
+  `127.0.0.1` in TWS settings.
+- **Ports 3000/8000/8001 busy** -- `docker ps` / `netstat -ano`; stop
+  whatever holds them.
+- **Pods stuck on old code after a rebuild** -- shouldn't happen (per-run
+  image tag triggers `kubectl set image`), but as a manual escape:
+  `kubectl -n zalpha rollout restart deploy/backend deploy/user-api deploy/frontend`.
+
+## Alternative: docker-compose
+
+`docker-compose.yml` is retained as a secondary dev path. It does not use
+the K8s manifests and won't exercise the `user-api` / JWT split. Prefer
+Kubernetes for anything beyond a quick sanity check.

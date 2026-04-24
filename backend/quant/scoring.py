@@ -1,5 +1,9 @@
 import numpy as np
 
+import logging
+
+logger = logging.getLogger(__name__)
+
 def clip01(x: float) -> float:
     """Clip value to [0, 1] range"""
     return float(np.clip(x, 0, 1))
@@ -112,9 +116,9 @@ def test_risk_mix_overall():
     assert 0.0 <= scores["overall"] <= 1.0, f"Overall score should be in [0,1], got {scores['overall']}"
     assert abs(sum(contrib.values()) - 100.0) < 1e-6, f"Contributions should sum to 100%, got {sum(contrib.values())}"
     
-    print("risk_mix unit test passed!")
-    print(f"Overall score: {scores['overall']:.3f}")
-    print(f"Contributions sum: {sum(contrib.values()):.1f}%")
+    logger.info("risk_mix unit test passed!")
+    logger.info(f"Overall score: {scores['overall']:.3f}")
+    logger.info(f"Contributions sum: {sum(contrib.values()):.1f}%")
     
     return True
 

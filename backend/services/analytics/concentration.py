@@ -18,6 +18,9 @@ from database.models.ticker_data import TickerData
 from database.models.user import User
 from quant.concentration import concentration_metrics
 
+import logging
+
+logger = logging.getLogger(__name__)
 
 def _market_cap_category(market_cap: float) -> str:
     if market_cap >= 200_000_000_000:
@@ -34,7 +37,6 @@ def _market_cap_category(market_cap: float) -> str:
         return "Nano Cap"
     return "Micro Cap"
 
-
 class ConcentrationAnalytics:
     def __init__(self, ds_ref):
         self._ds = ds_ref
@@ -46,10 +48,10 @@ class ConcentrationAnalytics:
             cache_key = ds._get_cache_key("concentration_risk_data", username)
             cached_data = ds._get_from_cache(cache_key)
             if cached_data:
-                print(f"Using cached concentration risk data for user: {username}")
+                logger.info(f"Using cached concentration risk data for user: {username}")
                 return cached_data
 
-            print(f"Getting concentration risk data for user: {username}")
+            logger.info(f"Getting concentration risk data for user: {username}")
 
             user = db.query(User).filter(User.username == username).first()
             if not user:
@@ -155,7 +157,7 @@ class ConcentrationAnalytics:
             market_cap_concentration["hhi"] = hhi_mc
             market_cap_concentration["effective_categories"] = 1.0 / hhi_mc if hhi_mc > 0 else 0.0
 
-            print(f"Calculated concentration metrics for {len(portfolio_data)} positions")
+            logger.info(f"Calculated concentration metrics for {len(portfolio_data)} positions")
 
             result = {
                 "portfolio_data": portfolio_data,
@@ -175,7 +177,7 @@ class ConcentrationAnalytics:
             ds._set_cache(cache_key, result)
             return result
         except Exception as e:
-            print(f"Error calculating concentration risk: {e}")
+            logger.error(f"Error calculating concentration risk: {e}")
             error_result = {"error": str(e)}
             try:
                 ds._set_cache(cache_key, error_result)

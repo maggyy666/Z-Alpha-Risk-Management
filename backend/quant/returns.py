@@ -13,6 +13,10 @@ Returns:
 import numpy as np
 from typing import Dict, List, Tuple, Any
 
+import logging
+
+logger = logging.getLogger(__name__)
+
 def stack_common_returns(ret_map: Dict[str, Tuple[List, np.ndarray]], symbols: List[str], min_obs: int = 30) -> Tuple[List, np.ndarray, List[str]]:
     """
     Stack common returns from return map into matrix
@@ -24,7 +28,7 @@ def stack_common_returns(ret_map: Dict[str, Tuple[List, np.ndarray]], symbols: L
     # 1. Filter NaN and short series
     ok = [s for s in symbols if s in ret_map and len(ret_map[s][1]) >= min_obs]
     if len(ok) < 2:
-        print(f"Warning: Only {len(ok)} tickers have sufficient data (min_obs={min_obs})")
+        logger.warning(f"Warning: Only {len(ok)} tickers have sufficient data (min_obs={min_obs})")
         return [], np.empty((0, 0)), []
     
     # Find active symbols (with data)
@@ -40,7 +44,7 @@ def stack_common_returns(ret_map: Dict[str, Tuple[List, np.ndarray]], symbols: L
     # Find common dates
     common = sorted(list(set.intersection(*sets)))
     if not common:
-        print(f"Warning: No common dates found for {active}")
+        logger.warning(f"Warning: No common dates found for {active}")
         return [], np.empty((0, 0)), []
     
     # Map date->idx for each symbol

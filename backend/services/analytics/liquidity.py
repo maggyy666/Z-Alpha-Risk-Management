@@ -13,17 +13,20 @@ from sqlalchemy.orm import Session
 
 from quant.liquidity import liquidity_metrics
 
+import logging
+
+logger = logging.getLogger(__name__)
 
 class LiquidityAnalytics:
     def __init__(self, ds_ref):
         self._ds = ds_ref
 
     def get_liquidity_metrics(self, db: Session, username: str = "admin") -> Dict[str, Any]:
-        print(f"[LIQUIDITY-METRICS] Starting liquidity metrics for user: {username}")
+        logger.debug(f"[LIQUIDITY-METRICS] Starting liquidity metrics for user: {username}")
         try:
             return liquidity_metrics(db, username)
         except Exception as e:
-            print(f"Error getting liquidity metrics: {e}")
+            logger.error(f"Error getting liquidity metrics: {e}")
             return {"error": str(e)}
 
     def get_volume_distribution(self, db: Session, username: str = "admin") -> Dict[str, Any]:
@@ -33,7 +36,7 @@ class LiquidityAnalytics:
                 return out
             return out.get("volume_analysis", {})
         except Exception as e:
-            print(f"Error getting volume distribution: {e}")
+            logger.error(f"Error getting volume distribution: {e}")
             return {"error": str(e)}
 
     def get_liquidity_alerts(self, db: Session, username: str = "admin") -> List[Dict[str, Any]]:

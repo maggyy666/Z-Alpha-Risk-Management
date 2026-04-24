@@ -17,9 +17,11 @@ from sqlalchemy.orm import Session
 from database.models.ticker_data import TickerData
 from services.ibkr_service import IBKRService
 
+import logging
+
+logger = logging.getLogger(__name__)
 
 _DATE_PATTERNS = ["%Y%m%d", "%Y-%m-%d", "%Y%m%d %H:%M:%S", "%Y-%m-%d %H:%M:%S"]
-
 
 def _parse_ibkr_date(date_str: str):
     for pat in _DATE_PATTERNS:
@@ -29,26 +31,22 @@ def _parse_ibkr_date(date_str: str):
             continue
     raise ValueError(f"Unrecognized date format: {date_str}")
 
-
 class MarketDataService:
     """Reads and writes TickerData. Thin; all math stays in analytics layers."""
 
     def __init__(self, ibkr_service: IBKRService):
         self.ibkr_service = ibkr_service
 
-    # ------------------------------------------------------------------
-    # Write path: IBKR -> DB
-    # ------------------------------------------------------------------
     def fetch_and_store_historical_data(self, db: Session, symbol: str) -> bool:
         """Fetch historical OHLCV from IBKR and persist new rows idempotently."""
         try:
             if not self.ibkr_service.connect():
-                print(f"Failed to connect to IBKR for {symbol}")
+                logger.info(f"Failed to connect to IBKR for {symbol}")
                 return False
 
             historical_data = self.ibkr_service.get_historical_data(symbol)
             if not historical_data:
-                print(f"No historical data received for {symbol}")
+                logger.info(f"No historical data received for {symbol}")
                 return False
 
             # Skip bars that are already present for this ticker
@@ -80,10 +78,10 @@ class MarketDataService:
                 )
 
             db.commit()
-            print(f"Successfully stored historical data for {symbol}")
+            logger.info(f"Successfully stored historical data for {symbol}")
             return True
         except Exception as e:
-            print(f"Error fetching/storing data for {symbol}: {e}")
+            logger.error(f"Error fetching/storing data for {symbol}: {e}")
             return False
         finally:
             self.ibkr_service.disconnect()
@@ -96,7 +94,7 @@ class MarketDataService:
 
             existing_count = db.query(TickerData).filter(TickerData.ticker_symbol == symbol).count()
             if existing_count > 0:
-                print(f"{symbol}: Already has {existing_count} records")
+                logger.info(f"{symbol}: Already has {existing_count} records")
                 return True
 
             base_price = 100.0
@@ -131,16 +129,13 @@ class MarketDataService:
             for data_point in data_points:
                 db.add(TickerData(**data_point))
             db.commit()
-            print(f"[ok] Added {len(data_points)} sample records for {symbol}")
+            logger.debug(f"[ok] Added {len(data_points)} sample records for {symbol}")
             return True
         except Exception as e:
-            print(f"Error injecting sample data for {symbol}: {e}")
+            logger.error(f"Error injecting sample data for {symbol}: {e}")
             db.rollback()
             return False
 
-    # ------------------------------------------------------------------
-    # Read path: DB -> (dates, prices/returns)
-    # ------------------------------------------------------------------
     def get_close_series(self, db: Session, symbol: str) -> Tuple[List, np.ndarray]:
         """Return (dates, closes) ascending; filter NaN and non-positive prices."""
         rows = (
@@ -151,14 +146,14 @@ class MarketDataService:
         )
         if not rows:
             if symbol != "PORTFOLIO":
-                print(f"Debug: No TickerData found for {symbol}")
+                logger.debug(f"Debug: No TickerData found for {symbol}")
             return [], np.array([])
         dates = [r.date for r in rows]
         closes = np.array([float(r.close_price) for r in rows], dtype=float)
         mask = np.isfinite(closes) & (closes > 0)
         dates = [d for d, m in zip(dates, mask) if m]
         closes = closes[mask]
-        print(
+        logger.debug(
             f"Debug: {symbol} - Found {len(dates)} valid data points, "
             f"first: {dates[0] if dates else 'N/A'}, last: {dates[-1] if dates else 'N/A'}"
         )

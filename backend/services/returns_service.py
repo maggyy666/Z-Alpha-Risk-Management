@@ -16,6 +16,9 @@ from sqlalchemy.orm import Session
 from quant.returns import stack_common_returns
 from services.market_data_service import MarketDataService
 
+import logging
+
+logger = logging.getLogger(__name__)
 
 class ReturnsService:
     def __init__(self, market_data: MarketDataService):
@@ -31,17 +34,17 @@ class ReturnsService:
                 ret_map[s] = ([], np.array([]))
                 continue
 
-            print(f"Debug: Getting data for {s}")
+            logger.debug(f"Debug: Getting data for {s}")
             dates, closes = self.market_data.get_close_series(db, s)
-            print(f"Debug: {s} - dates: {len(dates)}, closes: {len(closes)}")
+            logger.debug(f"Debug: {s} - dates: {len(dates)}, closes: {len(closes)}")
             if len(closes) < 2:
-                print(f"Debug: {s} - insufficient data")
+                logger.debug(f"Debug: {s} - insufficient data")
                 ret_map[s] = ([], np.array([]))
                 continue
             dates = dates[-(lookback_days + 2):]
             closes = closes[-(lookback_days + 2):]
             rd, r = self.market_data.log_returns_from_series(dates, closes)
-            print(f"Debug: {s} - returns: {len(r)}")
+            logger.debug(f"Debug: {s} - returns: {len(r)}")
             ret_map[s] = (rd, r)
         return ret_map
 
@@ -145,16 +148,16 @@ class ReturnsService:
         ret_map: Dict[str, Any], symbols: List[str]
     ) -> Tuple[List, np.ndarray, List[str]]:
         """Wrapper over quant.returns.stack_common_returns with debug prints."""
-        print(f"Debug: Intersecting {symbols}")
-        print(f"Debug: ret_map keys: {list(ret_map.keys())}")
+        logger.debug(f"Debug: Intersecting {symbols}")
+        logger.debug(f"Debug: ret_map keys: {list(ret_map.keys())}")
         for s in symbols:
             if s in ret_map:
                 dates, returns = ret_map[s]
-                print(f"Debug: {s} - dates: {len(dates)}, returns: {len(returns)}")
+                logger.debug(f"Debug: {s} - dates: {len(dates)}, returns: {len(returns)}")
             else:
-                print(f"Debug: {s} - not in ret_map")
+                logger.debug(f"Debug: {s} - not in ret_map")
         result = stack_common_returns(ret_map, symbols)
-        print(
+        logger.debug(
             f"Debug: Result - dates: {len(result[0])}, R shape: {result[1].shape}, active: {result[2]}"
         )
         return result
@@ -181,5 +184,5 @@ class ReturnsService:
                 "total_days": total_days,
             }
         except Exception as e:
-            print(f"Error getting common date range: {e}")
+            logger.error(f"Error getting common date range: {e}")
             return {"start_date": None, "end_date": None, "total_days": 0}

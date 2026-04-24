@@ -6,18 +6,27 @@ covariance matrices, rolling metrics, liquidity, and summary). It relies on
 database-backed services and is intended for local development/testing.
 """
 
-from fastapi import FastAPI, Depends, HTTPException, Query
-from fastapi.middleware.cors import CORSMiddleware
-from sqlalchemy.orm import Session
-from database.database import get_db, engine, Base
-from services.data_service import DataService
-from database.models.user import User
-from database.models.portfolio import Portfolio
-from database.models.ticker_data import TickerData
-from database.models.ticker import TickerInfo
-from typing import List, Dict, Any
-from pydantic import BaseModel
+import logging
+from typing import Any, Dict, List
+
 import uvicorn
+from fastapi import Depends, FastAPI, Header, HTTPException, Query, status
+from fastapi.middleware.cors import CORSMiddleware
+from pydantic import BaseModel
+from sqlalchemy.orm import Session
+
+import jwt as _jwt
+
+from database.database import Base, engine, get_db
+from database.models.portfolio import Portfolio
+from database.models.ticker import TickerInfo
+from database.models.ticker_data import TickerData
+from database.models.user import User
+from logging_config import setup_logging
+from services.data_service import DataService
+
+setup_logging()
+logger = logging.getLogger(__name__)
 
 class LoginRequest(BaseModel):
     username: str
@@ -60,6 +69,29 @@ data_service = DataService()
 @app.get("/")
 def read_root():
     return {"message": "IBKR Portfolio API"}
+
+
+@app.get("/auth/verify")
+def verify_jwt(authorization: str | None = Header(default=None), db: Session = Depends(get_db)):
+    """Validate a JWT issued by user-api. Proves the shared-secret contract
+    between the two services. Not wired into other endpoints yet -- login
+    still works via /login query-param fallback."""
+    from auth.jwt_tokens import decode
+
+    if not authorization or not authorization.lower().startswith("bearer "):
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Missing bearer token")
+    token = authorization.split(None, 1)[1].strip()
+    try:
+        claims = decode(token)
+    except _jwt.ExpiredSignatureError:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Token expired")
+    except _jwt.InvalidTokenError:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token")
+
+    user = db.query(User).filter(User.username == claims.get("sub")).first()
+    if not user:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="User not found")
+    return {"username": user.username, "email": user.email}
 
 @app.post("/login", response_model=LoginResponse)
 def login(login_request: LoginRequest, db: Session = Depends(get_db)):
@@ -123,9 +155,9 @@ def initialize_portfolio(db: Session = Depends(get_db)):
         for symbol in tickers:
             success = data_service.inject_sample_data(db, symbol)
             if success:
-                print(f"Injected sample data for {symbol}")
+                logger.info(f"Injected sample data for {symbol}")
             else:
-                print(f"Failed to inject sample data for {symbol}")
+                logger.info(f"Failed to inject sample data for {symbol}")
         
         return {
             "message": f"Initialized {len(tickers)} tickers",
@@ -409,9 +441,9 @@ def update_user_portfolio(username: str, portfolio_data: List[dict], db: Session
         db.commit()
         
         # Clear cache for this user's portfolio data
-        print(f"🔄 Clearing cache for user {username} after portfolio update...")
+        logger.info(f"🔄 Clearing cache for user {username} after portfolio update...")
         data_service._clear_cache(f"*{username}*")
-        print(f"[ok] Cache cleared for user {username} after portfolio update")
+        logger.debug(f"[ok] Cache cleared for user {username} after portfolio update")
         
         # Update JSON file
         import json

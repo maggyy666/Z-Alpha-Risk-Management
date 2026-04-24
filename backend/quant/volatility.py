@@ -7,6 +7,10 @@ import warnings
 
 # Helpers
 
+import logging
+
+logger = logging.getLogger(__name__)
+
 def lambda_from_half_life(days: int) -> float:
     return 0.5 ** (1.0 / max(1, days))  # corrected formula
 
@@ -110,13 +114,13 @@ def forecast_sigma(returns: np.ndarray, model: str = "EWMA (5D)") -> float:
             
             # Sanity check: clip extreme values
             if sigma > 3.0:  # > 300% annualized
-                print(f"Warning: {model} volatility {sigma*100:.1f}% exceeds 300%, clipping to 300%")
+                logger.warning(f"Warning: {model} volatility {sigma*100:.1f}% exceeds 300%, clipping to 300%")
                 sigma = 3.0
                 
             return sigma
             
         except Exception as e:
-            print(f"Warning: {model} failed for volatility forecast: {e}")
+            logger.warning(f"Warning: {model} failed for volatility forecast: {e}")
             # Fallback to simple std
             return np.std(returns) * np.sqrt(252)
     
@@ -134,15 +138,15 @@ def test_vol_reasonable(returns: np.ndarray, symbol: str = "UNKNOWN") -> bool:
         
         # Check if volatility is reasonable
         if sigma > 3.0:  # > 300% annualized
-            print(f"Warning: {symbol}: EGARCH volatility {sigma*100:.1f}% > 300% – suspicious!")
+            logger.warning(f"Warning: {symbol}: EGARCH volatility {sigma*100:.1f}% > 300% – suspicious!")
             return False
         elif sigma < 0.05:  # < 5% annualized
-            print(f"Warning: {symbol}: EGARCH volatility {sigma*100:.1f}% < 5% – suspicious!")
+            logger.warning(f"Warning: {symbol}: EGARCH volatility {sigma*100:.1f}% < 5% – suspicious!")
             return False
         else:
-            print(f"{symbol}: EGARCH volatility {sigma*100:.1f}% – reasonable")
+            logger.info(f"{symbol}: EGARCH volatility {sigma*100:.1f}% – reasonable")
             return True
             
     except Exception as e:
-        print(f"{symbol}: EGARCH volatility test failed: {e}")
+        logger.info(f"{symbol}: EGARCH volatility test failed: {e}")
         return False

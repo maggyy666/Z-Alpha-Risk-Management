@@ -19,7 +19,6 @@ from quant.regime import regime_metrics
 from quant.risk import clamp
 from utils.json_safe import clean_json_values
 
-
 class RegimeAnalytics:
     def __init__(self, ds_ref, stress_scenarios, stress_limits, regime_thresh):
         self._ds = ds_ref

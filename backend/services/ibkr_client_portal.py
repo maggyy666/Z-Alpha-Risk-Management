@@ -5,6 +5,10 @@ from typing import List, Dict, Any, Optional
 from datetime import datetime, timedelta
 import numpy as np
 
+import logging
+
+logger = logging.getLogger(__name__)
+
 class IBKRClientPortalAPI:
     """IBKR Client Portal Web API integration"""
     
@@ -20,27 +24,27 @@ class IBKRClientPortalAPI:
             # Step 1: Initiate session
             response = self.session.post(f"{self.base_url}/iserver/auth/ssodh/init")
             if response.status_code != 200:
-                print(f"Failed to initiate session: {response.status_code}")
+                logger.info(f"Failed to initiate session: {response.status_code}")
                 return False
                 
             # Step 2: Validate session
             response = self.session.post(f"{self.base_url}/iserver/auth/ssodh/validate")
             if response.status_code != 200:
-                print(f"Failed to validate session: {response.status_code}")
+                logger.info(f"Failed to validate session: {response.status_code}")
                 return False
                 
             # Step 3: Reauthenticate
             response = self.session.post(f"{self.base_url}/iserver/reauthenticate")
             if response.status_code != 200:
-                print(f"Failed to reauthenticate: {response.status_code}")
+                logger.info(f"Failed to reauthenticate: {response.status_code}")
                 return False
                 
             self.authenticated = True
-            print("Successfully authenticated with IBKR Client Portal")
+            logger.info("Successfully authenticated with IBKR Client Portal")
             return True
             
         except Exception as e:
-            print(f"Authentication error: {e}")
+            logger.info(f"Authentication error: {e}")
             return False
     
     def get_accounts(self) -> List[Dict[str, Any]]:
@@ -50,10 +54,10 @@ class IBKRClientPortalAPI:
             if response.status_code == 200:
                 return response.json()
             else:
-                print(f"Failed to get accounts: {response.status_code}")
+                logger.info(f"Failed to get accounts: {response.status_code}")
                 return []
         except Exception as e:
-            print(f"Error getting accounts: {e}")
+            logger.error(f"Error getting accounts: {e}")
             return []
     
     def get_positions(self, account_id: str) -> List[Dict[str, Any]]:
@@ -63,10 +67,10 @@ class IBKRClientPortalAPI:
             if response.status_code == 200:
                 return response.json()
             else:
-                print(f"Failed to get positions: {response.status_code}")
+                logger.info(f"Failed to get positions: {response.status_code}")
                 return []
         except Exception as e:
-            print(f"Error getting positions: {e}")
+            logger.error(f"Error getting positions: {e}")
             return []
     
     def get_market_data_snapshot(self, conids: List[str], fields: List[str] = ["31"]) -> Dict[str, Any]:
@@ -80,10 +84,10 @@ class IBKRClientPortalAPI:
             if response.status_code == 200:
                 return response.json()
             else:
-                print(f"Failed to get market data: {response.status_code}")
+                logger.info(f"Failed to get market data: {response.status_code}")
                 return {}
         except Exception as e:
-            print(f"Error getting market data: {e}")
+            logger.error(f"Error getting market data: {e}")
             return {}
     
     def get_historical_data(self, conid: str, period: str = "1y", bar: str = "1d") -> List[Dict[str, Any]]:
@@ -101,10 +105,10 @@ class IBKRClientPortalAPI:
                 data = response.json()
                 return data.get("data", [])
             else:
-                print(f"Failed to get historical data for {conid}: {response.status_code}")
+                logger.info(f"Failed to get historical data for {conid}: {response.status_code}")
                 return []
         except Exception as e:
-            print(f"Error getting historical data for {conid}: {e}")
+            logger.error(f"Error getting historical data for {conid}: {e}")
             return []
     
     def get_contract_info(self, conid: str) -> Optional[Dict[str, Any]]:
@@ -114,10 +118,10 @@ class IBKRClientPortalAPI:
             if response.status_code == 200:
                 return response.json()
             else:
-                print(f"Failed to get contract info for {conid}: {response.status_code}")
+                logger.info(f"Failed to get contract info for {conid}: {response.status_code}")
                 return None
         except Exception as e:
-            print(f"Error getting contract info for {conid}: {e}")
+            logger.error(f"Error getting contract info for {conid}: {e}")
             return None
 
 class PortfolioDataService:
@@ -238,13 +242,13 @@ class PortfolioDataService:
         try:
             # Authenticate
             if not self.ibkr_api.authenticate():
-                print("Failed to authenticate with IBKR")
+                logger.info("Failed to authenticate with IBKR")
                 return []
             
             # Get accounts
             accounts = self.ibkr_api.get_accounts()
             if not accounts:
-                print("No accounts found")
+                logger.info("No accounts found")
                 return []
             
             account_id = accounts[0].get('accountId')  # Use first account
@@ -252,14 +256,14 @@ class PortfolioDataService:
             # Get positions
             positions = self.ibkr_api.get_positions(account_id)
             if not positions:
-                print("No positions found")
+                logger.info("No positions found")
                 return []
             
             # Filter for stocks/ETFs only
             stock_positions = [p for p in positions if p.get('assetClass') in ['STK', 'ETF']]
             
             if not stock_positions:
-                print("No stock/ETF positions found")
+                logger.info("No stock/ETF positions found")
                 return []
             
             # Get conids for market data
@@ -287,5 +291,5 @@ class PortfolioDataService:
             return final_data
             
         except Exception as e:
-            print(f"Error getting portfolio data: {e}")
+            logger.error(f"Error getting portfolio data: {e}")
             return [] 

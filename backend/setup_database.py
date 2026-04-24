@@ -1,87 +1,78 @@
 #!/usr/bin/env python3
-"""
-Complete database setup script
-Creates database, user, portfolio, and generates all historical data
-"""
+"""Complete database setup: create schema, seed users, import portfolios, fetch market data."""
 
-import sys
-import os
-import time
-import requests
 import json
-from pathlib import Path
+import logging
+import os
+import sys
 from typing import List
+
 sys.path.append(os.path.dirname(__file__))
 
-from database.database import engine, SessionLocal, Base
-from database.models.user import User
+from database.database import Base, SessionLocal, engine
 from database.models.portfolio import Portfolio
-from database.models.ticker_data import TickerData
 from database.models.ticker import TickerInfo
+from database.models.ticker_data import TickerData
+from database.models.user import User
+from logging_config import setup_logging
 from services.data_service import DataService
-from sqlalchemy import Index, inspect, text
+
+logger = logging.getLogger(__name__)
+
 
 def check_required_modules():
-    """Check if all required modules can be imported"""
-    print("Checking required modules...")
-    
-    required_modules = [
-        'sqlalchemy',
-        'requests',
-        'numpy',
-        'pandas'
-    ]
-    
+    logger.info("Checking required modules...")
+    required_modules = ["sqlalchemy", "requests", "numpy", "pandas"]
     missing_modules = []
     for module in required_modules:
         try:
             __import__(module)
         except ImportError:
             missing_modules.append(module)
-    
     if missing_modules:
-        print(f"Missing required modules: {missing_modules}")
-        print("Please install them with: pip install " + " ".join(missing_modules))
+        logger.error("Missing required modules: %s", missing_modules)
+        logger.error("Install them with: pip install %s", " ".join(missing_modules))
         return False
-    
-    print("All required modules found")
+    logger.info("All required modules found")
     return True
+
 
 def check_database_connection():
     """Verify Postgres is reachable via SQLAlchemy engine."""
-    print("Checking database connection...")
+    logger.info("Checking database connection...")
     try:
         from sqlalchemy import text
         with engine.connect() as conn:
             conn.execute(text("SELECT 1"))
-        print("Database connection OK")
+        logger.info("Database connection OK")
         return True
     except Exception as e:
-        print(f"Database connection failed: {e}")
+        logger.error("Database connection failed: %s", e)
         return False
+
 
 def drop_all_tables():
     """Drop all tables for a clean re-seed. Volume wipe is handled by start_all."""
-    print("Dropping existing tables...")
+    logger.info("Dropping existing tables...")
     try:
         Base.metadata.drop_all(bind=engine)
-        print("Tables dropped")
+        logger.info("Tables dropped")
         return True
     except Exception as e:
-        print(f"Error dropping tables: {e}")
+        logger.error("Error dropping tables: %s", e)
         return False
 
+
 def create_database_tables():
-    """Create all database tables"""
-    print("Creating database tables...")
-    
+    logger.info("Creating database tables...")
     try:
         Base.metadata.create_all(bind=engine)
-        print("Database tables created successfully")
+        logger.info("Database tables created successfully")
         return True
     except Exception as e:
-        print(f"Error creating database tables: {e}")
+        logger.error("Error creating database tables: %s", e)
         return False
+
 
 SEED_USERS = [
     {
@@ -118,7 +109,7 @@ def seed_users(db) -> dict:
     """Create admin + user from env (idempotent). Returns {slot: User} map."""
     from auth.passwords import hash_password
 
-    print("Seeding users from environment...")
+    logger.info("Seeding users from environment...")
     created = {}
     for entry in SEED_USERS:
         slot = entry["slot"]
@@ -126,7 +117,7 @@ def seed_users(db) -> dict:
 
         user = db.query(User).filter(User.username == creds["username"]).first()
         if user:
-            print(f"  {slot}: user '{creds['username']}' already exists -- skipping")
+            logger.info("  %s: user '%s' already exists -- skipping", slot, creds["username"])
         else:
             user = User(
                 username=creds["username"],
@@ -136,9 +127,10 @@ def seed_users(db) -> dict:
             db.add(user)
             db.commit()
             db.refresh(user)
-            print(f"  {slot}: created user '{creds['username']}' (id={user.id})")
+            logger.info("  %s: created user '%s' (id=%s)", slot, creds["username"], user.id)
         created[slot] = user
     return created
+
 
 def _resolve_fixture_path(filename: str) -> str:
     """Locate a fixture file whether script runs from project root or backend/."""
@@ -146,7 +138,7 @@ def _resolve_fixture_path(filename: str) -> str:
     for path in candidates:
         if os.path.exists(path):
             return path
-    return candidates[0]  # return primary for error messages
+    return candidates[0]
 
 
 def get_tickers_from_fixture(fixture_filename: str) -> List[str]:
@@ -154,78 +146,80 @@ def get_tickers_from_fixture(fixture_filename: str) -> List[str]:
     portfolio_file = _resolve_fixture_path(fixture_filename)
     try:
         if not os.path.exists(portfolio_file):
-            print(f"Portfolio fixture {portfolio_file} not found")
+            logger.error("Portfolio fixture %s not found", portfolio_file)
             return []
-        with open(portfolio_file, 'r') as f:
+        with open(portfolio_file, "r") as f:
             portfolio_data = json.load(f)
         if not isinstance(portfolio_data, list):
-            print(f"Invalid portfolio format in {portfolio_file}: expected list")
+            logger.error("Invalid portfolio format in %s: expected list", portfolio_file)
             return []
-        return [item.get('ticker') for item in portfolio_data if 'ticker' in item]
+        return [item.get("ticker") for item in portfolio_data if "ticker" in item]
     except Exception as e:
-        print(f"Error reading {portfolio_file}: {e}")
+        logger.error("Error reading %s: %s", portfolio_file, e)
         return []
 
+
 def import_portfolio_from_file(db, user, portfolio_file: str):
-    """Import portfolio from JSON file"""
     try:
         if not os.path.exists(portfolio_file):
-            print(f"Portfolio file {portfolio_file} not found")
+            logger.error("Portfolio file %s not found", portfolio_file)
             return False
-        
-        with open(portfolio_file, 'r') as f:
+
+        with open(portfolio_file, "r") as f:
             portfolio_data = json.load(f)
-        
+
         if not isinstance(portfolio_data, list):
-            print(f"Invalid portfolio format: expected list of ticker objects")
+            logger.error("Invalid portfolio format: expected list of ticker objects")
             return False
-        
+
         added_count = 0
         for item in portfolio_data:
-            if 'ticker' not in item or 'shares' not in item:
-                print(f"Invalid portfolio item: missing ticker or shares")
+            if "ticker" not in item or "shares" not in item:
+                logger.warning("Invalid portfolio item: missing ticker or shares")
                 continue
-            
-            ticker = item['ticker']
-            shares = int(item['shares'])
-            
+
+            ticker = item["ticker"]
+            shares = int(item["shares"])
+
             existing = db.query(Portfolio).filter(
                 Portfolio.user_id == user.id,
-                Portfolio.ticker_symbol == ticker
+                Portfolio.ticker_symbol == ticker,
             ).first()
-            
+
             if not existing:
-                portfolio_item = Portfolio(
-                    user_id=user.id,
-                    ticker_symbol=ticker,
-                    shares=shares
-                )
-                db.add(portfolio_item)
+                db.add(Portfolio(user_id=user.id, ticker_symbol=ticker, shares=shares))
                 added_count += 1
-        
+
         db.commit()
-        print(f"Imported portfolio for {user.username} with {added_count} tickers from {portfolio_file}")
+        logger.info(
+            "Imported portfolio for %s with %s tickers from %s",
+            user.username, added_count, portfolio_file,
+        )
         return True
     except Exception as e:
-        print(f"Error importing portfolio for {user.username}: {e}")
+        logger.error("Error importing portfolio for %s: %s", user.username, e)
         db.rollback()
         return False
 
+
 def setup_portfolio(db, user, fixture_filename: str):
     """Import a portfolio fixture file into the DB for the given user."""
-    print(f"Setting up portfolio for {user.username} from {fixture_filename}...")
+    logger.info("Setting up portfolio for %s from %s...", user.username, fixture_filename)
     portfolio_file = _resolve_fixture_path(fixture_filename)
     return import_portfolio_from_file(db, user, portfolio_file)
 
-def generate_ticker_data(db, ticker):
-    """Fetch real historical data from IBKR for a ticker"""
-    data_service = DataService()
-    print(f"Fetching real data for {ticker} from IBKR")
+
+def generate_ticker_data(db, data_service, ticker):
+    """Fetch real historical data from IBKR for a ticker. Reuses the caller's
+    DataService so the underlying IBKRService keeps its client_id counter
+    monotonically increasing -- otherwise every ticker reconnects with id
+    1001 and TWS rejects with Error 326 (client id already in use)."""
+    logger.info("Fetching real data for %s from IBKR", ticker)
     return data_service.fetch_and_store_historical_data(db, ticker)
 
+
 def generate_historical_data(db, data_service, tickers, data_type):
-    """Generate historical data for tickers"""
-    print(f"Generating historical data for {data_type}...")
+    logger.info("Generating historical data for %s...", data_type)
 
     try:
         success_count = 0
@@ -233,197 +227,170 @@ def generate_historical_data(db, data_service, tickers, data_type):
             try:
                 existing_count = db.query(TickerData).filter(TickerData.ticker_symbol == ticker).count()
                 if existing_count == 0:
-                    # Generate historical data for this ticker
-                    generate_ticker_data(db, ticker)
-                    print(f"Generated data for {ticker}")
-                    
-                    # Note: Using proxy spread (high-low) for liquidity calculations
-                    # Real bid/ask data not available - using proxy spread instead
-                    
+                    generate_ticker_data(db, data_service, ticker)
+                    logger.info("Generated data for %s", ticker)
                     success_count += 1
                 else:
-                    print(f"{ticker}: Already has {existing_count} records")
+                    logger.info("%s: already has %s records", ticker, existing_count)
                     success_count += 1
-                
-                # Ensure ticker info exists (sector, industry, market_cap)
+
                 try:
                     info = data_service._ensure_ticker_info(db, ticker)
                     if info:
-                        print(f"Ticker info for {ticker}: sector={info.sector}, industry={info.industry}")
+                        logger.info(
+                            "Ticker info for %s: sector=%s, industry=%s",
+                            ticker, info.sector, info.industry,
+                        )
                     else:
-                        print(f"Warning: No ticker info for {ticker}")
+                        logger.warning("No ticker info for %s", ticker)
                 except Exception as e:
-                    print(f"Error ensuring ticker info for {ticker}: {e}")
-                
+                    logger.error("Error ensuring ticker info for %s: %s", ticker, e)
+
             except Exception as e:
-                print(f"Error generating data for {ticker}: {e}")
-        
-        print(f"Successfully processed {success_count}/{len(tickers)} {data_type}")
+                logger.error("Error generating data for %s: %s", ticker, e)
+
+        logger.info("Successfully processed %s/%s %s", success_count, len(tickers), data_type)
         return True
     except Exception as e:
-        print(f"Error generating historical data: {e}")
+        logger.error("Error generating historical data: %s", e)
         return False
 
+
 def fetch_fundamental_data(db, data_service, tickers):
-    """Fetch fundamental data for tickers from IBKR"""
-    print("Fetching fundamental data for tickers...")
-    
+    """Fetch fundamental data for tickers from IBKR."""
+    logger.info("Fetching fundamental data for tickers...")
+
     try:
-        # Connect once for all tickers
-        print("Connecting to IBKR...")
+        logger.info("Connecting to IBKR...")
         if not data_service.ibkr_service.connect():
-            print("Failed to connect to IBKR - skipping fundamental data")
+            logger.error("Failed to connect to IBKR -- skipping fundamental data")
             return False
-        
+
         success_count = 0
         for ticker in tickers:
             try:
-                print(f"Fetching data for {ticker}...")
-                
-                # Single request per ticker - get fundamental data
+                logger.info("Fetching data for %s...", ticker)
                 fundamental_data = data_service.ibkr_service.get_fundamentals(ticker)
-                
-                # Save to database using preloaded data
                 info = data_service._ensure_ticker_info(db, ticker, preloaded=fundamental_data)
-                
+
                 if info:
                     success_count += 1
-                    print(f"Successfully processed {ticker}")
+                    logger.info("Successfully processed %s", ticker)
                 else:
-                    print(f"Failed to process {ticker}")
-                    
+                    logger.warning("Failed to process %s", ticker)
+
             except Exception as e:
-                print(f"Error processing {ticker}: {e}")
+                logger.error("Error processing %s: %s", ticker, e)
                 continue
-        
-        print(f"Successfully processed {success_count}/{len(tickers)} tickers")
+
+        logger.info("Successfully processed %s/%s tickers", success_count, len(tickers))
         return True
-        
+
     except Exception as e:
-        print(f"Error in fetch_fundamental_data: {e}")
+        logger.error("Error in fetch_fundamental_data: %s", e)
         return False
     finally:
         data_service.ibkr_service.disconnect()
-        print("Disconnected from IBKR")
+        logger.info("Disconnected from IBKR")
+
 
 def show_database_summary(db, admin_user):
-    """Show database summary"""
-    print("Database summary...")
-    
+    logger.info("Database summary...")
+
     try:
         total_tickers = db.query(TickerData.ticker_symbol).distinct().count()
         total_records = db.query(TickerData).count()
         portfolio_count = db.query(Portfolio).filter(Portfolio.user_id == admin_user.id).count()
         ticker_info_count = db.query(TickerInfo).count()
-        
-        print(f"Total tickers: {total_tickers}")
-        print(f"Total records: {total_records}")
-        print(f"Portfolio items: {portfolio_count}")
-        print(f"Ticker info records: {ticker_info_count}")
-        
-        # Show date range
+
+        logger.info("Total tickers: %s", total_tickers)
+        logger.info("Total records: %s", total_records)
+        logger.info("Portfolio items: %s", portfolio_count)
+        logger.info("Ticker info records: %s", ticker_info_count)
+
         date_range = db.query(TickerData.date).distinct().order_by(TickerData.date).all()
         if date_range:
-            min_date = date_range[0][0]
-            max_date = date_range[-1][0]
-            print(f"Date range: {min_date} to {max_date}")
-        
+            logger.info("Date range: %s to %s", date_range[0][0], date_range[-1][0])
+
         return True
     except Exception as e:
-        print(f"Error showing database summary: {e}")
+        logger.error("Error showing database summary: %s", e)
         return False
+
 
 def setup_database():
-    """Complete database setup"""
-    print("Starting complete database setup...")
-    print("Using real market data from IBKR TWS")
+    logger.info("Starting complete database setup...")
+    logger.info("Using real market data from IBKR TWS")
 
-    # Step 1: Check prerequisites
     if not check_required_modules():
         return False
-
     if not check_database_connection():
         return False
-
-    # Step 2: Drop existing tables for clean re-seed
     if not drop_all_tables():
         return False
-
-    # Step 3: Create database tables
     if not create_database_tables():
         return False
-    
-    # Step 5: Create database session
+
     db = SessionLocal()
     try:
-        # Step 6: Seed users (admin + user) from env
         try:
             users_by_slot = seed_users(db)
         except RuntimeError as e:
-            print(f"User seeding failed: {e}")
+            logger.error("User seeding failed: %s", e)
             return False
 
-        # Step 7-8: Import portfolio fixture for each seeded user
         for entry in SEED_USERS:
             user = users_by_slot[entry["slot"]]
             if not setup_portfolio(db, user, entry["portfolio_fixture"]):
                 return False
 
-        # Step 10: Initialize data service
         data_service = DataService()
 
-        # Step 11: Collect all unique tickers across both portfolios
         all_tickers = set()
         for entry in SEED_USERS:
             all_tickers.update(get_tickers_from_fixture(entry["portfolio_fixture"]))
-        
-        # Add static tickers
-        static_tickers = ['SPY', 'MTUM', 'IWM', 'VLUE', 'QUAL']
+
+        static_tickers = ["SPY", "MTUM", "IWM", "VLUE", "QUAL"]
         all_tickers.update(static_tickers)
-        
-        print(f"Total unique tickers to process: {len(all_tickers)}")
-        print(f"Tickers: {sorted(all_tickers)}")
-        
-        # Step 12: Generate historical data for ALL tickers
+
+        logger.info("Total unique tickers to process: %s", len(all_tickers))
+        logger.info("Tickers: %s", sorted(all_tickers))
+
         if not generate_historical_data(db, data_service, list(all_tickers), "all tickers"):
             return False
 
-        # Step 13: Fetch fundamental data for all tickers
         if not fetch_fundamental_data(db, data_service, list(all_tickers)):
-            print("Warning: Some fundamental data may be missing")
-        
-        # Step 14: Show database summary (use admin slot as reference for portfolio count)
+            logger.warning("Some fundamental data may be missing")
+
         if not show_database_summary(db, users_by_slot["ADMIN"]):
             return False
-        
-        print("Database setup completed successfully!")
+
+        logger.info("Database setup completed successfully")
         return True
-        
+
     except Exception as e:
-        print(f"Error during database setup: {e}")
+        logger.exception("Error during database setup: %s", e)
         return False
     finally:
         db.close()
 
+
 def main():
-    """Main function"""
-    print("=" * 60)
-    print("Z-ALPHA SECURITIES - DATABASE SETUP")
-    print("=" * 60)
+    setup_logging()
+    logger.info("=" * 60)
+    logger.info("Z-ALPHA SECURITIES - DATABASE SETUP")
+    logger.info("=" * 60)
 
     success = setup_database()
 
     if success:
-        print("\nSetup completed successfully!")
-        print("You can now run the application with:")
-        print("  python start_all.py")
+        logger.info("Setup completed successfully")
+        logger.info("You can now run the application with: python start_all.py")
     else:
-        print("\nSetup failed!")
-        print("Please check the error messages above.")
+        logger.error("Setup failed -- check the log messages above")
 
     return success
 
 
 if __name__ == "__main__":
-    import sys as _sys
-    _sys.exit(0 if main() else 1)
+    sys.exit(0 if main() else 1)

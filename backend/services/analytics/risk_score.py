@@ -21,6 +21,9 @@ from quant.linear import ols_beta
 from quant.scoring import risk_mix
 from quant.volatility import annualized_vol
 
+import logging
+
+logger = logging.getLogger(__name__)
 
 _RISK_SCORE_WEIGHTS = {
     "concentration": 0.25,
@@ -31,7 +34,6 @@ _RISK_SCORE_WEIGHTS = {
     "stress": 0.10,
 }
 
-
 class RiskScoreAnalytics:
     def __init__(self, ds_ref, normalization: Dict[str, float]):
         self._ds = ds_ref
@@ -40,34 +42,34 @@ class RiskScoreAnalytics:
     def get_risk_scoring(self, db: Session, username: str = "admin") -> Dict[str, Any]:
         """Aggregated risk score: 7 component scores + contribution percentages."""
         ds = self._ds
-        print(f"[RISK-SCORING] Starting risk scoring for user: {username}")
+        logger.debug(f"[RISK-SCORING] Starting risk scoring for user: {username}")
 
-        print("[RISK-SCORING] Getting concentration risk data...")
+        logger.debug("[RISK-SCORING] Getting concentration risk data...")
         conc = ds.get_concentration_risk_data(db, username)
         if "error" in conc:
-            print(f"[RISK-SCORING] Error in concentration risk: {conc['error']}")
+            logger.debug(f"[RISK-SCORING] Error in concentration risk: {conc['error']}")
             return {"error": conc["error"]}
         positions = conc["portfolio_data"]
         if not positions:
-            print("[RISK-SCORING] No positions found")
+            logger.debug("[RISK-SCORING] No positions found")
             return {"error": "No positions"}
         tickers = [p["ticker"] for p in positions]
         w = np.array([p["weight_frac"] for p in positions], dtype=float)
-        print(f"[RISK-SCORING] Portfolio tickers: {tickers}, weights sum: {w.sum():.4f}")
+        logger.debug(f"[RISK-SCORING] Portfolio tickers: {tickers}, weights sum: {w.sum():.4f}")
 
         factor_proxies = {"MOMENTUM": "MTUM", "SIZE": "IWM", "VALUE": "VLUE", "QUALITY": "QUAL"}
         needed = list(set(tickers + ["SPY"] + list(factor_proxies.values())))
-        print(f"[RISK-SCORING] Getting return series for: {needed}")
+        logger.debug(f"[RISK-SCORING] Getting return series for: {needed}")
         ret_map = ds._get_return_series_map(db, needed, lookback_days=180)
 
-        print("[RISK-SCORING] Aligning returns on SPY calendar...")
+        logger.debug("[RISK-SCORING] Aligning returns on SPY calendar...")
         dates_ref, R_all, active = ds._align_on_reference(
             ret_map, tickers + ["SPY"], ref_symbol="SPY", min_obs=40
         )
         if R_all.size == 0 or len(dates_ref) < 40:
-            print("[RISK-SCORING] Insufficient overlapping history (vs SPY)")
+            logger.debug("[RISK-SCORING] Insufficient overlapping history (vs SPY)")
             return {"error": "Insufficient overlapping history (vs SPY)"}
-        print(f"[RISK-SCORING] Aligned data shape: {R_all.shape}, active symbols: {active}")
+        logger.debug(f"[RISK-SCORING] Aligned data shape: {R_all.shape}, active symbols: {active}")
 
         w_map = {p["ticker"]: p["weight_frac"] for p in positions}
         dates_win, rp = ds._portfolio_series_with_coverage(
@@ -203,12 +205,12 @@ class RiskScoreAnalytics:
     def get_portfolio_summary(self, db: Session, username: str = "admin") -> Dict[str, Any]:
         """Dashboard aggregator: risk score + concentration + forecast + CVaR total."""
         ds = self._ds
-        print(f"[PORTFOLIO-SUMMARY] Starting portfolio summary for user: {username}")
+        logger.debug(f"[PORTFOLIO-SUMMARY] Starting portfolio summary for user: {username}")
         try:
-            print("[PORTFOLIO-SUMMARY] Getting risk scoring data...")
+            logger.debug("[PORTFOLIO-SUMMARY] Getting risk scoring data...")
             risk_data = self.get_risk_scoring(db, username)
             if "error" in risk_data:
-                print(f"[PORTFOLIO-SUMMARY] Warning: Risk scoring failed: {risk_data['error']}")
+                logger.debug(f"[PORTFOLIO-SUMMARY] Warning: Risk scoring failed: {risk_data['error']}")
                 risk_data = {
                     "component_scores": {"overall": 0.5},
                     "risk_contribution_pct": {
@@ -219,22 +221,22 @@ class RiskScoreAnalytics:
                     },
                 }
 
-            print("[PORTFOLIO-SUMMARY] Getting concentration risk data...")
+            logger.debug("[PORTFOLIO-SUMMARY] Getting concentration risk data...")
             conc_data = ds.get_concentration_risk_data(db, username)
             if "error" in conc_data:
-                print(f"[PORTFOLIO-SUMMARY] Warning: Concentration risk failed: {conc_data['error']}")
+                logger.debug(f"[PORTFOLIO-SUMMARY] Warning: Concentration risk failed: {conc_data['error']}")
                 conc_data = {
                     "total_market_value": 0,
                     "portfolio_data": [],
                     "concentration_metrics": {"largest_position": 0, "top_3_concentration": 0},
                 }
 
-            print("[PORTFOLIO-SUMMARY] Getting forecast risk contribution (EGARCH)...")
+            logger.debug("[PORTFOLIO-SUMMARY] Getting forecast risk contribution (EGARCH)...")
             forecast_contribution = ds.get_forecast_risk_contribution(
                 db, username, vol_model="EGARCH"
             )
             if "error" in forecast_contribution:
-                print(
+                logger.debug(
                     f"[PORTFOLIO-SUMMARY] Warning: Forecast risk contribution failed: "
                     f"{forecast_contribution['error']}"
                 )
@@ -244,10 +246,10 @@ class RiskScoreAnalytics:
                     "marginal_rc_pct": [0.0],
                 }
 
-            print("[PORTFOLIO-SUMMARY] Getting forecast metrics...")
+            logger.debug("[PORTFOLIO-SUMMARY] Getting forecast metrics...")
             forecast_metrics = ds.get_forecast_metrics(db, username)
             if "error" in forecast_metrics:
-                print(
+                logger.debug(
                     f"[PORTFOLIO-SUMMARY] Warning: Forecast metrics failed: "
                     f"{forecast_metrics['error']}"
                 )
@@ -261,7 +263,7 @@ class RiskScoreAnalytics:
 
             overall_score = risk_data.get("component_scores", {}).get("overall", 0) * 100
             if not (0.0 <= overall_score <= 100.0):
-                print(
+                logger.warning(
                     f"Warning: Overall score out of range: {overall_score}, clipping to [0,100]"
                 )
                 overall_score = max(0, min(overall_score, 100))
@@ -287,13 +289,13 @@ class RiskScoreAnalytics:
             volatility_egarch = forecast_contribution.get("portfolio_vol", 0)
             if volatility_egarch > 3.0:
                 flags["high_vol"] = True
-                print(f"Warning: EGARCH volatility {volatility_egarch * 100:.1f}% > 300%")
+                logger.warning(f"Warning: EGARCH volatility {volatility_egarch * 100:.1f}% > 300%")
             if overall_score > 1.0:
                 flags["high_risk_score"] = True
-                print(f"Warning: Risk score {overall_score:.1f}% > 100%")
+                logger.warning(f"Warning: Risk score {overall_score:.1f}% > 100%")
             if total_cvar_pct < -10.0:
                 flags["high_cvar"] = True
-                print(f"Warning: CVaR {total_cvar_pct:.1f}% < -10%")
+                logger.warning(f"Warning: CVaR {total_cvar_pct:.1f}% < -10%")
 
             top_ticker, top_pct = self.get_top_risk_contributor(forecast_contribution)
 
@@ -328,7 +330,7 @@ class RiskScoreAnalytics:
                 "flags": flags,
             }
         except Exception as e:
-            print(f"Error getting portfolio summary: {e}")
+            logger.error(f"Error getting portfolio summary: {e}")
             return {"error": str(e)}
 
     @staticmethod

@@ -13,9 +13,7 @@ import threading
 import time
 from typing import Any, Optional
 
-
 DEFAULT_TTL_SECONDS = 300  # 5 minutes
-
 
 class TTLCache:
     def __init__(self, ttl_seconds: int = DEFAULT_TTL_SECONDS):

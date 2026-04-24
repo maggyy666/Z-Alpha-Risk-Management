@@ -23,6 +23,7 @@ COPY pyproject.toml poetry.lock ./
 RUN poetry install --without dev --no-root
 
 COPY backend/ ./backend/
+COPY data/ ./data/
 
 EXPOSE 8000
 WORKDIR /app/backend

@@ -20,6 +20,10 @@ from database.models.portfolio import Portfolio
 from database.models.user import User
 
 
+import logging
+
+logger = logging.getLogger(__name__)
+
 _N_VOL = 21
 _N_SPR = 10
 
@@ -182,7 +186,7 @@ def liquidity_metrics(
         # Sanity check for debugging
         if adv_usd > 0 and adv_sh > 0:
             last_price = _get_series(db, p["ticker"], "close_price", 1)[-1] if len(_get_series(db, p["ticker"], "close_price", 1)) > 0 else 0
-            print(f"[LIQ-SANITY] {p['ticker']}: ADV_sh={adv_sh:,.0f}, ADV$={adv_usd/1e6:.1f}M, Px*ADV_sh={(last_price*adv_sh)/1e6:.1f}M")
+            logger.debug(f"[LIQ-SANITY] {p['ticker']}: ADV_sh={adv_sh:,.0f}, ADV$={adv_usd/1e6:.1f}M, Px*ADV_sh={(last_price*adv_sh)/1e6:.1f}M")
 
         v_cat = "High" if adv_usd >= VOL_THR_HIGH_USD else ("Medium" if adv_usd >= VOL_THR_MED_USD else "Low")
         v_scr = _vol_score_usd(adv_usd)

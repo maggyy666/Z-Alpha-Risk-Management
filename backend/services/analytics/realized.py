@@ -18,6 +18,9 @@ from sqlalchemy.orm import Session
 from quant.realized import compute_realized_metrics
 from quant.rolling import rolling_metric
 
+import logging
+
+logger = logging.getLogger(__name__)
 
 class RealizedAnalytics:
     def __init__(self, ds_ref):
@@ -26,35 +29,35 @@ class RealizedAnalytics:
     def get_realized_metrics(self, db: Session, username: str = "admin") -> Dict[str, Any]:
         """Realized risk metrics per ticker + PORTFOLIO, aligned to SPY, NaN-tolerant."""
         ds = self._ds
-        print(f"[REALIZED-METRICS] Starting realized metrics for user: {username}")
+        logger.debug(f"[REALIZED-METRICS] Starting realized metrics for user: {username}")
         try:
             cache_key = ds._get_cache_key("realized_metrics", username)
             cached = ds._get_from_cache(cache_key)
             if cached:
                 return cached
 
-            print("[REALIZED-METRICS] Getting portfolio snapshot...")
+            logger.debug("[REALIZED-METRICS] Getting portfolio snapshot...")
             portfolio_positions, ok = ds._portfolio_snapshot(db, username)
             if not ok or not portfolio_positions:
-                print("[REALIZED-METRICS] No portfolio positions found")
+                logger.debug("[REALIZED-METRICS] No portfolio positions found")
                 return {"metrics": []}
 
             portfolio_tickers = [p["ticker"] for p in portfolio_positions]
             weights_map = {p["ticker"]: p["weight_frac"] for p in portfolio_positions}
-            print(f"[REALIZED-METRICS] Portfolio tickers: {portfolio_tickers}")
+            logger.debug(f"[REALIZED-METRICS] Portfolio tickers: {portfolio_tickers}")
 
             needed = portfolio_tickers + ["SPY"]
-            print(f"[REALIZED-METRICS] Getting return series for: {needed}")
+            logger.debug(f"[REALIZED-METRICS] Getting return series for: {needed}")
             ret_map = ds._get_return_series_map(db, needed, lookback_days=252 * 2)
             dates_ref, M, active = ds._align_on_reference(ret_map, needed, ref_symbol="SPY", min_obs=30)
-            print(f"[REALIZED-METRICS] Aligned data shape: {M.shape}, active symbols: {active}")
+            logger.debug(f"[REALIZED-METRICS] Aligned data shape: {M.shape}, active symbols: {active}")
             if (
                 M.size == 0
                 or len(dates_ref) < 30
                 or "SPY" not in ret_map
                 or len(ret_map["SPY"][0]) == 0
             ):
-                print("[REALIZED-METRICS] Insufficient data, using sample metrics")
+                logger.debug("[REALIZED-METRICS] Insufficient data, using sample metrics")
                 return self._get_sample_realized_metrics(portfolio_tickers)
 
             spy_dates, spy_ret = ret_map["SPY"]
@@ -84,7 +87,7 @@ class RealizedAnalytics:
                     if not res.empty and sym in res.index:
                         metrics_frames.append(res.loc[[sym]])
                 except Exception as e:
-                    print(f"[realized] {sym} failed: {e}")
+                    logger.debug(f"[realized] {sym} failed: {e}")
                     continue
 
             # PORTFOLIO series with day-by-day weight coverage renormalization
@@ -114,7 +117,7 @@ class RealizedAnalytics:
                         if not res_p.empty and "PORTFOLIO" in res_p.index:
                             metrics_frames.append(res_p.loc[["PORTFOLIO"]])
                     except Exception as e:
-                        print(f"[realized] PORTFOLIO failed: {e}")
+                        logger.debug(f"[realized] PORTFOLIO failed: {e}")
 
             if not metrics_frames:
                 return self._get_sample_realized_metrics(portfolio_tickers)
@@ -154,7 +157,7 @@ class RealizedAnalytics:
             ds._set_cache(cache_key, result)
             return result
         except Exception as e:
-            print(f"[realized] Global error: {e}")
+            logger.debug(f"[realized] Global error: {e}")
             portfolio_tickers = portfolio_tickers if "portfolio_tickers" in locals() else []
             return self._get_sample_realized_metrics(portfolio_tickers)
 
@@ -168,8 +171,8 @@ class RealizedAnalytics:
     ) -> Dict[str, Any]:
         """Rolling metric series (vol / sharpe / return / maxdd / beta) for charting."""
         ds = self._ds
-        print(f"[ROLLING-METRIC] Starting rolling metric calculation for user: {username}")
-        print(f"[ROLLING-METRIC] Metric: {metric}, window: {window}, tickers: {tickers}")
+        logger.debug(f"[ROLLING-METRIC] Starting rolling metric calculation for user: {username}")
+        logger.debug(f"[ROLLING-METRIC] Metric: {metric}, window: {window}, tickers: {tickers}")
         try:
             if tickers is None:
                 tickers = ["PORTFOLIO"]
@@ -179,28 +182,28 @@ class RealizedAnalytics:
             )
             cached_data = ds._get_from_cache(cache_key)
             if cached_data:
-                print(f"Using cached rolling metric for user: {username}")
+                logger.info(f"Using cached rolling metric for user: {username}")
                 return cached_data
 
-            print(f"Getting rolling metric for user: {username}, tickers: {tickers}")
+            logger.info(f"Getting rolling metric for user: {username}, tickers: {tickers}")
 
             portfolio_tickers = ds.get_user_portfolio_tickers(db, username)
             static_tickers = ds.get_static_tickers()
             all_tickers = portfolio_tickers + static_tickers + ["SPY"]
 
             ret_map = ds._get_return_series_map(db, all_tickers, lookback_days=252 * 5)
-            print(f"Ret map keys: {list(ret_map.keys())}")
+            logger.info(f"Ret map keys: {list(ret_map.keys())}")
 
             dates, R, active = ds._align_on_reference(
                 ret_map, all_tickers, ref_symbol="SPY", min_obs=40
             )
-            print(f"Align result - dates: {len(dates)}, R shape: {R.shape}, active: {active}")
+            logger.info(f"Align result - dates: {len(dates)}, R shape: {R.shape}, active: {active}")
             if R.size == 0 or len(dates) < 40:
                 return {"error": "Insufficient overlapping history (vs SPY)"}
 
             ret_df = pd.DataFrame(R, index=dates, columns=active)
-            print(f"ret_df shape: {ret_df.shape}")
-            print(f"ret_df columns: {list(ret_df.columns)}")
+            logger.info(f"ret_df shape: {ret_df.shape}")
+            logger.info(f"ret_df columns: {list(ret_df.columns)}")
 
             # Add SPY column if needed for beta calculation
             if metric == "beta" and "SPY" not in ret_df.columns and "SPY" in ret_map:
@@ -211,28 +214,28 @@ class RealizedAnalytics:
                     if date in spy_idx:
                         spy_series.iloc[i] = spy_returns[spy_idx[date]]
                 ret_df["SPY"] = spy_series.values
-                print(f"Added SPY column to ret_df, columns: {list(ret_df.columns)}")
+                logger.info(f"Added SPY column to ret_df, columns: {list(ret_df.columns)}")
 
             if "PORTFOLIO" in tickers:
                 portfolio_weights = {
                     it["ticker"]: it["weight_frac"]
                     for it in ds.get_concentration_risk_data(db, username).get("portfolio_data", [])
                 }
-                print(f"Portfolio weights: {portfolio_weights}")
-                print(f"Active symbols: {active}")
+                logger.info(f"Portfolio weights: {portfolio_weights}")
+                logger.info(f"Active symbols: {active}")
                 common_symbols = set(portfolio_weights.keys()) & set(active)
-                print(f"Common symbols: {common_symbols}")
+                logger.info(f"Common symbols: {common_symbols}")
 
                 try:
                     dates_p, rp = ds._portfolio_series_with_coverage(
                         dates, R, portfolio_weights, active, min_weight_cov=0.60
                     )
-                    print(f"Portfolio series - dates: {len(dates_p)}, returns: {len(rp)}")
+                    logger.info(f"Portfolio series - dates: {len(dates_p)}, returns: {len(rp)}")
                     port = pd.Series(index=dates, dtype=float)
                     port.loc[dates_p] = rp
                     ret_df["PORTFOLIO"] = port.values
                 except Exception as e:
-                    print(f"Error in portfolio series calculation: {e}")
+                    logger.error(f"Error in portfolio series calculation: {e}")
                     portfolio_returns = np.zeros(len(R))
                     for i, ticker_name in enumerate(active):
                         if ticker_name in portfolio_weights:
@@ -257,7 +260,7 @@ class RealizedAnalytics:
                         ]
                         datasets.append({"ticker": ticker, "dates": dates_s, "values": values})
                 except Exception as e:
-                    print(f"Error computing rolling metric for {ticker}: {e}")
+                    logger.error(f"Error computing rolling metric for {ticker}: {e}")
                     continue
 
             common_date_range = ds._get_common_date_range(db, all_tickers)
@@ -271,12 +274,12 @@ class RealizedAnalytics:
             ds._set_cache(cache_key, result)
             return result
         except Exception as e:
-            print(f"Error getting rolling metric: {e}")
+            logger.error(f"Error getting rolling metric: {e}")
             return {"error": str(e)}
 
     def _get_sample_realized_metrics(self, portfolio_tickers: List[str]) -> Dict[str, Any]:
         """Fallback sample row used when history is too thin for real computation."""
-        print(f"Debug: Using sample realized metrics for {portfolio_tickers}")
+        logger.debug(f"Debug: Using sample realized metrics for {portfolio_tickers}")
 
         metrics_list: List[Dict[str, Any]] = [
             {

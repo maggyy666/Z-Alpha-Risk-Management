@@ -25,6 +25,9 @@ from services.cache import TTLCache
 from services.ibkr_service import IBKRService
 from services.market_data_service import MarketDataService
 
+import logging
+
+logger = logging.getLogger(__name__)
 
 class PortfolioService:
     def __init__(
@@ -37,9 +40,6 @@ class PortfolioService:
         self.market_data = market_data
         self.cache = cache
 
-    # ------------------------------------------------------------------
-    # Read
-    # ------------------------------------------------------------------
     def get_user_portfolio_tickers(self, db: Session, username: str = "admin") -> List[str]:
         """Return ticker symbols currently held by the user."""
         user = db.query(User).filter(User.username == username).first()
@@ -48,9 +48,6 @@ class PortfolioService:
         items = db.query(Portfolio).filter(Portfolio.user_id == user.id).all()
         return [item.ticker_symbol for item in items]
 
-    # ------------------------------------------------------------------
-    # Write
-    # ------------------------------------------------------------------
     def add_ticker(
         self, db: Session, username: str, ticker: str, shares: int
     ) -> Dict[str, Any]:
@@ -74,7 +71,7 @@ class PortfolioService:
             if not self._check_ibkr_connection():
                 return {"error": "IBKR connection unavailable"}
 
-            print(f"IBKR available, fetching data for {ticker}")
+            logger.info(f"IBKR available, fetching data for {ticker}")
             if not self.market_data.fetch_and_store_historical_data(db, ticker):
                 return {"error": f"Failed to fetch data for {ticker} from IBKR"}
 
@@ -83,7 +80,7 @@ class PortfolioService:
 
             self._update_portfolio_json(username, db)
             removed = self.cache.clear(f"*{username}*")
-            print(f"[cache] cleared {removed} entries for user {username}")
+            logger.debug(f"[cache] cleared {removed} entries for user {username}")
 
             return {
                 "success": True,
@@ -94,7 +91,7 @@ class PortfolioService:
             }
         except Exception as e:
             db.rollback()
-            print(f"Error adding ticker to portfolio: {e}")
+            logger.error(f"Error adding ticker to portfolio: {e}")
             return {"error": str(e)}
 
     def remove_ticker(self, db: Session, username: str, ticker: str) -> Dict[str, Any]:
@@ -119,7 +116,7 @@ class PortfolioService:
 
             self._update_portfolio_json(username, db)
             removed = self.cache.clear(f"*{username}*")
-            print(f"[cache] cleared {removed} entries for user {username}")
+            logger.debug(f"[cache] cleared {removed} entries for user {username}")
 
             return {
                 "success": True,
@@ -128,12 +125,9 @@ class PortfolioService:
             }
         except Exception as e:
             db.rollback()
-            print(f"Error removing ticker from portfolio: {e}")
+            logger.error(f"Error removing ticker from portfolio: {e}")
             return {"error": str(e)}
 
-    # ------------------------------------------------------------------
-    # Fixture sync
-    # ------------------------------------------------------------------
     def _update_portfolio_json(self, username: str, db: Session) -> None:
         """Mirror the user's portfolio to data/{username}_portfolio.json so that
         re-seeding from fixture stays in sync with the latest DB state."""
@@ -151,11 +145,8 @@ class PortfolioService:
             with open(json_file, "w", encoding="utf-8") as f:
                 json.dump(json_data, f, indent=2)
         except Exception as e:
-            print(f"Error updating portfolio JSON: {e}")
+            logger.error(f"Error updating portfolio JSON: {e}")
 
-    # ------------------------------------------------------------------
-    # Search (yfinance fallback -- IBKR has no symbol search endpoint)
-    # ------------------------------------------------------------------
     def search_tickers(self, query: str) -> List[Dict[str, str]]:
         """Look up tickers by symbol prefix across a few major exchanges.
         Uses yfinance because IBKR does not expose a symbol-search API."""
@@ -196,12 +187,9 @@ class PortfolioService:
 
             return suggestions
         except Exception as e:
-            print(f"Error searching tickers: {e}")
+            logger.error(f"Error searching tickers: {e}")
             return []
 
-    # ------------------------------------------------------------------
-    # Internal: IBKR connectivity probe (used before add_ticker)
-    # ------------------------------------------------------------------
     def _check_ibkr_connection(self) -> bool:
         """Spawn a short-lived Poetry subprocess to probe IBKR TWS without
         touching the main thread's IBKR connection state."""
@@ -215,12 +203,12 @@ try:
     from services.ibkr_service import IBKRService
     ibkr = IBKRService()
     connected = ibkr.connect(timeout=10)
-    print(f"Connected: {connected}")
+    logger.info(f"Connected: {connected}")
     if connected:
         ibkr.disconnect()
     sys.exit(0 if connected else 1)
 except Exception as e:
-    print(f"Error: {e}")
+    logger.error(f"Error: {e}")
     sys.exit(1)
 """
             test_file = "test_ibkr_connection.py"
@@ -244,5 +232,5 @@ except Exception as e:
                 if os.path.exists(test_file):
                     os.remove(test_file)
         except Exception as e:
-            print(f"Error checking IBKR connection: {e}")
+            logger.error(f"Error checking IBKR connection: {e}")
             return False

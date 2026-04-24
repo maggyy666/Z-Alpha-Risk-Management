@@ -38,6 +38,9 @@ poetry.lock
 *.sqlite
 *.sqlite3
 
+# K8s secrets (never commit the real file -- only the .example template)
+deploy/01-secrets.yaml
+
 # IDE
 .vscode/
 .idea/

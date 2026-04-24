@@ -1,0 +1,39 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: frontend
+  namespace: zalpha
+spec:
+  type: LoadBalancer
+  selector: { app: frontend }
+  ports:
+    - port: 3000
+      targetPort: 3000
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: frontend
+  namespace: zalpha
+spec:
+  replicas: 1
+  selector:
+    matchLabels: { app: frontend }
+  template:
+    metadata:
+      labels: { app: frontend }
+    spec:
+      containers:
+        - name: frontend
+          image: zalpha-frontend:local
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 3000
+          env:
+            - name: REACT_APP_API_BASE
+              value: http://localhost:8000
+            - name: REACT_APP_USER_API_BASE
+              value: http://localhost:8001
+          readinessProbe:
+            tcpSocket: { port: 3000 }
+            periodSeconds: 3

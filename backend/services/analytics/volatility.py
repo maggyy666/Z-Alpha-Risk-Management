@@ -23,16 +23,16 @@ from quant.volatility import forecast_sigma
 from quant.weights import inverse_vol_allocation
 
 # Module-level memo cache for forecast_sigma calls keyed by (symbol, model, returns hash).
-_vol_cache: Dict[str, float] = {}
+import logging
 
+logger = logging.getLogger(__name__)
+
+_vol_cache: Dict[str, float] = {}
 
 class VolatilityAnalytics:
     def __init__(self, ds_ref):
         self._ds = ds_ref
 
-    # ------------------------------------------------------------------
-    # Per-ticker + portfolio-level forecast metrics
-    # ------------------------------------------------------------------
     def _get_cached_volatility(self, symbol: str, model: str, returns: np.ndarray) -> float:
         cache_key = f"{symbol}_{model}_{hash(returns.tobytes())}"
         if cache_key in _vol_cache:
@@ -57,31 +57,31 @@ class VolatilityAnalytics:
                 .all()
             )
             if len(historical_data) < 30:
-                print(f"Not enough data for {symbol} ({len(historical_data)} records)")
+                logger.info(f"Not enough data for {symbol} ({len(historical_data)} records)")
                 return {}
 
-            print(f"{symbol}: Found {len(historical_data)} historical records")
+            logger.info(f"{symbol}: Found {len(historical_data)} historical records")
             historical_data.sort(key=lambda x: x.date)
             prices = [row.close_price for row in historical_data]
-            print(f"{symbol}: Prices range: {min(prices):.2f} - {max(prices):.2f}")
+            logger.info(f"{symbol}: Prices range: {min(prices):.2f} - {max(prices):.2f}")
 
             returns = np.diff(np.log(prices))
-            print(f"{symbol}: Returns shape: {returns.shape}, mean: {np.mean(returns):.6f}")
+            logger.info(f"{symbol}: Returns shape: {returns.shape}, mean: {np.mean(returns):.6f}")
             if len(returns) < 30:
-                print(f"Not enough returns for {symbol}")
+                logger.info(f"Not enough returns for {symbol}")
                 return {}
 
             stats = basic_stats(returns, risk_free_annual)
             mean_daily = stats["mean_daily"]
             sharpe_ratio = stats["sharpe_ratio"]
 
-            print(f"Calculating {forecast_model} volatility for returns shape: {returns.shape}")
+            logger.info(f"Calculating {forecast_model} volatility for returns shape: {returns.shape}")
             forecast_vol = self._get_cached_volatility(symbol, forecast_model, returns) * 100
-            print(f"{symbol}: Calculated volatility: {forecast_vol:.2f}%")
+            logger.info(f"{symbol}: Calculated volatility: {forecast_vol:.2f}%")
 
             mean_annual = mean_daily * 252
             last_price = float(historical_data[-1].close_price)
-            print(f"Using database price for {symbol}: ${last_price}")
+            logger.info(f"Using database price for {symbol}: ${last_price}")
 
             metrics = {
                 "volatility_pct": forecast_vol,
@@ -90,10 +90,10 @@ class VolatilityAnalytics:
                 "sharpe_ratio": sharpe_ratio,
                 "last_price": last_price,
             }
-            print(f"{symbol} metrics: {metrics}")
+            logger.info(f"{symbol} metrics: {metrics}")
             return metrics
         except Exception as e:
-            print(f"Error calculating metrics for {symbol}: {e}")
+            logger.error(f"Error calculating metrics for {symbol}: {e}")
             return {}
 
     def get_portfolio_volatility_data(
@@ -116,16 +116,16 @@ class VolatilityAnalytics:
             )
             cached_data = ds._get_from_cache(cache_key)
             if cached_data:
-                print(f"Using cached portfolio volatility data for user: {username}")
+                logger.info(f"Using cached portfolio volatility data for user: {username}")
                 return cached_data
 
-            print(f"Getting portfolio volatility data for user: {username}")
+            logger.info(f"Getting portfolio volatility data for user: {username}")
 
             portfolio_data: List[Dict[str, Any]] = []
 
             portfolio_tickers = ds.get_user_portfolio_tickers(db, username)
             if not portfolio_tickers:
-                print(f"No portfolio tickers found for user {username}")
+                logger.info(f"No portfolio tickers found for user {username}")
                 result: List[Dict[str, Any]] = []
                 ds._set_cache(cache_key, result)
                 return result
@@ -135,9 +135,9 @@ class VolatilityAnalytics:
             shares_map = {item.ticker_symbol: item.shares for item in portfolio_items}
 
             for symbol in portfolio_tickers:
-                print(f"Processing {symbol}...")
+                logger.info(f"Processing {symbol}...")
                 m = self.calculate_volatility_metrics(db, symbol, forecast_model, risk_free_annual)
-                print(f"{symbol} metrics: {m}")
+                logger.info(f"{symbol} metrics: {m}")
                 if m:
                     shares = shares_map.get(symbol, 1000)
                     portfolio_data.append(
@@ -151,7 +151,7 @@ class VolatilityAnalytics:
                         }
                     )
                 else:
-                    print(f"No metrics for {symbol}")
+                    logger.info(f"No metrics for {symbol}")
 
             if not portfolio_data:
                 result = []
@@ -187,7 +187,7 @@ class VolatilityAnalytics:
             ds._set_cache(cache_key, portfolio_data)
             return portfolio_data
         except Exception as e:
-            print(f"Error getting portfolio volatility data: {e}")
+            logger.error(f"Error getting portfolio volatility data: {e}")
             error_result: List[Dict[str, Any]] = []
             try:
                 ds._set_cache(cache_key, error_result)
@@ -195,9 +195,6 @@ class VolatilityAnalytics:
                 pass
             return error_result
 
-    # ------------------------------------------------------------------
-    # Covariance matrix: Σ = D ρ D with PD enforcement
-    # ------------------------------------------------------------------
     def build_covariance_matrix(
         self, db: Session, tickers: List[str], vol_model: str = "EWMA (5D)"
     ) -> np.ndarray:
@@ -207,7 +204,7 @@ class VolatilityAnalytics:
         if not tickers:
             return np.empty((0, 0))
 
-        print(f"[COV-MATRIX] Building for tickers: {tickers}")
+        logger.debug(f"[COV-MATRIX] Building for tickers: {tickers}")
 
         vol_vec: List[float] = []
         for ticker in tickers:
@@ -224,7 +221,7 @@ class VolatilityAnalytics:
         )
 
         if R.size == 0 or len(dates) < 60:
-            print("Warning: Insufficient data for correlation, using diagonal matrix")
+            logger.warning("Warning: Insufficient data for correlation, using diagonal matrix")
             corr_matrix = np.eye(len(tickers))
         else:
             df = pd.DataFrame(R, index=dates, columns=active)
@@ -243,12 +240,9 @@ class VolatilityAnalytics:
             corr_matrix = C
 
         cov_matrix = build_cov(vol_vec_arr, corr_matrix)
-        print(f"[COV-MATRIX] Final covariance matrix shape: {cov_matrix.shape}")
+        logger.debug(f"[COV-MATRIX] Final covariance matrix shape: {cov_matrix.shape}")
         return cov_matrix
 
-    # ------------------------------------------------------------------
-    # Forecast risk contribution (marginal + total)
-    # ------------------------------------------------------------------
     def get_forecast_risk_contribution(
         self,
         db: Session,
@@ -259,11 +253,10 @@ class VolatilityAnalytics:
     ) -> Dict[str, Any]:
         ds = self._ds
         try:
-            print(
+            logger.debug(
                 f"[FORECAST-RISK] Starting with tickers: {tickers}, "
                 f"include_portfolio_bar: {include_portfolio_bar}"
             )
-
             conc = ds.get_concentration_risk_data(db, username)
             if "error" in conc:
                 return {"error": conc["error"]}
@@ -277,14 +270,14 @@ class VolatilityAnalytics:
             full_w = np.array([float(p["weight_frac"]) for p in all_positions], dtype=float)
             full_w = full_w / full_w.sum()
 
-            print(f"[FORECAST-RISK] Full portfolio - tickers: {full_tickers}, weights: {full_w}")
+            logger.debug(f"[FORECAST-RISK] Full portfolio - tickers: {full_tickers}, weights: {full_w}")
 
             cov_full = self.build_covariance_matrix(db, full_tickers, vol_model)
             if cov_full.size == 0:
                 return {"error": "Failed to build full covariance matrix"}
 
             _, _, sigma_full = risk_contribution(full_w, cov_full)
-            print(f"[FORECAST-RISK] Full portfolio volatility: {sigma_full}")
+            logger.debug(f"[FORECAST-RISK] Full portfolio volatility: {sigma_full}")
 
             tickers_out = [item["ticker"] for item in portfolio_data]
             weights = np.array([float(item["weight_frac"]) for item in portfolio_data], dtype=float)
@@ -294,24 +287,24 @@ class VolatilityAnalytics:
                 return {"error": "Invalid weights (sum <= 0)"}
             weights = weights / s
 
-            print(f"[FORECAST-RISK] Using tickers: {tickers_out}, weights: {weights}")
+            logger.debug(f"[FORECAST-RISK] Using tickers: {tickers_out}, weights: {weights}")
 
             cov_matrix = self.build_covariance_matrix(db, tickers_out, vol_model)
             if cov_matrix.size == 0:
                 return {"error": "Failed to build covariance matrix"}
 
-            print(f"[FORECAST-RISK] Covariance matrix shape: {cov_matrix.shape}")
-            print(f"[FORECAST-RISK] Weights shape: {weights.shape}")
+            logger.debug(f"[FORECAST-RISK] Covariance matrix shape: {cov_matrix.shape}")
+            logger.debug(f"[FORECAST-RISK] Weights shape: {weights.shape}")
 
             try:
                 mrc, pct_rc, sigma_p = risk_contribution(weights, cov_matrix)
                 risk_data = {"marginal_rc": mrc, "total_rc_pct": pct_rc, "portfolio_vol": sigma_p}
-                print(
+                logger.debug(
                     f"[FORECAST-RISK] Risk contributions calculated - MRC: {mrc}, "
                     f"Total RC: {pct_rc}, Portfolio Vol: {sigma_p}"
                 )
             except ValueError as e:
-                print(f"[FORECAST-RISK] Error in risk_contribution: {e}")
+                logger.debug(f"[FORECAST-RISK] Error in risk_contribution: {e}")
                 return {"error": str(e)}
 
             marginal_rc = risk_data["marginal_rc"]
@@ -336,7 +329,7 @@ class VolatilityAnalytics:
                     "total_rc_pct": 100.0,
                     "weight_pct": 100.0,
                 }
-                print(f"[FORECAST-RISK] Adding PORTFOLIO row (full portfolio): {portfolio_row}")
+                logger.debug(f"[FORECAST-RISK] Adding PORTFOLIO row (full portfolio): {portfolio_row}")
                 chart_data.insert(0, portfolio_row)
 
             result = {
@@ -348,31 +341,28 @@ class VolatilityAnalytics:
                 "vol_model": vol_model,
                 "portfolio_vol_pct": float(risk_data["portfolio_vol"] * 100.0),
             }
-            print(f"[FORECAST-RISK] Final result - tickers: {result['tickers']}")
-            print(f"[FORECAST-RISK] Final result - marginal_rc_pct: {result['marginal_rc_pct']}")
+            logger.debug(f"[FORECAST-RISK] Final result - tickers: {result['tickers']}")
+            logger.debug(f"[FORECAST-RISK] Final result - marginal_rc_pct: {result['marginal_rc_pct']}")
             return result
         except Exception as e:
-            print(f"Error calculating forecast risk contribution: {e}")
+            logger.error(f"Error calculating forecast risk contribution: {e}")
             return {"error": str(e)}
 
-    # ------------------------------------------------------------------
-    # Forecast metrics table: EWMA5/20, GARCH, EGARCH + VaR/CVaR
-    # ------------------------------------------------------------------
     def get_forecast_metrics(
         self, db: Session, username: str = "admin", conf_level: float = 0.95
     ) -> Dict[str, Any]:
         ds = self._ds
-        print(
+        logger.debug(
             f"[FORECAST-METRICS] Starting forecast metrics for user: {username}, "
             f"conf_level: {conf_level}"
         )
         try:
-            print("[FORECAST-METRICS] Getting portfolio tickers...")
+            logger.debug("[FORECAST-METRICS] Getting portfolio tickers...")
             tickers = ds.get_user_portfolio_tickers(db, username)
             if not tickers:
-                print("[FORECAST-METRICS] No portfolio tickers found")
+                logger.debug("[FORECAST-METRICS] No portfolio tickers found")
                 return {"error": "No portfolio tickers found"}
-            print(f"[FORECAST-METRICS] Portfolio tickers: {tickers}")
+            logger.debug(f"[FORECAST-METRICS] Portfolio tickers: {tickers}")
 
             user_id = db.query(User.id).filter(User.username == username).scalar()
             if not user_id:
@@ -386,26 +376,25 @@ class VolatilityAnalytics:
             metrics_data: List[Dict[str, Any]] = []
 
             for ticker in tickers:
-                print(f"[FORECAST-METRICS] Processing {ticker}...")
+                logger.debug(f"[FORECAST-METRICS] Processing {ticker}...")
                 dates, closes = ds._get_close_series(db, ticker)
                 if len(closes) < 250:
-                    print(f"[FORECAST-METRICS] {ticker}: Insufficient data ({len(closes)} < 250)")
+                    logger.debug(f"[FORECAST-METRICS] {ticker}: Insufficient data ({len(closes)} < 250)")
                     continue
 
                 returns = np.diff(np.log(closes))
                 if len(returns) < 250:
                     continue
 
-                print(f"[FORECAST-METRICS] {ticker}: Calculating volatilities...")
+                logger.debug(f"[FORECAST-METRICS] {ticker}: Calculating volatilities...")
                 ewma5 = forecast_sigma(returns, "EWMA (5D)") * 100
                 ewma20 = forecast_sigma(returns, "EWMA (20D)") * 100
                 garch_vol = forecast_sigma(returns, "GARCH") * 100
                 egarch_vol = forecast_sigma(returns, "EGARCH") * 100
-                print(
+                logger.debug(
                     f"[FORECAST-METRICS] {ticker}: EWMA5={ewma5:.2f}%, EWMA20={ewma20:.2f}%, "
                     f"GARCH={garch_vol:.2f}%, EGARCH={egarch_vol:.2f}%"
                 )
-
                 stats = basic_stats(returns)
                 sigma_d = stats["std_daily"]
                 mu_d = stats["mean_daily"]
@@ -434,12 +423,9 @@ class VolatilityAnalytics:
             metrics_data.sort(key=lambda x: x["ticker"])
             return {"metrics": metrics_data, "conf_level": conf_level}
         except Exception as e:
-            print(f"Error calculating forecast metrics: {e}")
+            logger.error(f"Error calculating forecast metrics: {e}")
             return {"error": str(e)}
 
-    # ------------------------------------------------------------------
-    # Rolling forecast line series for charts
-    # ------------------------------------------------------------------
     def get_rolling_forecast(
         self,
         db: Session,
@@ -450,8 +436,8 @@ class VolatilityAnalytics:
     ) -> Any:
         """Return list of {date, ticker, vol_pct} suitable for line charts."""
         ds = self._ds
-        print(f"[ROLLING-FORECAST] Starting rolling forecast for user: {username}")
-        print(f"[ROLLING-FORECAST] Tickers: {tickers}, model: {model}, window: {window}")
+        logger.debug(f"[ROLLING-FORECAST] Starting rolling forecast for user: {username}")
+        logger.debug(f"[ROLLING-FORECAST] Tickers: {tickers}, model: {model}, window: {window}")
         try:
             if not tickers:
                 return []
@@ -488,11 +474,10 @@ class VolatilityAnalytics:
                         dates_ref, R, w_map, active_aligned, min_weight_cov=0.60
                     )
                     common_dates = set(dates_p)
-                    print(
+                    logger.debug(
                         f"[ROLLING-FORECAST] Using portfolio dates as common_dates: "
                         f"{len(common_dates)} dates"
                     )
-
             if common_dates is None:
                 return {"data": [], "model": model, "window": window}
 
@@ -563,5 +548,5 @@ class VolatilityAnalytics:
                 "common_date_range": common_date_range,
             }
         except Exception as e:
-            print(f"Error calculating rolling forecast: {e}")
+            logger.error(f"Error calculating rolling forecast: {e}")
             return []

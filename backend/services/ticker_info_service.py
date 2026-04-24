@@ -14,13 +14,15 @@ from sqlalchemy.orm import Session
 from database.models.ticker import TickerInfo
 from services.ibkr_service import IBKRService
 
+import logging
+
+logger = logging.getLogger(__name__)
 
 _ETF_HINTS = frozenset({
     "etf", "trust", "fund", "treasury", "ultra", "proshares", "ishares",
     "vanguard", "spy", "qqq", "iwm", "mtum", "vlue", "qual", "sgov",
     "ulty", "bull",
 })
-
 
 class TickerInfoService:
     def __init__(self, ibkr_service: IBKRService):
@@ -44,14 +46,14 @@ class TickerInfoService:
         try:
             info = db.query(TickerInfo).filter(TickerInfo.symbol == symbol).first()
             if info and info.updated_at and (datetime.now(timezone.utc) - info.updated_at).days < 30:
-                print(f"[cache] Using cached ticker info for {symbol}")
+                logger.debug(f"[cache] Using cached ticker info for {symbol}")
                 return info
 
             fundamental_data = preloaded
 
             # ETF preload -> skip IBKR, go straight to yfinance
             if fundamental_data and fundamental_data.get("type") == "ETF":
-                print(f"[etf] {symbol} is ETF -> skipping IBKR, going straight to yfinance")
+                logger.debug(f"[etf] {symbol} is ETF -> skipping IBKR, going straight to yfinance")
                 sector, industry = self.ibkr_service._get_sector_industry_external(symbol)
                 market_cap = self.ibkr_service._get_market_cap_external(symbol)
                 fundamental_data = {
@@ -88,9 +90,9 @@ class TickerInfoService:
             info.updated_at = datetime.now(timezone.utc)
 
             db.commit()
-            print(f"[ok] Updated ticker info for {symbol}: {fundamental_data}")
+            logger.debug(f"[ok] Updated ticker info for {symbol}: {fundamental_data}")
             return info
         except Exception as e:
-            print(f"Error ensuring ticker info for {symbol}: {e}")
+            logger.error(f"Error ensuring ticker info for {symbol}: {e}")
             db.rollback()
             return None
