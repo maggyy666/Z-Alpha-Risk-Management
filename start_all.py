@@ -9,6 +9,91 @@ import os
 import time
 import signal
 import shutil
+import datetime
+from pathlib import Path
+
+
+def load_env_file():
+    """Load key=value pairs from .env or config.env.example into os.environ.
+    Looks first for .env (real secrets), falls back to config.env.example only
+    so that the script can explain to the user what is missing."""
+    for candidate in (".env", "config.env"):
+        path = Path(candidate)
+        if not path.exists():
+            continue
+        print(f"Loading environment from {candidate}")
+        with path.open("r", encoding="utf-8") as f:
+            for line in f:
+                line = line.strip()
+                if not line or line.startswith("#"):
+                    continue
+                if "=" not in line:
+                    continue
+                key, _, value = line.partition("=")
+                key = key.strip()
+                value = value.strip().split("#", 1)[0].strip()
+                if value.startswith('"') and value.endswith('"'):
+                    value = value[1:-1]
+                # Do not overwrite a value already set in the real environment
+                os.environ.setdefault(key, value)
+        return True
+    print("WARNING: no .env file found. Copy config.env.example to .env and edit.")
+    return False
+
+
+class _Tee:
+    """Duplicate writes to the original stream AND a log file."""
+    def __init__(self, original, log_file):
+        self.original = original
+        self.log_file = log_file
+
+    def write(self, data):
+        self.original.write(data)
+        try:
+            self.log_file.write(data)
+            self.log_file.flush()
+        except Exception:
+            pass
+        return len(data) if data is not None else 0
+
+    def flush(self):
+        try:
+            self.original.flush()
+        except Exception:
+            pass
+        try:
+            self.log_file.flush()
+        except Exception:
+            pass
+
+    def __getattr__(self, name):
+        return getattr(self.original, name)
+
+
+def setup_logging():
+    """Mirror stdout+stderr of this process (and its subprocess children via
+    run_command streaming) into logs/run_YYYYMMDD_HHMMSS.log. Keeps only the
+    last 20 run logs so the directory does not grow forever."""
+    logs_dir = Path("logs")
+    logs_dir.mkdir(exist_ok=True)
+
+    ts = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+    log_path = logs_dir / f"run_{ts}.log"
+    log_file = open(log_path, "w", encoding="utf-8", errors="replace", buffering=1)
+
+    sys.stdout = _Tee(sys.stdout, log_file)
+    sys.stderr = _Tee(sys.stderr, log_file)
+
+    # Rotate: keep only the 20 most recent run_*.log files
+    runs = sorted(logs_dir.glob("run_*.log"), key=lambda p: p.stat().st_mtime)
+    for old in runs[:-20]:
+        try:
+            old.unlink()
+        except Exception:
+            pass
+
+    print(f"=== Run started {ts} | log file: {log_path} ===")
+    return log_file
 
 # Import requests only when needed, using poetry environment
 def get_requests():
@@ -37,9 +122,19 @@ def get_requests():
         import requests 
         return requests
 
-def run_command(command, cwd=None, background=False):
-    """Run a command and return the process"""
+def run_command(command, cwd=None, background=False, env=None):
+    """Run a command. In foreground, subprocess stdout/stderr is streamed line-by-line
+    through print() so it flows into the Tee (terminal + log file).
+
+    Forces UTF-8 for the child process so that emoji/non-ASCII prints don't crash
+    on Windows (default cp1250)."""
     print(f"Running: {command}")
+    # Force UTF-8 stdout/stderr in the child (fixes Windows cp1250 charmap errors)
+    utf8_env = {"PYTHONIOENCODING": "utf-8", "PYTHONUTF8": "1"}
+    if env:
+        merged_env = {**os.environ, **utf8_env, **env}
+    else:
+        merged_env = {**os.environ, **utf8_env}
     try:
         if background:
             process = subprocess.Popen(
@@ -47,18 +142,60 @@ def run_command(command, cwd=None, background=False):
                 shell=True,
                 cwd=cwd,
                 stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE
+                stderr=subprocess.PIPE,
+                env=merged_env,
             )
             return process
-        else:
-            result = subprocess.run(command, shell=True, cwd=cwd, check=True)
-            return result.returncode == 0
-    except subprocess.CalledProcessError as e:
-        print(f"Command failed with exit code {e.returncode}")
-        return False
+
+        process = subprocess.Popen(
+            command,
+            shell=True,
+            cwd=cwd,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            encoding="utf-8",
+            errors="replace",
+            bufsize=1,
+            env=merged_env,
+        )
+        assert process.stdout is not None
+        for line in process.stdout:
+            print(line, end="")
+        process.wait()
+        if process.returncode != 0:
+            print(f"Command failed with exit code {process.returncode}")
+            return False
+        return True
     except Exception as e:
         print(f"Error running command: {e}")
         return False
+
+
+def host_database_url():
+    """DATABASE_URL for scripts running on the host (Postgres exposed on localhost:5432)."""
+    user = os.environ.get("POSTGRES_USER", "zalpha")
+    password = os.environ.get("POSTGRES_PASSWORD", "zalpha")
+    db = os.environ.get("POSTGRES_DB", "zalpha")
+    return f"postgresql+psycopg2://{user}:{password}@localhost:5432/{db}"
+
+
+def wait_for_postgres(timeout_s=60):
+    """Poll docker-compose healthcheck until Postgres reports healthy."""
+    print("Waiting for Postgres to become healthy...")
+    for _ in range(timeout_s):
+        try:
+            result = subprocess.run(
+                ["docker", "inspect", "-f", "{{.State.Health.Status}}", "zalpha-postgres"],
+                shell=True, capture_output=True, text=True, timeout=5,
+            )
+            if result.returncode == 0 and "healthy" in result.stdout:
+                print("Postgres is healthy")
+                return True
+        except Exception:
+            pass
+        time.sleep(1)
+    print("Postgres did not become healthy in time")
+    return False
 
 def check_poetry_installed():
     """Check if Poetry is installed and accessible"""
@@ -211,49 +348,25 @@ def check_required_files():
     print("All required files found")
     return True
 
-def delete_database():
-    """Delete existing database if it exists"""
-    db_path = "backend/portfolio.db"
+def reset_postgres_volume():
+    """Stop containers and drop the Postgres volume for a clean rebuild."""
     try:
-        # First, stop any running containers that might be using the database
-        print("Stopping any running containers...")
-        try:
-            subprocess.run(["docker", "compose", "down"], 
-                         shell=True, capture_output=True, text=True, timeout=30)
-        except Exception as e:
-            print(f"Warning: Could not stop containers: {e}")
-        
-        # Wait a moment for file handles to be released
-        time.sleep(2)
-        
-        if os.path.exists(db_path):
-            print("Deleting existing database...")
-            os.remove(db_path)
-            print("Database deleted successfully")
-        else:
-            print("No existing database found")
+        print("Stopping any running containers and dropping Postgres volume...")
+        subprocess.run(["docker", "compose", "down", "-v"],
+                       shell=True, capture_output=True, text=True, timeout=60)
         return True
     except Exception as e:
-        print(f"Error deleting database: {e}")
-        print("  The database file might be locked by another process")
-        print("  Try manually stopping any running containers with: docker compose down")
+        print(f"Error resetting Postgres volume: {e}")
         return False
 
-def setup_database(use_file_data=False):
-    """Setup database with real market data or imported file data"""
-    print("Setting up database...")
-    
-    if use_file_data:
-        print("Using imported data from files (IBKR TWS not available)")
-        if run_command("cd backend && poetry run python setup_database.py --import-files"):
-            print("Database setup with imported data completed successfully!")
-            return True
-    else:
-        print("Using real market data from IBKR TWS")
-        if run_command("cd backend && poetry run python setup_database.py"):
-            print("Database setup with real data completed successfully!")
-            return True
-    
+def setup_database():
+    """Setup database with real market data from IBKR.
+    Runs on host, so DATABASE_URL points to localhost (where Postgres is exposed)."""
+    print("Setting up database with real market data from IBKR TWS...")
+    env = {"DATABASE_URL": host_database_url()}
+    if run_command("cd backend && poetry run python setup_database.py", env=env):
+        print("Database setup completed successfully!")
+        return True
     print("Database setup failed!")
     return False
 
@@ -275,71 +388,33 @@ def check_ports_available():
     return True
 
 def check_ibkr_connection():
-    """Check if IBKR TWS is running and accessible"""
-    print("Checking IBKR TWS connection...")
+    """Check TWS socket reachability without importing backend modules.
+    TWS API handshake is heavier; a TCP open is enough to know the port is up."""
+    import socket
+    host = os.environ.get("IBKR_HOST", "127.0.0.1")
+    port = int(os.environ.get("IBKR_PORT", "7496"))
+    print(f"Checking IBKR TWS socket {host}:{port}...")
     try:
-        # Create a temporary test script to check IBKR connection
-        test_script = """
-import sys
-import os
-sys.path.append(os.path.join(os.path.dirname(__file__), 'backend'))
-
-try:
-    from services.ibkr_service import IBKRService
-    ibkr = IBKRService()
-    connected = ibkr.connect(timeout=10)
-    print(f"Connected: {connected}")
-    if connected:
-        ibkr.disconnect()
-    sys.exit(0 if connected else 1)
-except Exception as e:
-    print(f"Error: {e}")
-    sys.exit(1)
-"""
-        
-        # Write the test script to a temporary file
-        test_file = "test_ibkr_connection.py"
-        with open(test_file, 'w') as f:
-            f.write(test_script)
-        
-        try:
-            # Run the test script
-            result = subprocess.run(
-                ["poetry", "run", "python", test_file],
-                shell=True, capture_output=True, text=True, timeout=15
-            )
-            
-            # Clean up the test file
-            if os.path.exists(test_file):
-                os.remove(test_file)
-            
-            if result.returncode == 0 and "Connected: True" in result.stdout:
-                print("IBKR TWS connection successful")
-                return True
-            else:
-                print("IBKR TWS connection failed")
-                print(f"  Return code: {result.returncode}")
-                print(f"  Output: {result.stdout.strip()}")
-                print(f"  Error: {result.stderr.strip()}")
-                print("  Make sure IBKR TWS is running and configured to accept connections")
-                print("  Check that TWS is listening on port 7496 (paper) or 7497 (live)")
-                print("  Ensure 'Enable ActiveX and Socket Clients' is checked in TWS settings")
-                return False
-                
-        except subprocess.TimeoutExpired:
-            print("IBKR TWS connection timeout")
-            print("  TWS might not be running or not responding")
-            return False
-        finally:
-            # Ensure test file is cleaned up
-            if os.path.exists(test_file):
-                os.remove(test_file)
-            
-    except Exception as e:
-        print(f"Error checking IBKR connection: {e}")
+        with socket.create_connection((host, port), timeout=5):
+            print("IBKR TWS socket is open")
+            return True
+    except (OSError, socket.timeout) as e:
+        print(f"IBKR TWS socket unreachable: {e}")
+        print("  Start TWS (live: 7496, paper: 7497), enable API, whitelist 127.0.0.1")
         return False
 
 def main():
+    setup_logging()
+    load_env_file()
+
+    required = ["POSTGRES_USER", "POSTGRES_PASSWORD", "POSTGRES_DB",
+                "ADMIN_PASSWORD", "USER_PASSWORD", "AUTH_SECRET"]
+    missing = [k for k in required if not os.environ.get(k)]
+    if missing:
+        print(f"Missing required env vars: {', '.join(missing)}")
+        print("Copy config.env.example to .env and fill in values.")
+        return
+
     print("=" * 60)
     print("Z-ALPHA SECURITIES - DOCKER START ALL")
     print("NEW CONFIGURATION: Frontend (3000) + Backend (8000)")
@@ -362,35 +437,25 @@ def main():
     print("\nStep 0b: Installing JavaScript dependencies...")
     if not install_js_dependencies(): return
 
-    # Check IBKR connection before proceeding with database operations
-    ibkr_connected = check_ibkr_connection()
-    
-    if ibkr_connected:
-        print("\nIBKR TWS is available - will fetch real market data")
-        print("\nStep 1: Cleaning up existing database...")
-        if not delete_database(): return
+    if not check_ibkr_connection():
+        print("\nIBKR TWS is not available — aborting.")
+        print("  Start IBKR TWS (paper: 7497, live: 7496) with API enabled and retry.")
+        return
 
-        print("\nStep 2: Setting up database with real market data...")
-        if not setup_database(use_file_data=False): return
-    else:
-        print("\nIBKR TWS is not available - using fallback data from data/ folder")
-        
-        # Check if fallback data exists
-        data_dir = "data"
-        if os.path.exists(data_dir) and os.listdir(data_dir):
-            print(f"Found fallback data in {data_dir}/ folder")
-            print("\nStep 1: Cleaning up existing database...")
-            if not delete_database(): return
-            
-            print("\nStep 2: Setting up database with fallback data...")
-            if not setup_database(use_file_data=True): return
-        else:
-            print(f"No fallback data found in {data_dir}/ folder")
-            print("Please run download_fallback_data.py first to download data")
-            print("Or start IBKR TWS and run this script again")
-            return
+    print("\nStep 1: Resetting Postgres volume for clean rebuild...")
+    if not reset_postgres_volume(): return
 
-    print("\nStep 3: Starting Docker services...")
+    print("\nStep 2: Starting Postgres service...")
+    if not run_command("docker compose up -d postgres"):
+        print("Failed to start Postgres")
+        return
+    if not wait_for_postgres():
+        return
+
+    print("\nStep 3: Seeding database with real market data from IBKR...")
+    if not setup_database(): return
+
+    print("\nStep 4: Starting backend and frontend services...")
     if not run_command("docker compose up --build --detach"):
         print("Failed to start Docker services")
         return

@@ -1,27 +1,26 @@
-from sqlalchemy import create_engine, Index
+import os
+from sqlalchemy import create_engine
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker
-import os
 
-# SQLite database URL
-SQLALCHEMY_DATABASE_URL = "sqlite:///portfolio.db"
+# Postgres connection — driver format: postgresql+psycopg2://user:pass@host:port/db
+# Compose/K8s supplies DATABASE_URL; local dev can override via .env
+SQLALCHEMY_DATABASE_URL = os.environ["DATABASE_URL"]
 
-# Create engine
 engine = create_engine(
-    SQLALCHEMY_DATABASE_URL, 
-    connect_args={"check_same_thread": False}  # Needed for SQLite
+    SQLALCHEMY_DATABASE_URL,
+    pool_pre_ping=True,   # drops dead connections (safe under container restarts)
+    pool_size=10,
+    max_overflow=20,
+    future=True,
 )
 
-# Create SessionLocal class
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
-
-# Create Base class
 Base = declarative_base()
 
-# Dependency to get database session
 def get_db():
     db = SessionLocal()
     try:
         yield db
     finally:
-        db.close() 
+        db.close()

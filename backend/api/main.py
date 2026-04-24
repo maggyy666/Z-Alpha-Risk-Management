@@ -63,33 +63,27 @@ def read_root():
 
 @app.post("/login", response_model=LoginResponse)
 def login(login_request: LoginRequest, db: Session = Depends(get_db)):
-    """Login endpoint for landing page"""
+    """Login endpoint. Accepts username OR email in the username field,
+    verifies bcrypt hash. Responses are generic to avoid user-enumeration."""
+    from auth.passwords import verify_password
     try:
-        # Check if user exists by username OR email
         user = db.query(User).filter(
-            (User.username == login_request.username) | 
+            (User.username == login_request.username) |
             (User.email == login_request.username)
         ).first()
-        
-        if not user:
+
+        if not user or not verify_password(login_request.password, user.password_hash):
             return LoginResponse(
                 success=False,
-                message="Invalid email or password"
+                message="Invalid username or password"
             )
-        
-        # Check password (simple comparison for now)
-        if user.password != login_request.password:
-            return LoginResponse(
-                success=False,
-                message="Invalid email or password"
-            )
-        
+
         return LoginResponse(
             success=True,
             message="Login successful",
             username=user.username
         )
-        
+
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -417,7 +411,7 @@ def update_user_portfolio(username: str, portfolio_data: List[dict], db: Session
         # Clear cache for this user's portfolio data
         print(f"🔄 Clearing cache for user {username} after portfolio update...")
         data_service._clear_cache(f"*{username}*")
-        print(f"✅ Cache cleared for user {username} after portfolio update")
+        print(f"[ok] Cache cleared for user {username} after portfolio update")
         
         # Update JSON file
         import json

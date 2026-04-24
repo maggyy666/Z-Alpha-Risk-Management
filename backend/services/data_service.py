@@ -9,7 +9,7 @@ from database.models.portfolio import Portfolio
 from database.models.ticker_data import TickerData
 from database.models.ticker import TickerInfo
 from services.ibkr_service import IBKRService
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from quant.volatility import forecast_sigma, log_returns, annualized_vol
 from quant.risk import clamp, build_cov, risk_contribution
 from quant.linear import ols_beta
@@ -151,8 +151,8 @@ class DataService:
         try:
             # 0️⃣ – cache check
             info = db.query(TickerInfo).filter(TickerInfo.symbol == symbol).first()
-            if info and (datetime.utcnow() - info.updated_at).days < 30:
-                print(f"✅ Using cached ticker info for {symbol}")
+            if info and info.updated_at and (datetime.now(timezone.utc) - info.updated_at).days < 30:
+                print(f"[cache] Using cached ticker info for {symbol}")
                 return info
 
             # 1) accept preload (incl. {"type": "ETF"}); do not call IBKR again
@@ -160,7 +160,7 @@ class DataService:
 
             # 2) if preload marks ETF → skip IBKR and use yfinance
             if fundamental_data and fundamental_data.get("type") == "ETF":
-                print(f"🔎 {symbol} is ETF → skipping IBKR, going straight to yfinance")
+                print(f"[etf] {symbol} is ETF -> skipping IBKR, going straight to yfinance")
                 sector, industry = self.ibkr_service._get_sector_industry_external(symbol)
                 market_cap = self.ibkr_service._get_market_cap_external(symbol)
                 fundamental_data = {
@@ -195,10 +195,10 @@ class DataService:
             info.sector = fundamental_data.get("sector")
             info.market_cap = fundamental_data.get("market_cap")
             info.company_name = fundamental_data.get("company_name")
-            info.updated_at = datetime.utcnow()
+            info.updated_at = datetime.now(timezone.utc)
             
             db.commit()
-            print(f"✅ Updated ticker info for {symbol}: {fundamental_data}")
+            print(f"[ok] Updated ticker info for {symbol}: {fundamental_data}")
             return info
             
         except Exception as e:
@@ -530,201 +530,11 @@ class DataService:
                 db.add(ticker_record)
             
             db.commit()
-            print(f"✅ Added {len(data_points)} sample records for {symbol}")
+            print(f"[ok] Added {len(data_points)} sample records for {symbol}")
             return True
 
         except Exception as e:
             print(f"Error injecting sample data for {symbol}: {e}")
-            db.rollback()
-            return False 
-
-    def import_ticker_data_from_file(self, db: Session, symbol: str) -> bool:
-        """Import historical data for a ticker from JSON/CSV file"""
-        try:
-            # Check if data already exists
-            existing_count = db.query(TickerData).filter(TickerData.ticker_symbol == symbol).count()
-            if existing_count > 0:
-                print(f"{symbol}: Already has {existing_count} records")
-                return True
-
-            # Look for data files in data/ directory
-            # Handle both cases: running from project root or from backend/
-            data_dir = "data"
-            if not os.path.exists(data_dir):
-                data_dir = "../data"
-                if not os.path.exists(data_dir):
-                    print(f"Data directory not found (tried 'data/' and '../data/')")
-                    return False
-
-            # Try JSON first, then CSV
-            json_file = os.path.join(data_dir, f"{symbol}.json")
-            csv_file = os.path.join(data_dir, f"{symbol}.csv")
-            
-            if os.path.exists(json_file):
-                return self._import_from_json(db, symbol, json_file)
-            elif os.path.exists(csv_file):
-                return self._import_from_csv(db, symbol, csv_file)
-            else:
-                print(f"No data file found for {symbol} in {data_dir}/")
-                print(f"Expected: {json_file} or {csv_file}")
-                return False
-
-        except Exception as e:
-            print(f"Error importing data for {symbol}: {e}")
-            return False
-
-    def _import_from_json(self, db: Session, symbol: str, file_path: str) -> bool:
-        """Import data from JSON file with new structure: {fundamental: {...}, stock: [...]}"""
-        try:
-            import json
-            with open(file_path, 'r') as f:
-                data = json.load(f)
-            
-            # Check if it's the new combined format
-            if isinstance(data, dict) and 'fundamental' in data and 'stock' in data:
-                # New format: {fundamental: {...}, stock: [...]}
-                fundamental_data = data['fundamental']
-                stock_data = data['stock']
-                
-                # Import fundamental data first
-                if fundamental_data:
-                    self._ensure_ticker_info(db, symbol, preloaded=fundamental_data)
-                
-                # Import stock data
-                if not isinstance(stock_data, list):
-                    print(f"Invalid stock data format for {symbol}: expected list of records")
-                    return False
-                
-                records_added = 0
-                for record in stock_data:
-                    try:
-                        # Parse date - handle both YYYY-MM-DD and YYYYMMDD formats
-                        if isinstance(record['date'], str):
-                            date_str = record['date']
-                            if len(date_str) == 8 and date_str.isdigit():
-                                # Format: YYYYMMDD
-                                date_obj = datetime.strptime(date_str, '%Y%m%d').date()
-                            else:
-                                # Format: YYYY-MM-DD
-                                date_obj = datetime.strptime(date_str, '%Y-%m-%d').date()
-                        else:
-                            date_obj = record['date']
-                        
-                        # Create ticker record
-                        ticker_record = TickerData(
-                            ticker_symbol=symbol,
-                            date=date_obj,
-                            open_price=float(record['open']),
-                            close_price=float(record['close']),
-                            high_price=float(record['high']),
-                            low_price=float(record['low']),
-                            volume=int(record['volume'])
-                        )
-                        db.add(ticker_record)
-                        records_added += 1
-                        
-                    except (KeyError, ValueError) as e:
-                        print(f"Error parsing record for {symbol}: {e}")
-                        continue
-                
-                db.commit()
-                print(f"Imported {records_added} records for {symbol} from JSON (new format)")
-                return True
-                
-            elif isinstance(data, list):
-                # Old format: list of dicts with date, open, high, low, close, volume
-                records_added = 0
-                for record in data:
-                    try:
-                        # Parse date - handle both YYYY-MM-DD and YYYYMMDD formats
-                        if isinstance(record['date'], str):
-                            date_str = record['date']
-                            if len(date_str) == 8 and date_str.isdigit():
-                                # Format: YYYYMMDD
-                                date_obj = datetime.strptime(date_str, '%Y%m%d').date()
-                            else:
-                                # Format: YYYY-MM-DD
-                                date_obj = datetime.strptime(date_str, '%Y-%m-%d').date()
-                        else:
-                            date_obj = record['date']
-                        
-                        # Create ticker record
-                        ticker_record = TickerData(
-                            ticker_symbol=symbol,
-                            date=date_obj,
-                            open_price=float(record['open']),
-                            close_price=float(record['close']),
-                            high_price=float(record['high']),
-                            low_price=float(record['low']),
-                            volume=int(record['volume'])
-                        )
-                        db.add(ticker_record)
-                        records_added += 1
-                        
-                    except (KeyError, ValueError) as e:
-                        print(f"Error parsing record for {symbol}: {e}")
-                        continue
-                
-                db.commit()
-                print(f"Imported {records_added} records for {symbol} from JSON (old format)")
-                return True
-            else:
-                print(f"Invalid JSON format for {symbol}: expected dict with fundamental/stock or list of records")
-                return False
-            
-        except Exception as e:
-            print(f"Error importing from JSON for {symbol}: {e}")
-            db.rollback()
-            return False
-
-    def _import_from_csv(self, db: Session, symbol: str, file_path: str) -> bool:
-        """Import data from CSV file"""
-        try:
-            import pandas as pd
-            
-            # Read CSV with pandas
-            df = pd.read_csv(file_path)
-            
-            # Expected columns: date, open, high, low, close, volume
-            required_cols = ['date', 'open', 'high', 'low', 'close', 'volume']
-            if not all(col in df.columns for col in required_cols):
-                print(f"Invalid CSV format for {symbol}: missing required columns")
-                print(f"Expected: {required_cols}")
-                print(f"Found: {list(df.columns)}")
-                return False
-            
-            records_added = 0
-            for _, row in df.iterrows():
-                try:
-                    # Parse date
-                    if isinstance(row['date'], str):
-                        date_obj = datetime.strptime(row['date'], '%Y-%m-%d').date()
-                    else:
-                        date_obj = pd.to_datetime(row['date']).date()
-                    
-                    # Create ticker record
-                    ticker_record = TickerData(
-                        ticker_symbol=symbol,
-                        date=date_obj,
-                        open_price=float(row['open']),
-                        close_price=float(row['close']),
-                        high_price=float(row['high']),
-                        low_price=float(row['low']),
-                        volume=int(row['volume'])
-                    )
-                    db.add(ticker_record)
-                    records_added += 1
-                    
-                except (ValueError, TypeError) as e:
-                    print(f"Error parsing row for {symbol}: {e}")
-                    continue
-            
-            db.commit()
-            print(f"✅ Imported {records_added} records for {symbol} from CSV")
-            return True
-            
-        except Exception as e:
-            print(f"Error importing from CSV for {symbol}: {e}")
             db.rollback()
             return False 
 
@@ -2881,86 +2691,35 @@ except Exception as e:
             if existing:
                 return {"error": f"Ticker {ticker} already exists in portfolio"}
             
-            # Check IBKR connection first
-            ibkr_available = self.check_ibkr_connection()
-            
-            if ibkr_available:
-                # Try to fetch from IBKR
-                print(f"IBKR available, fetching data for {ticker}")
-                success = self.fetch_and_store_historical_data(db, ticker)
-                if success:
-                    # Add to portfolio
-                    portfolio_item = Portfolio(
-                        user_id=user.id,
-                        ticker_symbol=ticker,
-                        shares=shares
-                    )
-                    db.add(portfolio_item)
-                    db.commit()
-                    
-                    # Update JSON file
-                    self._update_portfolio_json(username, db)
-                    
-                    # Clear cache for this user
-                    self._clear_cache(f"*{username}*")
-                    print(f"Cache cleared for user {username} after adding ticker {ticker}")
-                    
-                    return {
-                        "success": True,
-                        "message": f"Ticker {ticker} added successfully with {shares} shares (data from IBKR)",
-                        "data_source": "IBKR",
-                        "ticker": ticker,
-                        "shares": shares
-                    }
-                else:
-                    return {"error": f"Failed to fetch data for {ticker} from IBKR"}
-            
-            else:
-                # IBKR not available, try fallback files
-                print(f"IBKR not available, checking fallback files for {ticker}")
-                
-                # Check if fallback file exists
-                data_dir = "data"
-                if not os.path.exists(data_dir):
-                    data_dir = "../data"
-                
-                json_file = os.path.join(data_dir, f"{ticker}.json")
-                csv_file = os.path.join(data_dir, f"{ticker}.csv")
-                
-                if os.path.exists(json_file) or os.path.exists(csv_file):
-                    # Import from fallback file
-                    success = self.import_ticker_data_from_file(db, ticker)
-                    if success:
-                        # Add to portfolio
-                        portfolio_item = Portfolio(
-                            user_id=user.id,
-                            ticker_symbol=ticker,
-                            shares=shares
-                        )
-                        db.add(portfolio_item)
-                        db.commit()
-                        
-                        # Update JSON file
-                        self._update_portfolio_json(username, db)
-                        
-                        # Clear cache for this user
-                        self._clear_cache(f"*{username}*")
-                        print(f"Cache cleared for user {username} after adding ticker {ticker}")
-                        
-                        return {
-                            "success": True,
-                            "message": f"Ticker {ticker} added successfully with {shares} shares (data from fallback)",
-                            "data_source": "fallback",
-                            "ticker": ticker,
-                            "shares": shares
-                        }
-                    else:
-                        return {"error": f"Failed to import data for {ticker} from fallback file"}
-                else:
-                    return {
-                        "error": f"Ticker {ticker} not available in fallback files and no IBKR connection"
-                    }
-                    
+            if not self.check_ibkr_connection():
+                return {"error": "IBKR connection unavailable"}
+
+            print(f"IBKR available, fetching data for {ticker}")
+            success = self.fetch_and_store_historical_data(db, ticker)
+            if not success:
+                return {"error": f"Failed to fetch data for {ticker} from IBKR"}
+
+            portfolio_item = Portfolio(
+                user_id=user.id,
+                ticker_symbol=ticker,
+                shares=shares
+            )
+            db.add(portfolio_item)
+            db.commit()
+
+            self._update_portfolio_json(username, db)
+
+            self._clear_cache(f"*{username}*")
+            print(f"Cache cleared for user {username} after adding ticker {ticker}")
+
+            return {
+                "success": True,
+                "message": f"Ticker {ticker} added successfully with {shares} shares (data from IBKR)",
+                "data_source": "IBKR",
+                "ticker": ticker,
+                "shares": shares
+            }
+
         except Exception as e:
             db.rollback()
             print(f"Error adding ticker to portfolio: {e}")

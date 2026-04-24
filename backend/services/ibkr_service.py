@@ -1,3 +1,4 @@
+import os
 import threading
 import time
 import random
@@ -32,14 +33,15 @@ class IBKRConnection(EWrapper, EClient):
         
     def error(self, reqId, errorCode, errorString):
         print(f"Error {errorCode}: {errorString}")
-        # Handle market data permission errors
+        # Market data permission denied
         if errorCode == 354:
             print(f"Market data permission denied for reqId: {reqId}")
             if reqId in self.market_data_requests:
                 self.market_data_requests[reqId]['error'] = True
-        # Handle fundamental data errors
-        elif errorCode in (200, 354):
-            print(f"Fundamental data error {errorCode} for reqId: {reqId}")
+        # Fundamentals not allowed (no Reuters subscription on this account)
+        # or contract-not-found -- don't wait for timeout, fail fast so we fall back to yfinance
+        elif errorCode in (10358, 430, 200):
+            print(f"Fundamentals unavailable (code {errorCode}) for reqId: {reqId}")
             self.fundamental_error[reqId] = errorCode
         
     def nextValidId(self, orderId):
@@ -142,9 +144,14 @@ class IBKRService:
         self._client_id_counter += 1
         return 1000 + self._client_id_counter
         
-    def connect(self, host: str = '127.0.0.1', port: int = 7496, 
+    def connect(self, host: str = None, port: int = None,
                 client_id: int = None, timeout: int = 20) -> bool:
-        """Connect to IBKR API"""
+        """Connect to IBKR API. Host/port default to env vars IBKR_HOST/IBKR_PORT
+        so the backend container can reach TWS on the host (host.docker.internal)."""
+        if host is None:
+            host = os.environ.get("IBKR_HOST", "127.0.0.1")
+        if port is None:
+            port = int(os.environ.get("IBKR_PORT", "7496"))
         try:
             # Use provided client_id or generate unique one
             if client_id is None:
@@ -180,7 +187,7 @@ class IBKRService:
         """
         # Bonus optymalizacja: pomijaj IBKR dla ETF-ów
         if self._looks_like_etf(symbol):
-            print(f"🔎 {symbol} wygląda na ETF → skip IBKR")
+            print(f"[etf] {symbol} looks like ETF -> skip IBKR")
             return {"type": "ETF", "company_name": symbol}
             
         if not self.connection or not self.connection.connected:
@@ -226,6 +233,10 @@ class IBKRService:
                             'type': 'ETF',
                             'company_name': symbol
                         }
+                    elif error_code == 10358:
+                        # No Reuters subscription on this account -- fast-fail to yfinance fallback
+                        print(f"Warning: Fundamentals not allowed (10358) for {symbol} - falling back to yfinance")
+                        return None
                     else:
                         print(f"Warning: IBKR error {error_code} for {symbol}")
                         break

@@ -74,6 +74,7 @@ frontend/.cache/
 frontend/.parcel-cache
 
 # Logs
+logs/
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
@@ -140,6 +141,8 @@ jspm_packages/
 # Serverless directories
 .serverless/
 
+
+.claude/
 # FuseBox cache
 .fusebox/
 

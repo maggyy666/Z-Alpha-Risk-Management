@@ -1,30 +1,63 @@
-version: "3.9"
-
 services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: zalpha-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-zalpha}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-zalpha}
+      POSTGRES_DB: ${POSTGRES_DB:-zalpha}
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-zalpha} -d ${POSTGRES_DB:-zalpha}"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+      start_period: 10s
+
   backend:
     build:
       context: .
       dockerfile: Dockerfile.backend
     container_name: zalpha-backend
+    restart: unless-stopped
     ports:
       - "8000:8000"
     volumes:
       - ./backend:/app/backend:delegated
-      - ./backend/portfolio.db:/app/backend/portfolio.db
     environment:
-      - PYTHONUNBUFFERED=1
+      PYTHONUNBUFFERED: "1"
+      DATABASE_URL: postgresql+psycopg2://${POSTGRES_USER:-zalpha}:${POSTGRES_PASSWORD:-zalpha}@postgres:5432/${POSTGRES_DB:-zalpha}
+      # TWS runs on the host; on Linux compose uses extra_hosts below to resolve it.
+      IBKR_HOST: ${IBKR_HOST:-host.docker.internal}
+      IBKR_PORT: ${IBKR_PORT:-7496}
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    command: ["uvicorn", "api.main:app", "--host", "0.0.0.0", "--port", "8000", "--reload"]
+    depends_on:
+      postgres:
+        condition: service_healthy
 
   frontend:
     build:
       context: .
       dockerfile: Dockerfile.frontend
     container_name: zalpha-frontend
+    restart: unless-stopped
     ports:
       - "3000:3000"
-    # Podmontuj cały projekt frontu, ale node_modules zostaw w kontenerze
     volumes:
       - ./frontend:/app:delegated
       - /app/node_modules
     environment:
-      - CHOKIDAR_USEPOLLING=true
-      - WATCHPACK_POLLING=true
+      CHOKIDAR_USEPOLLING: "true"
+      WATCHPACK_POLLING: "true"
+    depends_on:
+      backend:
+        condition: service_healthy
+
+volumes:
+  postgres_data:

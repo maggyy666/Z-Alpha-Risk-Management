@@ -28,8 +28,8 @@ def export_users(db: Session):
         {
             "id": user.id,
             "username": user.username,
-            "password": user.password,
             "email": user.email,
+            # password_hash intentionally omitted from exports
             "created_at": user.created_at.isoformat() if user.created_at else None,
             "updated_at": user.updated_at.isoformat() if user.updated_at else None
         }

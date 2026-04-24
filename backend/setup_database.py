@@ -9,7 +9,6 @@ import os
 import time
 import requests
 import json
-import sqlite3
 from pathlib import Path
 from typing import List
 sys.path.append(os.path.dirname(__file__))
@@ -49,49 +48,27 @@ def check_required_modules():
     return True
 
 def check_database_connection():
-    """Check if database can be created and accessed"""
+    """Verify Postgres is reachable via SQLAlchemy engine."""
     print("Checking database connection...")
-    
     try:
-        # Test SQLite connection
-        db_path = "portfolio.db"
-        conn = sqlite3.connect(db_path)
-        conn.close()
-        print("Database connection test successful")
+        from sqlalchemy import text
+        with engine.connect() as conn:
+            conn.execute(text("SELECT 1"))
+        print("Database connection OK")
         return True
     except Exception as e:
         print(f"Database connection failed: {e}")
         return False
 
-def check_file_permissions():
-    """Check if we have write permissions in current directory"""
-    print("Checking file permissions...")
-    
+def drop_all_tables():
+    """Drop all tables for a clean re-seed. Volume wipe is handled by start_all."""
+    print("Dropping existing tables...")
     try:
-        test_file = "test_write_permission.tmp"
-        with open(test_file, 'w') as f:
-            f.write("test")
-        os.remove(test_file)
-        print("Write permissions OK")
+        Base.metadata.drop_all(bind=engine)
+        print("Tables dropped")
         return True
     except Exception as e:
-        print(f"Write permission check failed: {e}")
-        return False
-
-def remove_old_database():
-    """Remove old database if exists"""
-    print("Removing old database...")
-    
-    try:
-        db_path = "portfolio.db"
-        if os.path.exists(db_path):
-            os.remove(db_path)
-            print("Old database removed successfully")
-        else:
-            print("No old database found")
-        return True
-    except Exception as e:
-        print(f"Error removing old database: {e}")
+        print(f"Error dropping tables: {e}")
         return False
 
 def create_database_tables():
@@ -106,70 +83,87 @@ def create_database_tables():
         print(f"Error creating database tables: {e}")
         return False
 
-def migrate_database_schema():
-    """Migrate database schema if needed"""
-    print("Checking database schema...")
-    
-    try:
-        # Schema migration is handled by SQLAlchemy models
-        print("Database schema is up to date")
-        return True
-    except Exception as e:
-        print(f"Error migrating database schema: {e}")
-        return False
+SEED_USERS = [
+    {
+        "slot": "ADMIN",
+        "default_username": "admin",
+        "default_email": "admin@zalpha.local",
+        "portfolio_fixture": "admin_portfolio.json",
+    },
+    {
+        "slot": "USER",
+        "default_username": "user",
+        "default_email": "user@zalpha.local",
+        "portfolio_fixture": "user_portfolio.json",
+    },
+]
 
-def create_admin_user(db):
-    """Create admin user"""
-    print("Creating admin user...")
-    
-    try:
-        # Check if admin user already exists
-        admin_user = db.query(User).filter(User.username == "admin").first()
-        if admin_user:
-            print("Admin user already exists")
-            return admin_user
-        
-        # Create new admin user
-        admin_user = User(
-            username="admin",
-            password="admin123",  # In production, this should be hashed
-            email="admin@zalpha.com"
+
+def _read_seed_credentials(slot: str, default_username: str, default_email: str) -> dict:
+    """Read {SLOT}_USERNAME / {SLOT}_EMAIL / {SLOT}_PASSWORD from env.
+    Username/email fall back to sane defaults; password has no default and must be set."""
+    username = os.environ.get(f"{slot}_USERNAME", default_username)
+    email = os.environ.get(f"{slot}_EMAIL", default_email)
+    password = os.environ.get(f"{slot}_PASSWORD")
+    if not password:
+        raise RuntimeError(
+            f"{slot}_PASSWORD is not set. Copy config.env.example to .env and set a password."
         )
-        db.add(admin_user)
-        db.commit()
-        print("Admin user created successfully")
-        return admin_user
-        
-    except Exception as e:
-        print(f"Error creating admin user: {e}")
-        db.rollback()
-        return None
+    if len(password) < 8:
+        raise RuntimeError(f"{slot}_PASSWORD must be at least 8 characters.")
+    return {"username": username, "email": email, "password": password}
 
-def get_default_portfolio(username: str) -> List[str]:
-    """Get default portfolio for a user from JSON file"""
-    # Handle both cases: running from project root or from backend/
-    portfolio_file = f"../data/{username}_portfolio.json"
-    if not os.path.exists(portfolio_file):
-        portfolio_file = f"data/{username}_portfolio.json"
-    
+
+def seed_users(db) -> dict:
+    """Create admin + user from env (idempotent). Returns {slot: User} map."""
+    from auth.passwords import hash_password
+
+    print("Seeding users from environment...")
+    created = {}
+    for entry in SEED_USERS:
+        slot = entry["slot"]
+        creds = _read_seed_credentials(slot, entry["default_username"], entry["default_email"])
+
+        user = db.query(User).filter(User.username == creds["username"]).first()
+        if user:
+            print(f"  {slot}: user '{creds['username']}' already exists -- skipping")
+        else:
+            user = User(
+                username=creds["username"],
+                email=creds["email"],
+                password_hash=hash_password(creds["password"]),
+            )
+            db.add(user)
+            db.commit()
+            db.refresh(user)
+            print(f"  {slot}: created user '{creds['username']}' (id={user.id})")
+        created[slot] = user
+    return created
+
+def _resolve_fixture_path(filename: str) -> str:
+    """Locate a fixture file whether script runs from project root or backend/."""
+    candidates = [f"../data/{filename}", f"data/{filename}"]
+    for path in candidates:
+        if os.path.exists(path):
+            return path
+    return candidates[0]  # return primary for error messages
+
+
+def get_tickers_from_fixture(fixture_filename: str) -> List[str]:
+    """Return list of ticker symbols from a portfolio fixture file."""
+    portfolio_file = _resolve_fixture_path(fixture_filename)
     try:
         if not os.path.exists(portfolio_file):
-            print(f"Portfolio file {portfolio_file} not found")
+            print(f"Portfolio fixture {portfolio_file} not found")
             return []
-        
         with open(portfolio_file, 'r') as f:
             portfolio_data = json.load(f)
-        
         if not isinstance(portfolio_data, list):
-            print(f"Invalid portfolio format: expected list of ticker objects")
+            print(f"Invalid portfolio format in {portfolio_file}: expected list")
             return []
-        
-        # Extract just ticker symbols for backward compatibility
-        tickers = [item.get('ticker') for item in portfolio_data if 'ticker' in item]
-        return tickers
-        
+        return [item.get('ticker') for item in portfolio_data if 'ticker' in item]
     except Exception as e:
-        print(f"Error reading portfolio file for {username}: {e}")
+        print(f"Error reading {portfolio_file}: {e}")
         return []
 
 def import_portfolio_from_file(db, user, portfolio_file: str):
@@ -217,32 +211,22 @@ def import_portfolio_from_file(db, user, portfolio_file: str):
         db.rollback()
         return False
 
-def setup_portfolio(db, user, use_file_data=False):
-    """Setup portfolio for user from JSON file"""
-    print(f"Setting up portfolio for {user.username}...")
-    
-    # Always use portfolio file (JSON-based approach)
-    # Handle both cases: running from project root or from backend/
-    portfolio_file = f"../data/{user.username}_portfolio.json"
-    if not os.path.exists(portfolio_file):
-        portfolio_file = f"data/{user.username}_portfolio.json"
+def setup_portfolio(db, user, fixture_filename: str):
+    """Import a portfolio fixture file into the DB for the given user."""
+    print(f"Setting up portfolio for {user.username} from {fixture_filename}...")
+    portfolio_file = _resolve_fixture_path(fixture_filename)
     return import_portfolio_from_file(db, user, portfolio_file)
 
-def generate_ticker_data(db, ticker, start_date, end_date, use_file_data=False):
-    """Fetch real historical data from IBKR for a ticker, or import from file if IBKR unavailable"""
+def generate_ticker_data(db, ticker):
+    """Fetch real historical data from IBKR for a ticker"""
     data_service = DataService()
-    
-    if use_file_data:
-        print(f"Importing data for {ticker} from file (IBKR unavailable)")
-        return data_service.import_ticker_data_from_file(db, ticker)
-    else:
-        print(f"Fetching real data for {ticker} from IBKR")
-        return data_service.fetch_and_store_historical_data(db, ticker)
+    print(f"Fetching real data for {ticker} from IBKR")
+    return data_service.fetch_and_store_historical_data(db, ticker)
 
-def generate_historical_data(db, data_service, tickers, data_type, use_file_data=False):
+def generate_historical_data(db, data_service, tickers, data_type):
     """Generate historical data for tickers"""
     print(f"Generating historical data for {data_type}...")
-    
+
     try:
         success_count = 0
         for ticker in tickers:
@@ -250,7 +234,7 @@ def generate_historical_data(db, data_service, tickers, data_type, use_file_data
                 existing_count = db.query(TickerData).filter(TickerData.ticker_symbol == ticker).count()
                 if existing_count == 0:
                     # Generate historical data for this ticker
-                    generate_ticker_data(db, ticker, None, None, use_file_data=use_file_data)
+                    generate_ticker_data(db, ticker)
                     print(f"Generated data for {ticker}")
                     
                     # Note: Using proxy spread (high-low) for liquidity calculations
@@ -349,68 +333,49 @@ def show_database_summary(db, admin_user):
         print(f"Error showing database summary: {e}")
         return False
 
-def setup_database(use_file_data=False):
+def setup_database():
     """Complete database setup"""
     print("Starting complete database setup...")
-    
-    if use_file_data:
-        print("⚠ Using imported data from files (IBKR TWS not available)")
-    else:
-        print("✓ Using real market data from IBKR TWS")
-    
+    print("Using real market data from IBKR TWS")
+
     # Step 1: Check prerequisites
     if not check_required_modules():
         return False
-    
+
     if not check_database_connection():
         return False
-    
-    if not check_file_permissions():
+
+    # Step 2: Drop existing tables for clean re-seed
+    if not drop_all_tables():
         return False
-    
-    # Step 2: Remove old database
-    if not remove_old_database():
-        return False
-    
+
     # Step 3: Create database tables
     if not create_database_tables():
-        return False
-    
-    # Step 4: Migrate schema
-    if not migrate_database_schema():
         return False
     
     # Step 5: Create database session
     db = SessionLocal()
     try:
-        # Step 6: Create admin user
-        admin_user = create_admin_user(db)
-        if not admin_user:
+        # Step 6: Seed users (admin + user) from env
+        try:
+            users_by_slot = seed_users(db)
+        except RuntimeError as e:
+            print(f"User seeding failed: {e}")
             return False
-        
-        # Step 7: Create user account
-        user = db.query(User).filter(User.username == "user").first()
-        if not user:
-            user = User(username="user", password="user123", email="user@external-zalpha.com")
-            db.add(user)
-            db.commit()
-            print("Created user account")
-        
-        # Step 8: Setup portfolio for admin
-        if not setup_portfolio(db, admin_user, use_file_data=use_file_data):
-            return False
-        
-        # Step 9: Setup portfolio for user
-        if not setup_portfolio(db, user, use_file_data=use_file_data):
-            return False
-        
+
+        # Step 7-8: Import portfolio fixture for each seeded user
+        for entry in SEED_USERS:
+            user = users_by_slot[entry["slot"]]
+            if not setup_portfolio(db, user, entry["portfolio_fixture"]):
+                return False
+
         # Step 10: Initialize data service
         data_service = DataService()
-        
-        # Step 11: Get ALL unique tickers from both users (ONE POOL)
+
+        # Step 11: Collect all unique tickers across both portfolios
         all_tickers = set()
-        for username in ["admin", "user"]:
-            all_tickers.update(get_default_portfolio(username))
+        for entry in SEED_USERS:
+            all_tickers.update(get_tickers_from_fixture(entry["portfolio_fixture"]))
         
         # Add static tickers
         static_tickers = ['SPY', 'MTUM', 'IWM', 'VLUE', 'QUAL']
@@ -420,18 +385,15 @@ def setup_database(use_file_data=False):
         print(f"Tickers: {sorted(all_tickers)}")
         
         # Step 12: Generate historical data for ALL tickers
-        if not generate_historical_data(db, data_service, list(all_tickers), "all tickers", use_file_data=use_file_data):
+        if not generate_historical_data(db, data_service, list(all_tickers), "all tickers"):
             return False
+
+        # Step 13: Fetch fundamental data for all tickers
+        if not fetch_fundamental_data(db, data_service, list(all_tickers)):
+            print("Warning: Some fundamental data may be missing")
         
-        # Step 13: Fetch fundamental data for all tickers (skip if using file data)
-        if not use_file_data:
-            if not fetch_fundamental_data(db, data_service, list(all_tickers)):
-                print("Warning: Some fundamental data may be missing")
-        else:
-            print("Skipping fundamental data fetch (using imported data)")
-        
-        # Step 14: Show database summary
-        if not show_database_summary(db, admin_user):
+        # Step 14: Show database summary (use admin slot as reference for portfolio count)
+        if not show_database_summary(db, users_by_slot["ADMIN"]):
             return False
         
         print("Database setup completed successfully!")
@@ -445,17 +407,12 @@ def setup_database(use_file_data=False):
 
 def main():
     """Main function"""
-    import sys
-    
     print("=" * 60)
     print("Z-ALPHA SECURITIES - DATABASE SETUP")
     print("=" * 60)
-    
-    # Check if --import-files flag is provided
-    use_file_data = "--import-files" in sys.argv
-    
-    success = setup_database(use_file_data=use_file_data)
-    
+
+    success = setup_database()
+
     if success:
         print("\nSetup completed successfully!")
         print("You can now run the application with:")
@@ -463,8 +420,10 @@ def main():
     else:
         print("\nSetup failed!")
         print("Please check the error messages above.")
-    
+
     return success
 
+
 if __name__ == "__main__":
-    main() 
+    import sys as _sys
+    _sys.exit(0 if main() else 1)
