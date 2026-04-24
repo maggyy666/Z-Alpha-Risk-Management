@@ -35,6 +35,9 @@ from quant.weights import inverse_vol_allocation
 
 from services.cache import TTLCache
 from services.ibkr_service import IBKRService
+from services.market_data_service import MarketDataService
+from services.returns_service import ReturnsService
+from services.ticker_info_service import TickerInfoService
 from utils.json_safe import clean_json_values
 
 # Memo cache for volatility calculations within a single request
@@ -82,8 +85,13 @@ class DataService:
         self.STATIC_TICKERS = ['SPY', 'MTUM', 'IWM', 'VLUE', 'QUAL']
 
         # 5-minute TTL cache for expensive analytics responses.
-        # Delegated to TTLCache; thread-safe, fnmatch-based bulk invalidation.
         self._cache = TTLCache(ttl_seconds=300)
+
+        # Data-access layer -- composed, not inherited.
+        # Methods on DataService kept as thin delegators for API stability.
+        self._market_data = MarketDataService(self.ibkr_service)
+        self._ticker_info = TickerInfoService(self.ibkr_service)
+        self._returns = ReturnsService(self._market_data)
 
     # ------------------------------------------------------------------
     # Cache facade -- existing callers use these private method names.
@@ -120,73 +128,10 @@ class DataService:
         return vol
         
     def _ensure_ticker_info(self, db: Session, symbol: str, *, preloaded: Optional[dict] = None) -> Optional[TickerInfo]:
-        """
-        Ensure ticker info exists in database, fetch from IBKR and yfinance if needed
-        Returns TickerInfo object or None if failed
-        """
-        try:
-            # 0️⃣ – cache check
-            info = db.query(TickerInfo).filter(TickerInfo.symbol == symbol).first()
-            if info and info.updated_at and (datetime.now(timezone.utc) - info.updated_at).days < 30:
-                print(f"[cache] Using cached ticker info for {symbol}")
-                return info
+        return self._ticker_info.ensure_ticker_info(db, symbol, preloaded=preloaded)
 
-            # 1) accept preload (incl. {"type": "ETF"}); do not call IBKR again
-            fundamental_data = preloaded
-
-            # 2) if preload marks ETF → skip IBKR and use yfinance
-            if fundamental_data and fundamental_data.get("type") == "ETF":
-                print(f"[etf] {symbol} is ETF -> skipping IBKR, going straight to yfinance")
-                sector, industry = self.ibkr_service._get_sector_industry_external(symbol)
-                market_cap = self.ibkr_service._get_market_cap_external(symbol)
-                fundamental_data = {
-                    "industry": industry,
-                    "sector": sector,
-                    "market_cap": market_cap,
-                    "company_name": fundamental_data.get("company_name", symbol)
-                }
-
-            # 3) if still missing, perform a single IBKR/yfinance call
-            if not fundamental_data:
-                if self.ibkr_service.connection and self.ibkr_service.connection.connected:
-                    fundamental_data = self.ibkr_service.get_fundamentals(symbol)
-                if not fundamental_data or fundamental_data.get("industry") == "Unknown":
-                    sector, industry = self.ibkr_service._get_sector_industry_external(symbol)
-                    market_cap = self.ibkr_service._get_market_cap_external(symbol)
-                    if not fundamental_data:
-                        fundamental_data = {}
-                    fundamental_data.update({"industry": industry,
-                                         "sector": sector,
-                                         "market_cap": market_cap})
-
-            if not fundamental_data:
-                return info   # whatever we had
-
-            # 4️⃣ – zapis do DB
-            if not info:
-                info = TickerInfo(symbol=symbol)
-                db.add(info)
-            
-            info.industry = fundamental_data.get("industry")
-            info.sector = fundamental_data.get("sector")
-            info.market_cap = fundamental_data.get("market_cap")
-            info.company_name = fundamental_data.get("company_name")
-            info.updated_at = datetime.now(timezone.utc)
-            
-            db.commit()
-            print(f"[ok] Updated ticker info for {symbol}: {fundamental_data}")
-            return info
-            
-        except Exception as e:
-            print(f"Error ensuring ticker info for {symbol}: {e}")
-            db.rollback()
-            return None
-    
     def _looks_like_etf(self, symbol: str) -> bool:
-        """Simple check if symbol looks like an ETF"""
-        etf_hints = {"etf", "trust", "fund", "treasury", "ultra", "proshares", "ishares", "vanguard", "spy", "qqq", "iwm", "mtum", "vlue", "qual", "sgov", "ulty", "bull"}
-        symbol_lower = symbol.lower()
-        return any(hint in symbol_lower for hint in etf_hints)
+        return TickerInfoService.looks_like_etf(symbol)
     
     def get_all_tickers(self, db: Session, username: str = "admin") -> List[str]:
         """Get all tickers: user portfolio + static tickers"""
@@ -224,66 +169,7 @@ class DataService:
         return [item.ticker_symbol for item in portfolio_items]
     
     def fetch_and_store_historical_data(self, db: Session, symbol: str) -> bool:
-        """Fetch historical data from IBKR and store in database"""
-        try:
-            # Connect to IBKR
-            if not self.ibkr_service.connect():
-                print(f"Failed to connect to IBKR for {symbol}")
-                return False
-            
-            # Get historical data
-            historical_data = self.ibkr_service.get_historical_data(symbol)
-            if not historical_data:
-                print(f"No historical data received for {symbol}")
-                return False
-            
-            # Parse dates with multiple patterns
-            DATE_PATTERNS = ['%Y%m%d', '%Y-%m-%d', '%Y%m%d %H:%M:%S', '%Y-%m-%d %H:%M:%S']
-            
-            def parse_date(date_str: str):
-                for pat in DATE_PATTERNS:
-                    try:
-                        return datetime.strptime(date_str, pat).date()
-                    except ValueError:
-                        continue
-                raise ValueError(f"Unrecognized date format: {date_str}")
-            
-            # Batch check existing dates
-            dates_to_check = [parse_date(bar['date']) for bar in historical_data]
-            existing_dates = {
-                d[0] for d in db.query(TickerData.date)
-                                .filter(TickerData.ticker_symbol == symbol,
-                                        TickerData.date.in_(dates_to_check))
-                                .all()
-            }
-            
-            # Store historical data
-            for bar in historical_data:
-                date_obj = parse_date(bar['date'])
-                
-                if date_obj in existing_dates:
-                    continue
-                
-                ticker_record = TickerData(
-                    ticker_symbol=symbol,
-                    date=date_obj,
-                    open_price=bar['open'],
-                    close_price=bar['close'],
-                    high_price=bar['high'],
-                    low_price=bar['low'],
-                    volume=bar['volume']
-                )
-                db.add(ticker_record)
-            
-            db.commit()
-            print(f"Successfully stored historical data for {symbol}")
-            return True
-            
-        except Exception as e:
-            print(f"Error fetching/storing data for {symbol}: {e}")
-            return False
-        finally:
-            self.ibkr_service.disconnect()
+        return self._market_data.fetch_and_store_historical_data(db, symbol)
     
     def calculate_volatility_metrics(self, db: Session, symbol: str, 
                                    forecast_model: str = 'EWMA (5D)',
@@ -453,93 +339,13 @@ class DataService:
             return error_result
 
     def inject_sample_data(self, db: Session, symbol: str, seed: Optional[int] = None) -> bool:
-        """Inject sample historical data for a ticker from 2016 to 2025"""
-        try:
-            # Set seed for reproducibility
-            if seed is not None:
-                np.random.seed(seed)
-            
-            # Check if data already exists
-            existing_count = db.query(TickerData).filter(TickerData.ticker_symbol == symbol).count()
-            if existing_count > 0:
-                print(f"{symbol}: Already has {existing_count} records")
-                return True
-
-            # Generate sample data from 2016 to 2025
-            base_price = 100.0
-            current_price = base_price
-            data_points = []
-            
-            # Generate dates from 2016 to today (trading days only)
-            start_date = datetime(2016, 1, 1)
-            end_date = datetime.now()
-            
-            current_date = start_date
-            while current_date <= end_date:
-                # Skip weekends (Saturday = 5, Sunday = 6)
-                if current_date.weekday() < 5:  # Monday = 0, Friday = 4
-                    # Generate realistic price movement
-                    daily_return = np.random.normal(0, 0.02)  # 2% daily volatility
-                    current_price *= (1 + daily_return)
-                    
-                    open_price = current_price * (1 + np.random.normal(0, 0.01))
-                    high_price = max(open_price, current_price) * (1 + abs(np.random.normal(0, 0.015)))
-                    low_price = min(open_price, current_price) * (1 - abs(np.random.normal(0, 0.015)))
-                    close_price = current_price
-                    volume = int(np.random.normal(1000000, 500000))
-                    
-                    data_points.append({
-                        'ticker_symbol': symbol,
-                        'date': current_date.date(),
-                        'open_price': round(open_price, 2),
-                        'close_price': round(close_price, 2),
-                        'high_price': round(high_price, 2),
-                        'low_price': round(low_price, 2),
-                        'volume': max(volume, 100000)
-                    })
-                
-                current_date += timedelta(days=1)
-
-            # Insert data
-            for data_point in data_points:
-                ticker_record = TickerData(**data_point)
-                db.add(ticker_record)
-            
-            db.commit()
-            print(f"[ok] Added {len(data_points)} sample records for {symbol}")
-            return True
-
-        except Exception as e:
-            print(f"Error injecting sample data for {symbol}: {e}")
-            db.rollback()
-            return False 
+        return self._market_data.inject_sample_data(db, symbol, seed=seed)
 
     def _get_close_series(self, db: Session, symbol: str):
-        """Return (dates, closes) ascending; filter NaN and non-positive prices."""
-        rows = (db.query(TickerData)
-                  .filter(TickerData.ticker_symbol == symbol)
-                  .order_by(TickerData.date)
-                  .all())
-        if not rows:
-            # Don't print debug for synthetic tickers like PORTFOLIO
-            if symbol != "PORTFOLIO":
-                print(f"Debug: No TickerData found for {symbol}")
-            return [], np.array([])
-        dates = [r.date for r in rows]
-        closes = np.array([float(r.close_price) for r in rows], dtype=float)
-        mask = np.isfinite(closes) & (closes > 0)
-        dates = [d for d, m in zip(dates, mask) if m]
-        closes = closes[mask]
-        print(f"Debug: {symbol} - Found {len(dates)} valid data points, first: {dates[0] if dates else 'N/A'}, last: {dates[-1] if dates else 'N/A'}")
-        return dates, closes
+        return self._market_data.get_close_series(db, symbol)
 
     def _log_returns_from_series(self, dates, closes):
-        """Return (ret_dates, log_returns); dates shifted by one for diffs."""
-        if len(closes) < 2:
-            return [], np.array([])
-        rets = np.diff(np.log(closes))
-        ret_dates = dates[1:]
-        return ret_dates, rets
+        return MarketDataService.log_returns_from_series(dates, closes)
 
     def get_factor_exposure_data(self, db: Session, username: str = "admin") -> Dict[str, Any]:
         """Get factor exposure data for portfolio analysis with caching"""
@@ -1117,162 +923,24 @@ class DataService:
             return error_result
 
     def _get_return_series_map(self, db: Session, symbols: List[str], lookback_days: int = 120):
-        """Zwraca dict: symbol -> (dates, returns) z ostatnich ~lookback dni. Prosto i szybko."""
-        ret_map = {}
-        for s in symbols:
-            # skip pseudo symbols
-            if s in ("PORTFOLIO", None, ""):
-                ret_map[s] = ([], np.array([]))
-                continue
-                
-            print(f"Debug: Getting data for {s}")
-            dates, closes = self._get_close_series(db, s)
-            print(f"Debug: {s} - dates: {len(dates)}, closes: {len(closes)}")
-            if len(closes) < 2:
-                print(f"Debug: {s} - insufficient data")
-                ret_map[s] = ([], np.array([]))
-                continue
-            # trim tail (last ~lookback days)
-            dates = dates[-(lookback_days+2):]
-            closes = closes[-(lookback_days+2):]
-            rd, r = self._log_returns_from_series(dates, closes)
-            print(f"Debug: {s} - returns: {len(r)}")
-            ret_map[s] = (rd, r)
-        return ret_map
+        return self._returns.get_return_series_map(db, symbols, lookback_days)
 
     def _align_on_reference(self, ret_map, symbols, ref_symbol="SPY", min_obs=40):
-        """
-        Zwraca: (dates_ref, M[T x N] z NaN, active_syms)
-        Kalendarz = daty SPY (ostatnie dostępne), kolumny = symbole z >= min_obs wspólnych punktów vs SPY.
-        """
-        if ref_symbol not in ret_map:
-            return [], np.empty((0, 0)), []
-        dates_ref, r_ref = ret_map[ref_symbol]
-        if len(dates_ref) == 0:
-            return [], np.empty((0, 0)), []
-
-        idx_ref = {d:i for i, d in enumerate(dates_ref)}
-        T = len(dates_ref)
-        cols = []
-        X = []
-
-        for s in symbols:
-            if s == ref_symbol or s not in ret_map:
-                continue
-            dts, r = ret_map[s]
-            if len(r) == 0:
-                continue
-            # align na kalendarz SPY
-            x = np.full(T, np.nan, dtype=float)
-            idx_s = {d:i for i, d in enumerate(dts)}
-            common = [d for d in dates_ref if d in idx_s]
-            if len(common) >= min_obs:
-                for d in common:
-                    x[idx_ref[d]] = r[idx_s[d]]
-                cols.append(s)
-                X.append(x)
-
-        if not cols:
-            return [], np.empty((0, 0)), []
-
-        M = np.column_stack(X)  # [T x N] z NaN
-        return dates_ref, M, cols
+        return ReturnsService.align_on_reference(ret_map, symbols, ref_symbol=ref_symbol, min_obs=min_obs)
 
     def _portfolio_series_with_coverage(self, dates, R, weights_map, symbols, min_weight_cov=0.6):
-        """
-        Liczy serię portfela po kalendarzu 'dates', renormalizując wagi
-        w każdym dniu po dostępnych papierach. R – [T x N] z NaN.
-        Zwraca (dates_used, rp), gdzie day coverage >= min_weight_cov.
-        """
-        if R.size == 0:
-            return [], np.array([])
-        N = R.shape[1]
-        # wagi w kolejności kolumn
-        w_full = np.array([weights_map.get(s, 0.0) for s in symbols], dtype=float)
-        w_full = w_full / (w_full.sum() if w_full.sum() > 0 else 1.0)
-
-        rp = []
-        used_dates = []
-        for t in range(R.shape[0]):
-            row = R[t, :]
-            mask = np.isfinite(row)
-            cov = w_full[mask].sum()
-            if cov >= min_weight_cov and mask.any():
-                w_t = w_full[mask] / cov
-                rp.append(float((row[mask] * w_t).sum()))
-                used_dates.append(dates[t])
-        return used_dates, np.array(rp, dtype=float)
+        return ReturnsService.portfolio_series_with_coverage(
+            dates, R, weights_map, symbols, min_weight_cov=min_weight_cov
+        )
 
     def _pairwise_corr_nan_safe(self, R: np.ndarray, min_periods: int = 30):
-        """
-        Zwraca (avg_corr, total_pairs, high_pairs>=0.7) licząc korelacje pairwise na wspólnych datach.
-        """
-        if R.size == 0:
-            return 0.0, 0, 0
-        N = R.shape[1]
-        vals = []
-        high = 0
-        for i in range(N):
-            xi = R[:, i]
-            for j in range(i+1, N):
-                xj = R[:, j]
-                m = np.isfinite(xi) & np.isfinite(xj)
-                if m.sum() >= min_periods:
-                    c = np.corrcoef(xi[m], xj[m])[0, 1]
-                    if np.isfinite(c):
-                        vals.append(c)
-                        if c >= 0.7:
-                            high += 1
-        if not vals:
-            return 0.0, 0, 0
-        return float(np.mean(vals)), len(vals), int(high)
+        return ReturnsService.pairwise_corr_nan_safe(R, min_periods=min_periods)
 
     def _intersect_and_stack(self, ret_map: Dict[str, Any], symbols: List[str]):
-        """Return (dates, R, active) with common dates; R is [T x N] by symbols."""
-        print(f"Debug: Intersecting {symbols}")
-        print(f"Debug: ret_map keys: {list(ret_map.keys())}")
-        for s in symbols:
-            if s in ret_map:
-                dates, returns = ret_map[s]
-                print(f"Debug: {s} - dates: {len(dates)}, returns: {len(returns)}")
-            else:
-                print(f"Debug: {s} - not in ret_map")
-        result = stack_common_returns(ret_map, symbols)
-        print(f"Debug: Result - dates: {len(result[0])}, R shape: {result[1].shape}, active: {result[2]}")
-        return result
-    
+        return ReturnsService.intersect_and_stack(ret_map, symbols)
+
     def _get_common_date_range(self, db: Session, symbols: List[str]) -> Dict[str, Any]:
-        """Find common date range for all tickers."""
-        try:
-            all_dates = []
-            for symbol in symbols:
-                dates, _ = self._get_close_series(db, symbol)
-                if dates:
-                    all_dates.extend(dates)
-            
-            if not all_dates:
-                return {"start_date": None, "end_date": None, "total_days": 0}
-            
-            # find common range
-            min_date = min(all_dates)
-            max_date = max(all_dates)
-            
-            # safe day-diff calc
-            total_days = 0
-            if min_date and max_date:
-                try:
-                    total_days = (max_date - min_date).days
-                except:
-                    total_days = 0
-            
-            return {
-                "start_date": min_date.isoformat() if min_date else None,
-                "end_date": max_date.isoformat() if max_date else None,
-                "total_days": total_days
-            }
-        except Exception as e:
-            print(f"Error getting common date range: {e}")
-            return {"start_date": None, "end_date": None, "total_days": 0}
+        return self._returns.get_common_date_range(db, symbols)
 
     def get_risk_scoring(self, db: Session, username: str = "admin") -> Dict[str, Any]:
         """Compute risk scoring metrics for the user's portfolio.
@@ -1446,19 +1114,7 @@ class DataService:
         }
 
     def _get_returns_between_dates(self, db: Session, symbol: str, start_d: date, end_d: date):
-        """Return (dates, log_returns) in [start_d, end_d] for symbol; may return []."""
-        rows = (db.query(TickerData)
-                  .filter(TickerData.ticker_symbol == symbol,
-                          TickerData.date >= start_d,
-                          TickerData.date <= end_d)
-                  .order_by(TickerData.date)
-                  .all())
-        if len(rows) < 2:
-            return [], np.array([])
-        dts = [r.date for r in rows]
-        closes = np.array([float(r.close_price) for r in rows], dtype=float)
-        rd, rets = self._log_returns_from_series(dts, closes)
-        return rd, rets
+        return self._market_data.get_returns_between_dates(db, symbol, start_d, end_d)
 
         # _clamp moved to backend.quant.risk
 

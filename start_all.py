@@ -122,12 +122,38 @@ def get_requests():
         import requests 
         return requests
 
+_WIN_SHELL_BUILTINS = {"cd", "echo", "set", "del", "dir", "copy", "type", "rem", "if", "for"}
+
+
+def _resolve_first_token(command: str) -> str:
+    """On Windows, resolve `npm`, `poetry`, etc. to an absolute path via
+    shutil.which (which respects PATHEXT) so subprocess does not depend on
+    how the parent shell expands command names."""
+    if sys.platform != "win32":
+        return command
+    parts = command.split(None, 1)
+    if not parts:
+        return command
+    head = parts[0]
+    if head.lower() in _WIN_SHELL_BUILTINS:
+        return command
+    resolved = shutil.which(head)
+    if not resolved:
+        return command
+    rest = parts[1] if len(parts) > 1 else ""
+    quoted = f'"{resolved}"'
+    return f"{quoted} {rest}" if rest else quoted
+
+
 def run_command(command, cwd=None, background=False, env=None):
     """Run a command. In foreground, subprocess stdout/stderr is streamed line-by-line
     through print() so it flows into the Tee (terminal + log file).
 
     Forces UTF-8 for the child process so that emoji/non-ASCII prints don't crash
-    on Windows (default cp1250)."""
+    on Windows (default cp1250). Resolves the executable via shutil.which on
+    Windows because cmd.exe can fail to locate .cmd scripts depending on how
+    the parent shell was launched (Git Bash, VS Code terminal, IDE, ...)."""
+    command = _resolve_first_token(command)
     print(f"Running: {command}")
     # Force UTF-8 stdout/stderr in the child (fixes Windows cp1250 charmap errors)
     utf8_env = {"PYTHONIOENCODING": "utf-8", "PYTHONUTF8": "1"}
