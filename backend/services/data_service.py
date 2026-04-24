@@ -1,49 +1,54 @@
+import json
+import os
+import random
+import subprocess
+from collections import defaultdict
+from datetime import date, datetime, timedelta, timezone
+from math import isfinite
+from typing import Any, Dict, List, Optional
+
 import numpy as np
 import pandas as pd
-import os
-import fnmatch
-from typing import List, Dict, Any, Optional
 from sqlalchemy.orm import Session
-from database.models.user import User
+
 from database.models.portfolio import Portfolio
-from database.models.ticker_data import TickerData
 from database.models.ticker import TickerInfo
-from services.ibkr_service import IBKRService
-from datetime import datetime, timedelta, timezone
-from quant.volatility import forecast_sigma, log_returns, annualized_vol
-from quant.risk import clamp, build_cov, risk_contribution
-from quant.linear import ols_beta
+from database.models.ticker_data import TickerData
+from database.models.user import User
+
+from quant.concentration import concentration_metrics
+from quant.correlation import avg_and_high_corr
 from quant.cov import ewma_corr
 from quant.drawdown import drawdown
+from quant.linear import ols_beta
+from quant.liquidity import liquidity_metrics
+from quant.realized import compute_realized_metrics
 from quant.regime import regime_metrics
-from quant.scoring import risk_mix
-from quant.scenario import scenario_pnl
-from quant.concentration import concentration_metrics
-from quant.weights import inverse_vol_allocation
-from quant.correlation import avg_and_high_corr
 from quant.returns import stack_common_returns
+from quant.risk import build_cov, clamp, risk_contribution
+from quant.rolling import rolling_metric
+from quant.scoring import risk_mix
 from quant.stats import basic_stats
 from quant.var import var_cvar
-import threading
-import time
-import random
-from collections import defaultdict
+from quant.volatility import annualized_vol, forecast_sigma
+from quant.weights import inverse_vol_allocation
+
+from services.cache import TTLCache
+from services.ibkr_service import IBKRService
+from utils.json_safe import clean_json_values
 
 # Memo cache for volatility calculations within a single request
-_vol_cache = {}
+_vol_cache: dict[str, float] = {}
 
 # Risk Scoring Configuration
 NORMALIZATION = {
-    "HHI_LOW": 0.05, 
+    "HHI_LOW": 0.05,
     "HHI_HIGH": 0.30,
-    "VOL_MAX": 0.40, 
+    "VOL_MAX": 0.40,
     "BETA_ABS_MAX": 1.5,
     "FACTOR_L1_MAX": 3.0,
     "STRESS_5PCT_FULLSCORE": 0.10,
 }
-
-# Stress Testing Configuration
-from datetime import date
 
 STRESS_SCENARIOS = [
     {"name": "2018 Q4 Volatility", "start": date(2018,10,1), "end": date(2018,12,24)},
@@ -75,61 +80,32 @@ class DataService:
         self.ibkr_service = IBKRService()
         # Static tickers always fetched from IBKR
         self.STATIC_TICKERS = ['SPY', 'MTUM', 'IWM', 'VLUE', 'QUAL']
-        
-        # Cache system for expensive operations
-        self._cache = {}
-        self._cache_timestamps = {}
-        self._cache_lock = threading.Lock()
-        self.CACHE_TTL = 300  # 5 minutes cache TTL
-        
+
+        # 5-minute TTL cache for expensive analytics responses.
+        # Delegated to TTLCache; thread-safe, fnmatch-based bulk invalidation.
+        self._cache = TTLCache(ttl_seconds=300)
+
+    # ------------------------------------------------------------------
+    # Cache facade -- existing callers use these private method names.
+    # Implementation delegated to services.cache.TTLCache.
+    # ------------------------------------------------------------------
     def _get_cache_key(self, method: str, username: str, **kwargs) -> str:
-        """Generate cache key for method call"""
-        key_parts = [method, username]
-        for k, v in sorted(kwargs.items()):
-            key_parts.append(f"{k}:{v}")
-        return "|".join(key_parts)
-    
+        return TTLCache.build_key(method, username, **kwargs)
+
     def _get_from_cache(self, key: str) -> Optional[Any]:
-        """Get data from cache if valid"""
-        with self._cache_lock:
-            if key in self._cache:
-                timestamp = self._cache_timestamps.get(key, 0)
-                if time.time() - timestamp < self.CACHE_TTL:
-                    return self._cache[key]
-                else:
-                    # Remove expired cache
-                    del self._cache[key]
-                    if key in self._cache_timestamps:
-                        del self._cache_timestamps[key]
-        return None
-    
+        return self._cache.get(key)
+
     def _set_cache(self, key: str, data: Any) -> None:
-        """Set data in cache"""
-        with self._cache_lock:
-            self._cache[key] = data
-            self._cache_timestamps[key] = time.time()
-    
-    def _clear_cache(self, pattern: str = None) -> None:
-        """Clear cache entries matching pattern using fnmatch for wildcard support"""
-        with self._cache_lock:
-            if pattern:
-                # Use fnmatch for proper wildcard matching
-                keys_to_remove = [k for k in self._cache.keys() if fnmatch.fnmatch(k, pattern)]
-            else:
-                keys_to_remove = list(self._cache.keys())
-            
-            print(f"🧹 Clearing cache for pattern '{pattern}': {len(keys_to_remove)} keys")
-            for key in keys_to_remove:
-                if key in self._cache:
-                    del self._cache[key]
-                    print(f"   🗑️  Removed: {key}")
-                if key in self._cache_timestamps:
-                    del self._cache_timestamps[key]
-            
-            # Also clear global volatility cache
-            global _vol_cache
-            _vol_cache.clear()
-            print(f"   🗑️  Cleared global volatility cache ({len(_vol_cache)} entries)")
+        self._cache.set(key, data)
+
+    def _clear_cache(self, pattern: Optional[str] = None) -> None:
+        removed = self._cache.clear(pattern)
+        print(f"[cache] cleared pattern={pattern!r}: {removed} entries")
+        # Module-level memo for volatility also flushed on any explicit clear
+        global _vol_cache
+        vol_n = len(_vol_cache)
+        _vol_cache.clear()
+        print(f"[cache] cleared global volatility cache ({vol_n} entries)")
     
     def _get_cached_volatility(self, symbol: str, model: str, returns: np.ndarray) -> float:
         """Get cached volatility calculation or compute and cache"""
@@ -936,7 +912,6 @@ class DataService:
             
             # Limit the number of records per (ticker, factor) pair to prevent memory issues
             MAX_PER_PAIR = 400  # 400×5 factors ≈ 2000 na ticker
-            from collections import defaultdict
             trimmed_exposures = defaultdict(list)  # klucz = (ticker, factor)
             trimmed_r2 = defaultdict(list)
             
@@ -1619,17 +1594,9 @@ class DataService:
         }
 
     def _clean_json_values(self, obj):
-        """Clean inf/nan values for JSON serialization"""
-        if isinstance(obj, dict):
-            return {k: self._clean_json_values(v) for k, v in obj.items()}
-        elif isinstance(obj, list):
-            return [self._clean_json_values(v) for v in obj]
-        elif isinstance(obj, float):
-            if np.isnan(obj) or np.isinf(obj):
-                return 0.0
-            return obj
-        else:
-            return obj
+        """Thin delegator kept for backward compatibility with existing callers.
+        Prefer utils.json_safe.clean_json_values directly in new code."""
+        return clean_json_values(obj)
 
     def get_stress_testing(self, db: Session, username: str = "admin") -> Dict[str, Any]:
         """Frontend wrapper – combine Market Regime and Historical Scenarios."""
@@ -1669,7 +1636,6 @@ class DataService:
             corr_matrix = np.eye(len(tickers))
         else:
             # pairwise corr z Pandas + PD-clip
-            import pandas as pd
             df = pd.DataFrame(R, index=dates, columns=active)
             C_df = df.corr(min_periods=40)
             
@@ -2192,8 +2158,6 @@ class DataService:
 
     def _get_top_risk_contributor(self, forecast_contribution: Dict[str, Any]) -> tuple:
         """Get top risk contributor based on total_rc_pct, excluding PORTFOLIO row"""
-        import numpy as np
-        
         tickers = forecast_contribution.get("tickers", [])
         trc = forecast_contribution.get("total_rc_pct", [])
         
@@ -2215,10 +2179,6 @@ class DataService:
         """Get realized risk metrics for portfolio and individual tickers (NaN-tolerant, aligned to SPY)."""
         print(f"[REALIZED-METRICS] Starting realized metrics for user: {username}")
         try:
-            import pandas as pd
-            import numpy as np
-            from quant.realized import compute_realized_metrics
-            
             cache_key = self._get_cache_key("realized_metrics", username)
             cached = self._get_from_cache(cache_key)
             if cached:
@@ -2348,10 +2308,6 @@ class DataService:
         """Get rolling metric data for charting"""
         print(f"[ROLLING-METRIC] Starting rolling metric calculation for user: {username}")
         print(f"[ROLLING-METRIC] Metric: {metric}, window: {window}, tickers: {tickers}")
-        import numpy as np
-        import pandas as pd
-        from math import isfinite
-        
         try:
             # Use provided tickers or default to PORTFOLIO
             if tickers is None:
@@ -2436,8 +2392,6 @@ class DataService:
                 ret_df = ret_df.replace([np.inf, -np.inf], np.nan)
             
             # Compute rolling metrics for all requested tickers
-            from quant.rolling import rolling_metric
-            
             datasets = []
             
             for ticker in tickers:
@@ -2486,7 +2440,6 @@ class DataService:
         """Get comprehensive liquidity metrics for portfolio"""
         print(f"[LIQUIDITY-METRICS] Starting liquidity metrics for user: {username}")
         try:
-            from quant.liquidity import liquidity_metrics
             return liquidity_metrics(db, username)
         except Exception as e:
             print(f"Error getting liquidity metrics: {e}")
@@ -2505,7 +2458,6 @@ class DataService:
 
     def get_liquidity_alerts(self, db: Session, username: str = "admin") -> List[Dict[str, Any]]:
         """Get liquidity alerts for portfolio"""
-        from quant.liquidity import liquidity_metrics
         result = liquidity_metrics(db, username)
         return result.get("alerts", [])
     
@@ -2538,9 +2490,8 @@ class DataService:
         
         # Add metrics for each individual ticker
         for ticker in portfolio_tickers:
-            # Generate realistic metrics for each ticker
-            import random
-            random.seed(hash(ticker) % 1000)  # Deterministic but varied
+            # Deterministic but varied per ticker
+            random.seed(hash(ticker) % 1000)
             
             ticker_metrics = {
                 "ticker": ticker,
@@ -2646,7 +2597,6 @@ except Exception as e:
 
             try:
                 # Run the test script
-                import subprocess
                 result = subprocess.run(
                     ["poetry", "run", "python", test_file],
                     shell=True, capture_output=True, text=True, timeout=15
@@ -2728,9 +2678,6 @@ except Exception as e:
     def _update_portfolio_json(self, username: str, db: Session):
         """Update user's portfolio JSON file"""
         try:
-            import json
-            import os
-            
             # Get user
             user = db.query(User).filter(User.username == username).first()
             if not user:
