@@ -1,5 +1,5 @@
 [project]
-name = "ibkr-connection"
+name = "z-alpha-risk-management"
 version = "0.1.0"
 description = "Z-Alpha Securities"
 authors = [
@@ -23,7 +23,8 @@ dependencies = [
     "arch (>=7.2.0,<8.0.0)",
     "yfinance (>=0.2.65,<0.3.0)",
     "bcrypt (>=4.0,<6.0)",
-    "pyjwt (>=2.8.0,<3.0.0)"
+    "pyjwt (>=2.8.0,<3.0.0)",
+    "pydantic-settings (>=2.5.0,<3.0.0)"
 ]
 
 

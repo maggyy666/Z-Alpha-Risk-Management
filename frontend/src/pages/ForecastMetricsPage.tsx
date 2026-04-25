@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useMemo, useState } from 'react';
 import { Line } from 'react-chartjs-2';
 import {
   Chart as ChartJS,
@@ -10,314 +10,180 @@ import {
   Tooltip,
   Legend,
 } from 'chart.js';
-import apiService from '../services/api';
+import apiService, {
+  ForecastMetricsResponse,
+  RollingForecastResponse,
+} from '../services/api';
+import { useApiData } from '../hooks/useApiData';
+import { useDebouncedValue } from '../hooks/useDebouncedValue';
 import { useSession } from '../contexts/SessionContext';
 import SelectableTags from '../components/SelectableTags';
 import './ForecastMetricsPage.css';
 
-ChartJS.register(
-  CategoryScale,
-  LinearScale,
-  PointElement,
-  LineElement,
-  Title,
-  Tooltip,
-  Legend
-);
+ChartJS.register(CategoryScale, LinearScale, PointElement, LineElement, Title, Tooltip, Legend);
 
-interface ForecastMetricsData {
-  metrics: Array<{
-    ticker: string;
-    ewma5_pct: number;
-    ewma20_pct: number;
-    garch_vol_pct: number;
-    egarch_vol_pct: number;
-    var_pct: number;
-    cvar_pct: number;
-    var_usd: number;
-    cvar_usd: number;
-  }>;
-  conf_level: number;
-}
+const SERIES_COLORS = [
+  '#4FC3F7', '#FF6B6B', '#4ECDC4', '#45B7D1', '#96CEB4', '#FFEAA7',
+  '#DDA0DD', '#98D8C8', '#F7DC6F', '#BB8FCE', '#85C1E9', '#F8C471',
+];
 
-interface RollingForecastData {
-  data: Array<{
-    date: string;
-    ticker: string;
-    vol_pct: number;
-  }>;
-  model: string;
-  window: number;
-  common_date_range?: {
-    start_date: string;
-    end_date: string;
-    total_days: number;
+const MONTH_NAMES = [
+  'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
+  'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec',
+];
+
+// Compress dense daily x-axis labels: full date every 90 days, month name
+// every 30, year on year-boundary, blank otherwise.
+const formatRollingLabel = (date: string, index: number, allDates: string[]): string => {
+  const d = new Date(date);
+  const year = d.getFullYear();
+  const month = d.getMonth();
+
+  if (index === 0 || index === allDates.length - 1 || index % 90 === 0) {
+    return `${MONTH_NAMES[month]} ${year}`;
+  }
+  if (index % 30 === 0) return MONTH_NAMES[month];
+  if (index > 0 && new Date(allDates[index - 1]).getFullYear() !== year) {
+    return year.toString();
+  }
+  return '';
+};
+
+const buildRollingChart = (rolling: RollingForecastResponse) => {
+  const tickerData: Record<string, { dates: string[]; vols: number[] }> = {};
+  rolling.data.forEach((item) => {
+    if (!tickerData[item.ticker]) tickerData[item.ticker] = { dates: [], vols: [] };
+    tickerData[item.ticker].dates.push(item.date);
+    tickerData[item.ticker].vols.push(item.vol_pct);
+  });
+
+  const datasets = Object.keys(tickerData).map((ticker, index) => ({
+    label: ticker,
+    data: tickerData[ticker].vols,
+    borderColor: SERIES_COLORS[index % SERIES_COLORS.length],
+    backgroundColor: 'transparent',
+    borderWidth: 1.5,
+    fill: false,
+    tension: 0.1,
+    borderDash: index % 2 === 0 ? [] : [5, 5],
+    pointRadius: 0,
+    pointHoverRadius: 4,
+    pointHoverBackgroundColor: SERIES_COLORS[index % SERIES_COLORS.length],
+    pointHoverBorderColor: '#ffffff',
+    pointHoverBorderWidth: 2,
+  }));
+
+  // Common dates = intersection across all tickers (so all series render aligned).
+  const allTickers = Object.keys(tickerData);
+  let commonDates: string[] = [];
+  if (allTickers.length > 0) {
+    commonDates = tickerData[allTickers[0]].dates;
+    for (let i = 1; i < allTickers.length; i++) {
+      const dates = tickerData[allTickers[i]].dates;
+      commonDates = commonDates.filter((d) => dates.includes(d));
+    }
+  }
+
+  return {
+    labels: commonDates.map((date, i) => formatRollingLabel(date, i, commonDates)),
+    datasets,
   };
-}
+};
+
+const CHART_OPTIONS = {
+  responsive: true,
+  maintainAspectRatio: false,
+  plugins: {
+    legend: {
+      position: 'top' as const,
+      labels: { color: '#ffffff', font: { size: 12 }, usePointStyle: true, padding: 10 },
+    },
+    tooltip: {
+      enabled: true,
+      mode: 'index' as const,
+      intersect: false,
+      backgroundColor: 'rgba(0, 0, 0, 0.9)',
+      titleColor: '#ffffff',
+      bodyColor: '#ffffff',
+      borderColor: '#333',
+      borderWidth: 1,
+      cornerRadius: 6,
+      displayColors: true,
+      titleFont: { size: 14, weight: 'bold' as const },
+      bodyFont: { size: 12 },
+      padding: 10,
+      callbacks: {
+        title(context: Array<{ label: string }>) {
+          const date = new Date(context[0].label);
+          return date.toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' });
+        },
+        label(context: { dataset: { label?: string }; parsed: { y: number } }) {
+          return `${context.dataset.label || ''}: ${context.parsed.y.toFixed(2)}%`;
+        },
+      },
+    },
+  },
+  scales: {
+    x: {
+      grid: { color: '#333', drawBorder: false },
+      ticks: {
+        color: '#ffffff',
+        font: { size: 11 },
+        maxTicksLimit: 20,
+        maxRotation: 0,
+        autoSkip: true,
+        autoSkipPadding: 10,
+      },
+    },
+    y: {
+      title: { display: true, text: 'Volatility (%)', color: '#cccccc' },
+      grid: { color: '#333', drawBorder: false },
+      ticks: { color: '#ffffff', font: { size: 11 } },
+    },
+  },
+  elements: {
+    point: { hoverRadius: 4, hoverBorderWidth: 2 },
+  },
+};
+
+const AVAILABLE_TICKERS = ['PORTFOLIO', 'DOMO', 'AMD', 'GOOGL', 'META', 'TSLA'];
 
 const ForecastMetricsPage: React.FC = () => {
-  const [metricsData, setMetricsData] = useState<ForecastMetricsData | null>(null);
-  const [rollingData, setRollingData] = useState<RollingForecastData | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
   const { getCurrentUsername } = useSession();
-  
-  // Rolling forecast controls
+  const username = getCurrentUsername();
+
   const [selectedModel, setSelectedModel] = useState<string>('EGARCH');
   const [selectedWindow, setSelectedWindow] = useState<number>(21);
   const [selectedTickers, setSelectedTickers] = useState<string[]>(['PORTFOLIO', 'DOMO']);
-  const [availableTickers, setAvailableTickers] = useState<string[]>(['PORTFOLIO', 'DOMO', 'AMD', 'GOOGL', 'META', 'TSLA']);
 
-  const fetchForecastMetrics = useCallback(async () => {
-    try {
-      setLoading(true);
-      const username = getCurrentUsername();
-      const response = await apiService.getForecastMetrics(username);
-      setMetricsData(response);
-      setError(null);
-    } catch (err) {
-      setError('Failed to load forecast metrics data');
-      console.error('Error fetching forecast metrics:', err);
-    } finally {
-      setLoading(false);
-    }
-  }, [getCurrentUsername]);
+  // Debounce + clamp the window value before it drives the network fetch.
+  // The input is type=number so users typing "21" briefly emit "2", which
+  // would 422 against the backend's `ge=5` validator on every keystroke.
+  const debouncedWindow = useDebouncedValue(selectedWindow, 400);
+  const safeWindow = Math.max(5, Math.min(252, debouncedWindow || 5));
 
-  const fetchRollingForecast = useCallback(async () => {
-    try {
-      console.log('Fetching rolling forecast with:', { selectedModel, selectedWindow, selectedTickers });
-      const username = getCurrentUsername();
-      const response = await apiService.getRollingForecast(selectedModel, selectedWindow, selectedTickers, username);
-      console.log('Rolling forecast response:', response);
-      
-      // Debug: Print sample data values
-      if (response && response.data && response.data.length > 0) {
-        console.log('=== SAMPLE DATA FOR MODEL:', selectedModel, '===');
-        const sampleData = response.data.slice(0, 10); // First 10 entries
-        sampleData.forEach((item, index) => {
-          console.log(`${index + 1}. ${item.date} | ${item.ticker} | Vol: ${item.vol_pct.toFixed(2)}%`);
-        });
-        console.log('=== END SAMPLE DATA ===');
-      }
-      
-      setRollingData(response);
-    } catch (err) {
-      console.error('Error fetching rolling forecast:', err);
-    }
-  }, [selectedModel, selectedWindow, selectedTickers, getCurrentUsername]);
+  const {
+    data: metricsData,
+    loading: metricsLoading,
+    error: metricsError,
+    refetch: refetchMetrics,
+  } = useApiData<ForecastMetricsResponse>(
+    () => apiService.getForecastMetrics(username),
+    [username],
+    'Failed to load forecast metrics data',
+  );
 
-  useEffect(() => {
-    fetchForecastMetrics();
-  }, [fetchForecastMetrics]);
+  const { data: rollingData } = useApiData<RollingForecastResponse>(
+    () => apiService.getRollingForecast(selectedModel, safeWindow, selectedTickers, username),
+    [selectedModel, safeWindow, selectedTickers, username],
+  );
 
-  useEffect(() => {
-    fetchRollingForecast();
-  }, [fetchRollingForecast]);
+  const rollingChart = useMemo(
+    () => (rollingData ? buildRollingChart(rollingData) : null),
+    [rollingData],
+  );
 
-  const createRollingForecastChartData = () => {
-    if (!rollingData) return null;
-
-    console.log('Creating chart data for model:', rollingData.model);
-    console.log('Total data points:', rollingData.data.length);
-
-    // Group data by ticker
-    const tickerData: { [key: string]: { dates: string[], vols: number[] } } = {};
-    
-    rollingData.data.forEach(item => {
-      if (!tickerData[item.ticker]) {
-        tickerData[item.ticker] = { dates: [], vols: [] };
-      }
-      tickerData[item.ticker].dates.push(item.date);
-      tickerData[item.ticker].vols.push(item.vol_pct);
-    });
-
-    // Debug: Print sample values for each ticker
-    Object.keys(tickerData).forEach(ticker => {
-      const data = tickerData[ticker];
-      console.log(`Ticker ${ticker}: ${data.vols.length} points`);
-      if (data.vols.length > 0) {
-        console.log(`  Sample vols: ${data.vols.slice(0, 5).map(v => v.toFixed(2)).join(', ')}...`);
-        console.log(`  Date range: ${data.dates[0]} to ${data.dates[data.dates.length - 1]}`);
-      }
-    });
-
-    // Większa paleta kolorów dla lepszego rozróżnienia (jak w Factor Exposure)
-    const colors = [
-      '#4FC3F7', // Jasny niebieski
-      '#FF6B6B', // Czerwony
-      '#4ECDC4', // Turkusowy
-      '#45B7D1', // Ciemny niebieski
-      '#96CEB4', // Zielony
-      '#FFEAA7', // Żółty
-      '#DDA0DD', // Fioletowy
-      '#98D8C8', // Mint
-      '#F7DC6F', // Złoty
-      '#BB8FCE', // Lawenda
-      '#85C1E9', // Błękitny
-      '#F8C471'  // Pomarańczowy
-    ];
-
-    const datasets = Object.keys(tickerData).map((ticker, index) => ({
-      label: ticker,
-      data: tickerData[ticker].vols,
-      borderColor: colors[index % colors.length],
-      backgroundColor: 'transparent',
-      borderWidth: 1.5, // Cieńsze linie dla lepszej czytelności
-      fill: false,
-      tension: 0.1, // Delikatne wygładzenie
-      borderDash: index % 2 === 0 ? [] : [5, 5], // Przemienne linie ciągłe/przerywane
-      pointRadius: 0, // Ukryj punkty dla lepszej czytelności
-      pointHoverRadius: 4, // Pokaż punkty tylko przy hover
-      pointHoverBackgroundColor: colors[index % colors.length],
-      pointHoverBorderColor: '#ffffff',
-      pointHoverBorderWidth: 2
-    }));
-
-    // Get common dates for all tickers
-    const allTickers = Object.keys(tickerData);
-    let commonDates: string[] = [];
-    
-    if (allTickers.length > 0) {
-      // Start with first ticker's dates
-      commonDates = tickerData[allTickers[0]].dates;
-      
-      // Find intersection with other tickers
-      for (let i = 1; i < allTickers.length; i++) {
-        const tickerDates = tickerData[allTickers[i]].dates;
-        commonDates = commonDates.filter(date => tickerDates.includes(date));
-      }
-    }
-    
-    // Format labels - lepsze etykiety osi X
-    const labels = commonDates.map((date, index) => {
-      const dateObj = new Date(date);
-      const year = dateObj.getFullYear();
-      const month = dateObj.getMonth();
-      const day = dateObj.getDate();
-      
-      // Pokaż pełną datę co 3 miesiące (jak w Factor Exposure)
-      if (index === 0 || index === commonDates.length - 1 || index % 90 === 0) {
-        const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 
-                           'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-        return `${monthNames[month]} ${year}`;
-      }
-      
-      // Pokaż miesiąc co miesiąc (jak w Factor Exposure)
-      if (index % 30 === 0) {
-        const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 
-                           'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-        return monthNames[month];
-      }
-      
-      // Pokaż rok na początku każdego roku (jak w Factor Exposure)
-      if (index > 0 && new Date(commonDates[index - 1]).getFullYear() !== year) {
-        return year.toString();
-      }
-      
-      return ''; // Puste etykiety dla większości punktów
-    });
-
-    return {
-      labels,
-      datasets
-    };
-  };
-
-  const chartOptions = {
-    responsive: true,
-    maintainAspectRatio: false,
-    plugins: {
-      legend: {
-        position: 'top' as const,
-        labels: {
-          color: '#ffffff',
-          font: {
-            size: 12
-          },
-          usePointStyle: true,
-          padding: 10
-        }
-      },
-      tooltip: {
-        enabled: true,
-        mode: 'index' as const,
-        intersect: false,
-        backgroundColor: 'rgba(0, 0, 0, 0.9)',
-        titleColor: '#ffffff',
-        bodyColor: '#ffffff',
-        borderColor: '#333',
-        borderWidth: 1,
-        cornerRadius: 6,
-        displayColors: true,
-        titleFont: {
-          size: 14,
-          weight: 'bold' as const
-        },
-        bodyFont: {
-          size: 12
-        },
-        padding: 10,
-        callbacks: {
-          title: function(context: any) {
-            const date = new Date(context[0].label);
-            return date.toLocaleDateString('en-US', { 
-              year: 'numeric', 
-              month: 'short', 
-              day: 'numeric' 
-            });
-          },
-          label: function(context: any) {
-            const label = context.dataset.label || '';
-            const value = context.parsed.y;
-            return `${label}: ${value.toFixed(2)}%`;
-          }
-        }
-      }
-    },
-    scales: {
-      x: {
-        grid: {
-          color: '#333',
-          drawBorder: false
-        },
-        ticks: {
-          color: '#ffffff',
-          font: {
-            size: 11
-          },
-          maxTicksLimit: 20, // Ogranicz liczbę etykiet na osi X
-          maxRotation: 0, // Brak rotacji etykiet
-          autoSkip: true,
-          autoSkipPadding: 10
-        }
-      },
-      y: {
-        title: {
-          display: true,
-          text: 'Volatility (%)',
-          color: '#cccccc'
-        },
-        grid: {
-          color: '#333',
-          drawBorder: false
-        },
-        ticks: {
-          color: '#ffffff',
-          font: {
-            size: 11
-          }
-        }
-      }
-    },
-    elements: {
-      point: {
-        hoverRadius: 4,
-        hoverBorderWidth: 2
-      }
-    }
-  };
-
-  if (loading) {
+  if (metricsLoading) {
     return (
       <div className="forecast-metrics-page">
         <div className="loading">Loading forecast metrics data...</div>
@@ -325,14 +191,12 @@ const ForecastMetricsPage: React.FC = () => {
     );
   }
 
-  if (error) {
+  if (metricsError) {
     return (
       <div className="forecast-metrics-page">
         <div className="error">
-          <p>{error}</p>
-          <button onClick={fetchForecastMetrics} className="retry-button">
-            Retry
-          </button>
+          <p>{metricsError}</p>
+          <button onClick={refetchMetrics} className="retry-button">Retry</button>
         </div>
       </div>
     );
@@ -348,51 +212,49 @@ const ForecastMetricsPage: React.FC = () => {
 
   return (
     <div className="forecast-metrics-page">
-      {/* Forecast Metrics Section */}
       <div className="forecast-metrics-section">
         <h2>Forecast Metrics</h2>
         <div className="table-container">
-                      <table className="forecast-table">
-              <thead>
-                <tr>
-                  <th>Ticker</th>
-                  <th>EWMA (5D)</th>
-                  <th>EWMA (200)</th>
-                  <th>Garch Volatility</th>
-                  <th>E-Garch Volatility</th>
-                  <th>VaR (95%)</th>
-                  <th>CVaR (95%)</th>
-                  <th>VaR ($)</th>
-                  <th>CVaR ($)</th>
+          <table className="forecast-table">
+            <thead>
+              <tr>
+                <th>Ticker</th>
+                <th>EWMA (5D)</th>
+                <th>EWMA (200)</th>
+                <th>Garch Volatility</th>
+                <th>E-Garch Volatility</th>
+                <th>VaR (95%)</th>
+                <th>CVaR (95%)</th>
+                <th>VaR ($)</th>
+                <th>CVaR ($)</th>
+              </tr>
+            </thead>
+            <tbody>
+              {metricsData.metrics.map((metric, index) => (
+                <tr key={index}>
+                  <td>{metric.ticker}</td>
+                  <td>{metric.ewma5_pct.toFixed(2)}%</td>
+                  <td>{metric.ewma20_pct.toFixed(2)}%</td>
+                  <td>{metric.garch_vol_pct.toFixed(2)}%</td>
+                  <td>{metric.egarch_vol_pct.toFixed(2)}%</td>
+                  <td>{metric.var_pct.toFixed(2)}%</td>
+                  <td>{metric.cvar_pct.toFixed(2)}%</td>
+                  <td>${Math.abs(metric.var_usd).toFixed(0)}</td>
+                  <td>${Math.abs(metric.cvar_usd).toFixed(0)}</td>
                 </tr>
-              </thead>
-              <tbody>
-                {metricsData.metrics.map((metric, index) => (
-                  <tr key={index}>
-                    <td>{metric.ticker}</td>
-                    <td>{metric.ewma5_pct.toFixed(2)}%</td>
-                    <td>{metric.ewma20_pct.toFixed(2)}%</td>
-                    <td>{metric.garch_vol_pct.toFixed(2)}%</td>
-                    <td>{metric.egarch_vol_pct.toFixed(2)}%</td>
-                    <td>{metric.var_pct.toFixed(2)}%</td>
-                    <td>{metric.cvar_pct.toFixed(2)}%</td>
-                    <td>${Math.abs(metric.var_usd).toFixed(0)}</td>
-                    <td>${Math.abs(metric.cvar_usd).toFixed(0)}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+              ))}
+            </tbody>
+          </table>
         </div>
       </div>
 
-      {/* Rolling Forecast Metrics Section */}
       <div className="rolling-forecast-section">
         <h2>Rolling Forecast Metrics</h2>
-        
+
         <div className="controls">
           <div className="control-group">
             <label>SELECT MODEL:</label>
-            <select 
+            <select
               value={selectedModel}
               onChange={(e) => setSelectedModel(e.target.value)}
               className="model-select"
@@ -405,11 +267,11 @@ const ForecastMetricsPage: React.FC = () => {
               <option value="EGARCH">EGARCH</option>
             </select>
           </div>
-          
+
           <div className="control-group">
             <label>SELECT TIME FRAME:</label>
-            <input 
-              type="number" 
+            <input
+              type="number"
               value={selectedWindow}
               onChange={(e) => setSelectedWindow(Number(e.target.value))}
               min="5"
@@ -418,12 +280,12 @@ const ForecastMetricsPage: React.FC = () => {
               style={{ height: 'clamp(32px, 5vw, 36px)', minHeight: 'clamp(32px, 5vw, 36px)' }}
             />
           </div>
-          
+
           <div className="control-group">
             <SelectableTags
               title="SELECT TICKERS"
               selectedItems={selectedTickers}
-              availableItems={availableTickers}
+              availableItems={AVAILABLE_TICKERS}
               onSelectionChange={setSelectedTickers}
               placeholder="Add ticker"
             />
@@ -431,11 +293,11 @@ const ForecastMetricsPage: React.FC = () => {
         </div>
 
         <div className="chart-container" style={{ width: '100%', height: '400px', minWidth: '100%' }}>
-          {rollingData && createRollingForecastChartData() && (
-            <Line 
-              key={`${selectedModel}-${selectedWindow}-${selectedTickers.join(',')}`}
-              data={createRollingForecastChartData()!} 
-              options={chartOptions} 
+          {rollingChart && (
+            <Line
+              key={`${selectedModel}-${safeWindow}-${selectedTickers.join(',')}`}
+              data={rollingChart}
+              options={CHART_OPTIONS}
             />
           )}
         </div>

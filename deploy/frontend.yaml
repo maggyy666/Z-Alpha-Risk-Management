@@ -29,11 +29,10 @@ spec:
           imagePullPolicy: IfNotPresent
           ports:
             - containerPort: 3000
-          env:
-            - name: REACT_APP_API_BASE
-              value: http://localhost:8000
-            - name: REACT_APP_USER_API_BASE
-              value: http://localhost:8001
+          # Note: VITE_* vars are baked in at build time (Dockerfile.frontend
+          # ARG / ENV). Defaults in src/services/api.ts already point at the
+          # local LoadBalancer URLs (http://localhost:8000 / 8001), so no
+          # runtime env wiring is required for the default deployment.
           readinessProbe:
             tcpSocket: { port: 3000 }
             periodSeconds: 3

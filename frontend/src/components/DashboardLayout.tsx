@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import { useSession } from '../contexts/SessionContext';
+import apiService from '../services/api';
 import Footer from './Footer';
 import './DashboardLayout.css';
 
@@ -12,6 +13,16 @@ const DashboardLayout: React.FC<DashboardLayoutProps> = ({ children }) => {
   const location = useLocation();
   const { session, logout } = useSession();
   const [showDropdown, setShowDropdown] = useState(false);
+
+  // Pre-warm the backend's analytics cache for the current user as soon as the
+  // dashboard mounts. Subsequent page visits then read from the warm TTL cache
+  // (5 min) instead of triggering full computation. Fire-and-forget; failures
+  // are logged inside the apiService request helper.
+  const username = session?.username;
+  useEffect(() => {
+    if (!username) return;
+    apiService.warmDashboardCache(username);
+  }, [username]);
 
   // Close dropdown when clicking outside
   useEffect(() => {

@@ -14,13 +14,7 @@ import numpy as np
 from sqlalchemy.orm import Session
 
 from database.models.ticker import TickerInfo
-from services.analytics.concentration import ConcentrationAnalytics
-from services.analytics.factors import FactorAnalytics
-from services.analytics.liquidity import LiquidityAnalytics
-from services.analytics.realized import RealizedAnalytics
-from services.analytics.regime import RegimeAnalytics
 from services.analytics.risk_score import RiskScoreAnalytics
-from services.analytics.volatility import VolatilityAnalytics, _vol_cache
 from services.cache import TTLCache
 from services.ibkr_service import IBKRService
 from services.market_data_service import MarketDataService
@@ -80,13 +74,7 @@ class DataService:
         self._returns = ReturnsService(self._market_data)
         self._portfolios = PortfolioService(self.ibkr_service, self._market_data, self._cache)
 
-        self._a_concentration = ConcentrationAnalytics(self)
-        self._a_volatility = VolatilityAnalytics(self)
-        self._a_factors = FactorAnalytics(self)
-        self._a_realized = RealizedAnalytics(self)
-        self._a_regime = RegimeAnalytics(self, STRESS_SCENARIOS, STRESS_LIMITS, REGIME_THRESH)
         self._a_risk_score = RiskScoreAnalytics(self, NORMALIZATION)
-        self._a_liquidity = LiquidityAnalytics(self)
 
     # Cache
     def _get_cache_key(self, method: str, username: str, **kwargs) -> str:
@@ -99,11 +87,12 @@ class DataService:
         self._cache.set(key, data)
 
     def _clear_cache(self, pattern: Optional[str] = None) -> None:
+        """Clear the request-level TTL cache plus the per-symbol vol forecast cache."""
+        from modules.volatility_sizing.service import _vol_cache
         removed = self._cache.clear(pattern)
-        logger.debug("cleared pattern=%r: %d entries", pattern, removed)
         vol_n = len(_vol_cache)
         _vol_cache.clear()
-        logger.debug("cleared global volatility cache (%d entries)", vol_n)
+        logger.debug("cleared pattern=%r: %d entries; vol cache: %d entries", pattern, removed, vol_n)
 
     def _clean_json_values(self, obj):
         return clean_json_values(obj)
@@ -190,100 +179,43 @@ class DataService:
     def _get_common_date_range(self, db: Session, symbols: List[str]) -> Dict[str, Any]:
         return self._returns.get_common_date_range(db, symbols)
 
-    # Volatility analytics
+    # Volatility/forecast helpers used by RiskScoreAnalytics through this facade.
+    # Logic lives in modules/volatility_sizing + modules/forecast_risk; these are shims.
     def calculate_volatility_metrics(
         self, db: Session, symbol: str,
         forecast_model: str = "EWMA (5D)", risk_free_annual: float = 0.0,
     ) -> Dict[str, float]:
-        return self._a_volatility.calculate_volatility_metrics(
-            db, symbol, forecast_model, risk_free_annual
-        )
-
-    def get_portfolio_volatility_data(
-        self, db: Session, username: str = "admin",
-        forecast_model: str = "EWMA (5D)",
-        vol_floor_annual_pct: float = 8.0, risk_free_annual: float = 0.0,
-    ) -> List[Dict[str, Any]]:
-        return self._a_volatility.get_portfolio_volatility_data(
-            db, username, forecast_model, vol_floor_annual_pct, risk_free_annual
-        )
+        from modules.volatility_sizing.service import calculate_volatility_metrics
+        return calculate_volatility_metrics(db, symbol, forecast_model, risk_free_annual)
 
     def build_covariance_matrix(
         self, db: Session, tickers: List[str], vol_model: str = "EWMA (5D)"
     ) -> np.ndarray:
-        return self._a_volatility.build_covariance_matrix(db, tickers, vol_model)
+        from modules.forecast_risk.service import build_covariance_matrix
+        return build_covariance_matrix(self, db, tickers, vol_model)
 
-    def get_forecast_risk_contribution(
-        self, db: Session, username: str = "admin",
-        vol_model: str = "EWMA (5D)", tickers: Optional[List[str]] = None,
-        include_portfolio_bar: bool = True,
-    ) -> Dict[str, Any]:
-        return self._a_volatility.get_forecast_risk_contribution(
-            db, username, vol_model, tickers, include_portfolio_bar
-        )
-
-    def get_forecast_metrics(
-        self, db: Session, username: str = "admin", conf_level: float = 0.95
-    ) -> Dict[str, Any]:
-        return self._a_volatility.get_forecast_metrics(db, username, conf_level)
-
-    def get_rolling_forecast(
-        self, db: Session, tickers: List[str], model: str, window: int,
-        username: str = "admin",
-    ) -> Any:
-        return self._a_volatility.get_rolling_forecast(db, tickers, model, window, username)
-
-    # Concentration / factors / risk score / regime / realized / liquidity
+    # Concentration / risk score
     def get_concentration_risk_data(self, db: Session, username: str = "admin") -> Dict[str, Any]:
-        return self._a_concentration.get_concentration_risk_data(db, username)
-
-    def get_factor_exposure_data(self, db: Session, username: str = "admin") -> Dict[str, Any]:
-        return self._a_factors.get_factor_exposure_data(db, username)
-
-    def get_latest_factor_exposures(self, db: Session, username: str = "admin") -> Dict[str, Any]:
-        return self._a_factors.get_latest_factor_exposures(db, username)
+        """Shim into modules/concentration_risk -- kept on the facade because
+        many modules consume portfolio weights through `ds.get_concentration_risk_data`."""
+        from modules.concentration_risk import service as concentration_service
+        return concentration_service.get_concentration_risk_data(self, db, username)
 
     def get_risk_scoring(self, db: Session, username: str = "admin") -> Dict[str, Any]:
         return self._a_risk_score.get_risk_scoring(db, username)
 
-    def get_portfolio_summary(self, db: Session, username: str = "admin") -> Dict[str, Any]:
-        return self._a_risk_score.get_portfolio_summary(db, username)
-
-    def _get_top_risk_contributor(self, forecast_contribution: Dict[str, Any]) -> tuple:
-        return RiskScoreAnalytics.get_top_risk_contributor(forecast_contribution)
-
     def _portfolio_snapshot(self, db: Session, username: str = "admin"):
-        return self._a_regime.portfolio_snapshot(db, username)
+        """Returns ([{ticker, weight_frac, ...}], 1.0) with weights renormalized,
+        or ([], 0.0) when there are no positions. Shared by realized_risk and
+        stress_testing modules."""
+        conc = self.get_concentration_risk_data(db, username)
+        if "error" in conc:
+            return [], 0.0
+        positions = conc["portfolio_data"]
+        w_sum = sum(p.get("weight_frac", 0.0) for p in positions)
+        if w_sum <= 0:
+            return [], 0.0
+        for p in positions:
+            p["weight_frac"] = float(p["weight_frac"]) / w_sum
+        return positions, 1.0
 
-    def get_market_regime(self, db: Session, username: str = "admin") -> Dict[str, Any]:
-        return self._a_regime.get_market_regime(db, username)
-
-    def get_historical_scenarios(
-        self, db: Session, username: str = "admin",
-        scenarios: Optional[List[Dict[str, Any]]] = None,
-    ) -> Dict[str, Any]:
-        return self._a_regime.get_historical_scenarios(db, username, scenarios)
-
-    def get_stress_testing(self, db: Session, username: str = "admin") -> Dict[str, Any]:
-        return self._a_regime.get_stress_testing(db, username)
-
-    def get_realized_metrics(self, db: Session, username: str = "admin") -> Dict[str, Any]:
-        return self._a_realized.get_realized_metrics(db, username)
-
-    def get_rolling_metric(
-        self, db: Session, metric: str = "vol", window: int = 21,
-        tickers: Optional[List[str]] = None, username: str = "admin",
-    ) -> Dict[str, Any]:
-        return self._a_realized.get_rolling_metric(db, metric, window, tickers, username)
-
-    def _get_sample_realized_metrics(self, portfolio_tickers: List[str]) -> Dict[str, Any]:
-        return self._a_realized._get_sample_realized_metrics(portfolio_tickers)
-
-    def get_liquidity_metrics(self, db: Session, username: str = "admin") -> Dict[str, Any]:
-        return self._a_liquidity.get_liquidity_metrics(db, username)
-
-    def get_volume_distribution(self, db: Session, username: str = "admin") -> Dict[str, Any]:
-        return self._a_liquidity.get_volume_distribution(db, username)
-
-    def get_liquidity_alerts(self, db: Session, username: str = "admin") -> List[Dict[str, Any]]:
-        return self._a_liquidity.get_liquidity_alerts(db, username)

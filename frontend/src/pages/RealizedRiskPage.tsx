@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { Line } from 'react-chartjs-2';
 import {
   Chart as ChartJS,
@@ -11,289 +11,194 @@ import {
   Legend,
 } from 'chart.js';
 import apiService, { RealizedMetricsResponse, RollingMetricsResponse } from '../services/api';
+import { useApiData } from '../hooks/useApiData';
 import { useSession } from '../contexts/SessionContext';
 import SelectableTags from '../components/SelectableTags';
 import './RealizedRiskPage.css';
 
-ChartJS.register(
-  CategoryScale,
-  LinearScale,
-  PointElement,
-  LineElement,
-  Title,
-  Tooltip,
-  Legend
-);
+ChartJS.register(CategoryScale, LinearScale, PointElement, LineElement, Title, Tooltip, Legend);
 
-const RealizedRiskPage: React.FC = () => {
-  const [realizedData, setRealizedData] = useState<RealizedMetricsResponse | null>(null);
-  const [rollingData, setRollingData] = useState<RollingMetricsResponse | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-  const [availableTickers, setAvailableTickers] = useState<string[]>([]);
-  const { getCurrentUsername } = useSession();
-  
-  // Rolling metrics controls
-  const [selectedMetric, setSelectedMetric] = useState<string>("vol");
-  const [selectedTimeFrame, setSelectedTimeFrame] = useState<number>(21);
-  const [selectedTickers, setSelectedTickers] = useState<string[]>(["PORTFOLIO"]);
+const SERIES_COLORS = [
+  '#4FC3F7', '#FF6B6B', '#4ECDC4', '#45B7D1', '#96CEB4', '#FFEAA7',
+  '#DDA0DD', '#98D8C8', '#F7DC6F', '#BB8FCE', '#85C1E9', '#F8C471',
+];
 
-  const fetchAvailableTickers = useCallback(async () => {
-    try {
-      const username = getCurrentUsername();
-      const response = await apiService.getUserPortfolio(username);
-      if (response && response.portfolio_items) {
-        const tickers = response.portfolio_items.map((item: any) => item.ticker);
-        setAvailableTickers(tickers);
-        
-        // Automatycznie wybierz PORTFOLIO + pierwszy ticker z portfolio
-        if (tickers.length > 0) {
-          setSelectedTickers(["PORTFOLIO", tickers[0]]);
-        }
-      }
-    } catch (err) {
-      console.error('Error fetching available tickers:', err);
-    }
-  }, [getCurrentUsername]);
+const MONTH_NAMES = [
+  'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
+  'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec',
+];
 
-  const fetchRealizedData = useCallback(async () => {
-    try {
-      setLoading(true);
-      const username = getCurrentUsername();
-      const response = await apiService.getRealizedMetrics(username);
-      setRealizedData(response);
-      setError(null);
-    } catch (err) {
-      setError('Failed to load realized metrics data');
-      console.error('Error fetching realized metrics:', err);
-    } finally {
-      setLoading(false);
-    }
-  }, [getCurrentUsername]);
+const METRIC_DISPLAY_NAMES: Record<string, string> = {
+  vol: 'Rolling Volatility',
+  sharpe: 'Rolling Sharpe',
+  return: 'Rolling Return',
+  maxdd: 'Rolling Max Drawdown',
+  beta: 'Rolling Beta',
+};
 
-  const fetchRollingData = useCallback(async () => {
-    try {
-      const username = getCurrentUsername();
-      const response = await apiService.getRollingMetrics(
-        selectedMetric,
-        selectedTimeFrame,
-        selectedTickers.length > 0 ? selectedTickers : ["PORTFOLIO"],
-        username
-      );
-      setRollingData(response);
-    } catch (err) {
-      console.error('Error fetching rolling metrics:', err);
-    }
-  }, [selectedMetric, selectedTimeFrame, selectedTickers, getCurrentUsername]);
+const TIMEFRAME_LABELS: Record<number, string> = {
+  21: '21D (1M)',
+  63: '63D (3M)',
+  126: '126D (6M)',
+  252: '252D (1Y)',
+};
 
-  useEffect(() => {
-    fetchAvailableTickers();
-    fetchRealizedData();
-  }, [fetchAvailableTickers, fetchRealizedData]);
+const formatRollingLabel = (date: string, index: number, allDates: string[]): string => {
+  const d = new Date(date);
+  const year = d.getFullYear();
+  const month = d.getMonth();
 
-  useEffect(() => {
-    fetchRollingData();
-  }, [fetchRollingData]);
+  if (index === 0 || index === allDates.length - 1 || index % 90 === 0) {
+    return `${MONTH_NAMES[month]} ${year}`;
+  }
+  if (index % 30 === 0) return MONTH_NAMES[month];
+  if (index > 0 && new Date(allDates[index - 1]).getFullYear() !== year) {
+    return year.toString();
+  }
+  return '';
+};
 
-  const getMetricDisplayName = (metric: string) => {
-    switch (metric) {
-      case "vol": return "Rolling Volatility";
-      case "sharpe": return "Rolling Sharpe";
-      case "return": return "Rolling Return";
-      case "maxdd": return "Rolling Max Drawdown";
-      case "beta": return "Rolling Beta";
-      default: return metric;
-    }
+const buildRollingChart = (rolling: RollingMetricsResponse) => {
+  if (!rolling.datasets?.length) return null;
+  const dates = rolling.datasets[0].dates;
+  const labels = dates.map((d, i) => formatRollingLabel(d, i, dates));
+  return {
+    labels,
+    datasets: rolling.datasets.map((ds, index) => ({
+      label: ds.ticker,
+      data: ds.values,
+      borderColor: SERIES_COLORS[index % SERIES_COLORS.length],
+      backgroundColor: 'transparent',
+      borderWidth: 1.5,
+      fill: false,
+      tension: 0.1,
+      borderDash: [],
+      pointRadius: 0,
+      pointHoverRadius: 4,
+      pointHoverBackgroundColor: SERIES_COLORS[index % SERIES_COLORS.length],
+      pointHoverBorderColor: '#ffffff',
+      pointHoverBorderWidth: 2,
+    })),
   };
+};
 
-  const getTimeFrameDisplayName = (window: number) => {
-    switch (window) {
-      case 21: return "21D (1M)";
-      case 63: return "63D (3M)";
-      case 126: return "126D (6M)";
-      case 252: return "252D (1Y)";
-      default: return `${window}D`;
-    }
-  };
-
-  const createRollingChartData = () => {
-    if (!rollingData || !rollingData.datasets || rollingData.datasets.length === 0) return null;
-
-    // Większa paleta kolorów dla lepszego rozróżnienia
-    const colors = [
-      '#4FC3F7', // Jasny niebieski
-      '#FF6B6B', // Czerwony
-      '#4ECDC4', // Turkusowy
-      '#45B7D1', // Ciemny niebieski
-      '#96CEB4', // Zielony
-      '#FFEAA7', // Żółty
-      '#DDA0DD', // Fioletowy
-      '#98D8C8', // Mint
-      '#F7DC6F', // Złoty
-      '#BB8FCE', // Lawenda
-      '#85C1E9', // Błękitny
-      '#F8C471'  // Pomarańczowy
-    ];
-
-    // Użyj dat z pierwszego datasetu (wszystkie powinny mieć te same daty)
-    const firstDataset = rollingData.datasets[0];
-    const labels = firstDataset.dates.map((date, index) => {
-      const dateObj = new Date(date);
-      const year = dateObj.getFullYear();
-      const month = dateObj.getMonth();
-      const day = dateObj.getDate();
-      
-      // Pokaż pełną datę co 3 miesiące (jak w Factor Exposure)
-      if (index === 0 || index === firstDataset.dates.length - 1 || index % 90 === 0) {
-        const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 
-                           'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-        return `${monthNames[month]} ${year}`;
-      }
-      
-      // Pokaż miesiąc co miesiąc (jak w Factor Exposure)
-      if (index % 30 === 0) {
-        const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 
-                           'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-        return monthNames[month];
-      }
-      
-      // Pokaż rok na początku każdego roku (jak w Factor Exposure)
-      if (index > 0 && new Date(firstDataset.dates[index - 1]).getFullYear() !== year) {
-        return year.toString();
-      }
-      
-      return ''; // Puste etykiety dla większości punktów
-    });
-
-    return {
-      labels,
-      datasets: rollingData.datasets.map((dataset, index) => ({
-        label: dataset.ticker,
-        data: dataset.values,
-        borderColor: colors[index % colors.length],
-        backgroundColor: 'transparent',
-        borderWidth: 1.5,
-        fill: false,
-        tension: 0.1,
-        borderDash: [],
-        pointRadius: 0,
-        pointHoverRadius: 4,
-        pointHoverBackgroundColor: colors[index % colors.length],
-        pointHoverBorderColor: '#ffffff',
-        pointHoverBorderWidth: 2
-      })),
-    };
-  };
-
-  const chartOptions = {
-    responsive: true,
-    maintainAspectRatio: false,
-    plugins: {
-      legend: {
-        position: 'top' as const,
-        labels: {
-          color: '#ffffff',
-          font: {
-            size: 12
-          },
-          usePointStyle: true,
-          padding: 10
-        }
+const buildChartOptions = (selectedMetric: string, selectedTimeFrame: number) => ({
+  responsive: true,
+  maintainAspectRatio: false,
+  plugins: {
+    legend: {
+      position: 'top' as const,
+      labels: { color: '#ffffff', font: { size: 12 }, usePointStyle: true, padding: 10 },
+    },
+    title: {
+      display: true,
+      text: `${METRIC_DISPLAY_NAMES[selectedMetric] ?? selectedMetric} - ${TIMEFRAME_LABELS[selectedTimeFrame] ?? `${selectedTimeFrame}D`}`,
+      color: '#ffffff',
+      font: { size: 16, weight: 'bold' as const },
+    },
+    tooltip: {
+      enabled: true,
+      mode: 'index' as const,
+      intersect: false,
+      backgroundColor: 'rgba(0, 0, 0, 0.9)',
+      titleColor: '#ffffff',
+      bodyColor: '#ffffff',
+      borderColor: '#333',
+      borderWidth: 1,
+      cornerRadius: 6,
+      displayColors: true,
+      titleFont: { size: 14, weight: 'bold' as const },
+      bodyFont: { size: 12 },
+      padding: 10,
+      callbacks: {
+        title(context: Array<{ label: string }>) {
+          const date = new Date(context[0].label);
+          return date.toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' });
+        },
+        label(context: { dataset: { label?: string }; parsed: { y: number } }) {
+          const unit = selectedMetric === 'vol' ? '%' : '';
+          return `${context.dataset.label || ''}: ${context.parsed.y.toFixed(2)}${unit}`;
+        },
       },
+    },
+  },
+  scales: {
+    x: {
+      grid: { color: '#333', drawBorder: false },
+      ticks: {
+        color: '#ffffff', font: { size: 11 },
+        maxTicksLimit: 20, maxRotation: 0,
+        autoSkip: true, autoSkipPadding: 10,
+      },
+    },
+    y: {
       title: {
         display: true,
-        text: `${getMetricDisplayName(selectedMetric)} - ${getTimeFrameDisplayName(selectedTimeFrame)}`,
-        color: '#ffffff',
-        font: {
-          size: 16,
-          weight: 'bold' as const,
-        },
+        text: selectedMetric === 'vol' ? 'Volatility (%)' : 'Value',
+        color: '#cccccc',
+        font: { size: 12, weight: 'bold' as const },
       },
-      tooltip: {
-        enabled: true,
-        mode: 'index' as const,
-        intersect: false,
-        backgroundColor: 'rgba(0, 0, 0, 0.9)',
-        titleColor: '#ffffff',
-        bodyColor: '#ffffff',
-        borderColor: '#333',
-        borderWidth: 1,
-        cornerRadius: 6,
-        displayColors: true,
-        titleFont: {
-          size: 14,
-          weight: 'bold' as const
-        },
-        bodyFont: {
-          size: 12
-        },
-        padding: 10,
-        callbacks: {
-          title: function(context: any) {
-            const date = new Date(context[0].label);
-            return date.toLocaleDateString('en-US', { 
-              year: 'numeric', 
-              month: 'short', 
-              day: 'numeric' 
-            });
-          },
-          label: function(context: any) {
-            const label = context.dataset.label || '';
-            const value = context.parsed.y;
-            const unit = selectedMetric === "vol" ? "%" : "";
-            return `${label}: ${value.toFixed(2)}${unit}`;
-          }
-        }
-      }
+      grid: { color: '#333', drawBorder: false },
+      ticks: { color: '#ffffff', font: { size: 11 } },
     },
-    scales: {
-      x: {
-        grid: {
-          color: '#333',
-          drawBorder: false
-        },
-        ticks: {
-          color: '#ffffff',
-          font: {
-            size: 11
-          },
-          maxTicksLimit: 20, // Ogranicz liczbę etykiet na osi X
-          maxRotation: 0, // Brak rotacji etykiet
-          autoSkip: true,
-          autoSkipPadding: 10
-        }
-      },
-      y: {
-        title: {
-          display: true,
-          text: selectedMetric === "vol" ? "Volatility (%)" : "Value",
-          color: '#cccccc',
-          font: {
-            size: 12,
-            weight: 'bold' as const
-          }
-        },
-        grid: {
-          color: '#333',
-          drawBorder: false
-        },
-        ticks: {
-          color: '#ffffff',
-          font: {
-            size: 11
-          }
-        }
-      },
-    },
-    elements: {
-      point: {
-        hoverRadius: 4,
-        hoverBorderWidth: 2
-      }
-    }
-  };
+  },
+  elements: { point: { hoverRadius: 4, hoverBorderWidth: 2 } },
+});
 
-  if (loading) {
+const RealizedRiskPage: React.FC = () => {
+  const { getCurrentUsername } = useSession();
+  const username = getCurrentUsername();
+
+  const [selectedMetric, setSelectedMetric] = useState<string>('vol');
+  const [selectedTimeFrame, setSelectedTimeFrame] = useState<number>(21);
+  const [selectedTickers, setSelectedTickers] = useState<string[]>(['PORTFOLIO']);
+  const [availableTickers, setAvailableTickers] = useState<string[]>([]);
+
+  // Side-effect fetch for ticker selector population. Sets initial selection
+  // to PORTFOLIO + first holding so the chart has something useful by default.
+  useEffect(() => {
+    let cancelled = false;
+    apiService
+      .getUserPortfolio(username)
+      .then((response) => {
+        if (cancelled || !response?.portfolio_items) return;
+        const tickers = response.portfolio_items.map((item) => item.ticker);
+        setAvailableTickers(tickers);
+        if (tickers.length > 0) {
+          setSelectedTickers(['PORTFOLIO', tickers[0]]);
+        }
+      })
+      .catch(() => { /* selector falls back to PORTFOLIO only */ });
+    return () => { cancelled = true; };
+  }, [username]);
+
+  const {
+    data: realizedData,
+    loading: realizedLoading,
+    error: realizedError,
+    refetch: refetchRealized,
+  } = useApiData<RealizedMetricsResponse>(
+    () => apiService.getRealizedMetrics(username),
+    [username],
+    'Failed to load realized metrics data',
+  );
+
+  const { data: rollingData } = useApiData<RollingMetricsResponse>(
+    () => apiService.getRollingMetrics(selectedMetric, selectedTimeFrame, selectedTickers, username),
+    [selectedMetric, selectedTimeFrame, selectedTickers, username],
+  );
+
+  const chartOptions = useMemo(
+    () => buildChartOptions(selectedMetric, selectedTimeFrame),
+    [selectedMetric, selectedTimeFrame],
+  );
+
+  const rollingChart = useMemo(
+    () => (rollingData ? buildRollingChart(rollingData) : null),
+    [rollingData],
+  );
+
+  if (realizedLoading) {
     return (
       <div className="realized-risk-page">
         <div className="loading">Loading realized risk data...</div>
@@ -301,14 +206,12 @@ const RealizedRiskPage: React.FC = () => {
     );
   }
 
-  if (error) {
+  if (realizedError) {
     return (
       <div className="realized-risk-page">
         <div className="error">
-          <p>{error}</p>
-          <button onClick={fetchRealizedData} className="retry-button">
-            Retry
-          </button>
+          <p>{realizedError}</p>
+          <button onClick={refetchRealized} className="retry-button">Retry</button>
         </div>
       </div>
     );
@@ -390,13 +293,12 @@ const RealizedRiskPage: React.FC = () => {
         <div className="section-header">
           <h2>Rolling Metrics</h2>
         </div>
-        
-        {/* Controls */}
+
         <div className="rolling-controls">
           <div className="control-group">
             <label>Select Rolling Metric:</label>
-            <select 
-              value={selectedMetric} 
+            <select
+              value={selectedMetric}
               onChange={(e) => setSelectedMetric(e.target.value)}
               className="metric-select"
             >
@@ -410,8 +312,8 @@ const RealizedRiskPage: React.FC = () => {
 
           <div className="control-group">
             <label>Select Time Frame:</label>
-            <select 
-              value={selectedTimeFrame} 
+            <select
+              value={selectedTimeFrame}
               onChange={(e) => setSelectedTimeFrame(Number(e.target.value))}
               className="timeframe-select"
             >
@@ -426,26 +328,20 @@ const RealizedRiskPage: React.FC = () => {
             <SelectableTags
               title="Select Tickers"
               selectedItems={selectedTickers}
-              availableItems={[
-                "PORTFOLIO",
-                ...availableTickers
-              ]}
+              availableItems={['PORTFOLIO', ...availableTickers]}
               onSelectionChange={setSelectedTickers}
               placeholder="Add ticker"
             />
           </div>
         </div>
 
-        {/* Chart */}
         <div className="rolling-chart-container">
           {rollingData ? (
-            (() => {
-              const chartData = createRollingChartData();
-              if (!chartData) {
-                return <div className="chart-loading">No data available for selected metric</div>;
-              }
-              return <Line data={chartData} options={chartOptions} />;
-            })()
+            rollingChart ? (
+              <Line data={rollingChart} options={chartOptions} />
+            ) : (
+              <div className="chart-loading">No data available for selected metric</div>
+            )
           ) : (
             <div className="chart-loading">Loading chart data...</div>
           )}

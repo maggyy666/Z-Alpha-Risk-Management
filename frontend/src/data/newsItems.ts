@@ -1,4 +1,13 @@
 // src/data/newsItems.ts
+//
+// Static image imports -- Vite resolves these to hashed asset URLs at build
+// time. Same image (e.g. image_1_nyc.jpg) intentionally reused as both
+// imageWebp and imageJpg fallback because the original assets aren't paired.
+import image1Nyc from '../images/image_1_nyc.jpg';
+import image2Nyc from '../images/image_2_nyc.jpg';
+import image3Stock from '../images/image_3_stock.avif';
+import image4Stock from '../images/image_4_stock.jpg';
+
 export type NewsItem = {
   id: string;
   category: string;
@@ -7,8 +16,8 @@ export type NewsItem = {
   date: string;        // ISO string '2025-07-01'
   readTime: string;    // '6 min read'
   href: string;        // doc/external url
-  imageWebp: any;      // import path to .webp
-  imageJpg: any;       // import path to .jpg fallback
+  imageWebp: string;
+  imageJpg: string;
   alt: string;
 };
 
@@ -21,8 +30,8 @@ export const newsItems: NewsItem[] = [
     date: "2025-06-14",
     readTime: "7 min read",
     href: "/articles/sarah-chen-interview",
-    imageWebp: require("../images/image_1_nyc.jpg"),
-    imageJpg: require("../images/image_1_nyc.jpg"),
+    imageWebp: image1Nyc,
+    imageJpg: image1Nyc,
     alt: "Portrait of Dr. Sarah Chen during an interview"
   },
   {
@@ -33,8 +42,8 @@ export const newsItems: NewsItem[] = [
     date: "2025-05-29",
     readTime: "4 min read",
     href: "/articles/internship-experience",
-    imageWebp: require("../images/image_2_nyc.jpg"),
-    imageJpg: require("../images/image_2_nyc.jpg"),
+    imageWebp: image2Nyc,
+    imageJpg: image2Nyc,
     alt: "Group of interns collaborating in a meeting room"
   },
   {
@@ -45,8 +54,8 @@ export const newsItems: NewsItem[] = [
     date: "2025-04-18",
     readTime: "5 min read",
     href: "/articles/offsite-catalyst",
-    imageWebp: require("../images/image_3_stock.avif"),
-    imageJpg: require("../images/image_4_stock.jpg"),
+    imageWebp: image3Stock,
+    imageJpg: image4Stock,
     alt: "Team members at an engineering offsite workshop"
   },
   {
@@ -57,10 +66,8 @@ export const newsItems: NewsItem[] = [
     date: "2025-03-03",
     readTime: "3 min read",
     href: "/articles/community-impact-alex",
-    imageWebp: require("../images/image_4_stock.jpg"),
-    imageJpg: require("../images/image_4_stock.jpg"),
+    imageWebp: image4Stock,
+    imageJpg: image4Stock,
     alt: "Volunteer day at a local community center"
   }
 ];
-
-

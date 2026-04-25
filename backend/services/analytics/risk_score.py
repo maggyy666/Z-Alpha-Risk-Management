@@ -1,17 +1,16 @@
-"""Risk scoring and portfolio summary aggregators.
+"""Risk scoring service.
 
-These are the "dashboard" endpoints -- they don't compute new primitives,
-they compose outputs from concentration / volatility / forecast / regime
-analytics into a unified score and a summary card.
+Computes the 7-component weighted risk score for a portfolio. Pure
+analytics -- the dashboard aggregator that consumes this output lives
+in modules/portfolio_summary.
 
-Because of the heavy cross-analytics composition, everything goes through
-the DataService facade (ds_ref) rather than wiring each peer analytics
-service individually (construction order stays simple).
+Cross-analytics calls go through the DataService facade (ds_ref) so the
+construction order of peer analytics services stays simple.
 """
 
 from __future__ import annotations
 
-from typing import Any, Dict, List, Tuple
+from typing import Any, Dict, List
 
 import numpy as np
 from sqlalchemy.orm import Session
@@ -117,7 +116,8 @@ class RiskScoreAnalytics:
         neff = float(conc["concentration_metrics"]["effective_positions"])
 
         # Worst historical scenario -> stress_loss_pct
-        stress = ds.get_historical_scenarios(db, username)
+        from modules.stress_testing.service import get_historical_scenarios
+        stress = get_historical_scenarios(ds, db, username)
         worst_loss = 0.0
         if "results" in stress:
             losses = [-r["return_pct"] for r in stress["results"] if r["return_pct"] < 0]
@@ -202,150 +202,3 @@ class RiskScoreAnalytics:
             },
         }
 
-    def get_portfolio_summary(self, db: Session, username: str = "admin") -> Dict[str, Any]:
-        """Dashboard aggregator: risk score + concentration + forecast + CVaR total."""
-        ds = self._ds
-        logger.debug(f"[PORTFOLIO-SUMMARY] Starting portfolio summary for user: {username}")
-        try:
-            logger.debug("[PORTFOLIO-SUMMARY] Getting risk scoring data...")
-            risk_data = self.get_risk_scoring(db, username)
-            if "error" in risk_data:
-                logger.debug(f"[PORTFOLIO-SUMMARY] Warning: Risk scoring failed: {risk_data['error']}")
-                risk_data = {
-                    "component_scores": {"overall": 0.5},
-                    "risk_contribution_pct": {
-                        "market": 25.0,
-                        "concentration": 25.0,
-                        "volatility": 25.0,
-                        "liquidity": 25.0,
-                    },
-                }
-
-            logger.debug("[PORTFOLIO-SUMMARY] Getting concentration risk data...")
-            conc_data = ds.get_concentration_risk_data(db, username)
-            if "error" in conc_data:
-                logger.debug(f"[PORTFOLIO-SUMMARY] Warning: Concentration risk failed: {conc_data['error']}")
-                conc_data = {
-                    "total_market_value": 0,
-                    "portfolio_data": [],
-                    "concentration_metrics": {"largest_position": 0, "top_3_concentration": 0},
-                }
-
-            logger.debug("[PORTFOLIO-SUMMARY] Getting forecast risk contribution (EGARCH)...")
-            forecast_contribution = ds.get_forecast_risk_contribution(
-                db, username, vol_model="EGARCH"
-            )
-            if "error" in forecast_contribution:
-                logger.debug(
-                    f"[PORTFOLIO-SUMMARY] Warning: Forecast risk contribution failed: "
-                    f"{forecast_contribution['error']}"
-                )
-                forecast_contribution = {
-                    "portfolio_vol": 0.15,
-                    "tickers": ["N/A"],
-                    "marginal_rc_pct": [0.0],
-                }
-
-            logger.debug("[PORTFOLIO-SUMMARY] Getting forecast metrics...")
-            forecast_metrics = ds.get_forecast_metrics(db, username)
-            if "error" in forecast_metrics:
-                logger.debug(
-                    f"[PORTFOLIO-SUMMARY] Warning: Forecast metrics failed: "
-                    f"{forecast_metrics['error']}"
-                )
-                forecast_metrics = {"metrics": []}
-
-            total_cvar_usd = sum(item.get("cvar_usd", 0) for item in forecast_metrics.get("metrics", []))
-            total_market_value = conc_data.get("total_market_value", 1)
-            total_cvar_pct = (
-                (total_cvar_usd / total_market_value * 100) if total_market_value > 0 else 0
-            )
-
-            overall_score = risk_data.get("component_scores", {}).get("overall", 0) * 100
-            if not (0.0 <= overall_score <= 100.0):
-                logger.warning(
-                    f"Warning: Overall score out of range: {overall_score}, clipping to [0,100]"
-                )
-                overall_score = max(0, min(overall_score, 100))
-
-            if overall_score <= 33:
-                risk_level = "LOW"
-            elif overall_score <= 66:
-                risk_level = "MEDIUM"
-            else:
-                risk_level = "HIGH"
-
-            risk_contribution = risk_data.get("risk_contribution_pct", {})
-            highest_risk = (
-                max(risk_contribution.items(), key=lambda x: x[1])
-                if risk_contribution
-                else ("", 0)
-            )
-            high_risk_components = sum(1 for v in risk_contribution.values() if v > 25)
-
-            portfolio_positions = conc_data.get("portfolio_data", [])
-
-            flags: Dict[str, bool] = {}
-            volatility_egarch = forecast_contribution.get("portfolio_vol", 0)
-            if volatility_egarch > 3.0:
-                flags["high_vol"] = True
-                logger.warning(f"Warning: EGARCH volatility {volatility_egarch * 100:.1f}% > 300%")
-            if overall_score > 1.0:
-                flags["high_risk_score"] = True
-                logger.warning(f"Warning: Risk score {overall_score:.1f}% > 100%")
-            if total_cvar_pct < -10.0:
-                flags["high_cvar"] = True
-                logger.warning(f"Warning: CVaR {total_cvar_pct:.1f}% < -10%")
-
-            top_ticker, top_pct = self.get_top_risk_contributor(forecast_contribution)
-
-            return {
-                "risk_score": {
-                    "overall_score": round(overall_score, 1),
-                    "risk_level": risk_level,
-                    "highest_risk_component": highest_risk[0],
-                    "highest_risk_percentage": round(highest_risk[1], 1),
-                    "high_risk_components_count": high_risk_components,
-                },
-                "portfolio_overview": {
-                    "total_market_value": conc_data.get("total_market_value", 0),
-                    "total_positions": len(portfolio_positions),
-                    "largest_position": round(
-                        conc_data.get("concentration_metrics", {}).get("largest_position", 0), 1
-                    ),
-                    "top_3_concentration": round(
-                        conc_data.get("concentration_metrics", {}).get("top_3_concentration", 0), 1
-                    ),
-                    "volatility_egarch": round(
-                        forecast_contribution.get("portfolio_vol_pct", volatility_egarch * 100), 1
-                    ),
-                    "cvar_percentage": round(total_cvar_pct, 1),
-                    "cvar_usd": round(total_cvar_usd, 0),
-                    "top_risk_contributor": {
-                        "ticker": top_ticker,
-                        "vol_contribution_pct": top_pct,
-                    },
-                },
-                "portfolio_positions": portfolio_positions,
-                "flags": flags,
-            }
-        except Exception as e:
-            logger.error(f"Error getting portfolio summary: {e}")
-            return {"error": str(e)}
-
-    @staticmethod
-    def get_top_risk_contributor(forecast_contribution: Dict[str, Any]) -> Tuple[str, float]:
-        """Return (ticker, pct) of the position with the largest total_rc_pct,
-        skipping the synthetic PORTFOLIO row if present."""
-        tickers = forecast_contribution.get("tickers", [])
-        trc = forecast_contribution.get("total_rc_pct", [])
-
-        start = 1 if tickers and tickers[0] == "PORTFOLIO" else 0
-        if trc and len(trc) > start:
-            idx_rel = int(np.argmax(trc[start:]))
-            idx = start + idx_rel
-            top_ticker = tickers[idx]
-            top_pct = float(trc[idx])
-        else:
-            top_ticker, top_pct = "N/A", 0.0
-        return top_ticker, round(top_pct, 1)

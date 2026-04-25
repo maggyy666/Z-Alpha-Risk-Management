@@ -2,10 +2,31 @@ import React, { useState, useEffect } from 'react';
 import './UserProfilePage.css';
 import martinPhoto from '../assets/martin-shkreli.webp';
 import sbfPhoto from '../assets/Sam-Bankman-Fried-Silicon-Valley-Culture-Plaintext-Business-1237105664.webp';
-import apiService from '../services/api';
-import axios from 'axios';
+import apiService, { TickerSuggestion, UserPortfolioItem, UserPortfolioResponse } from '../services/api';
 import { useSession } from '../contexts/SessionContext';
 import portfolioService, { PortfolioItem } from '../services/portfolioService';
+
+// Map the API portfolio shape into the local PortfolioItem shape (adds `weight`).
+const toPortfolioItems = (resp: UserPortfolioResponse): PortfolioItem[] =>
+  resp.portfolio_items.map((item: UserPortfolioItem) => ({
+    ticker: item.ticker,
+    shares: item.shares,
+    price: item.price,
+    market_value: item.market_value,
+    weight: resp.total_market_value ? (item.market_value / resp.total_market_value) * 100 : 0,
+    sector: item.sector,
+    industry: item.industry,
+  }));
+
+// Extract a useful error message regardless of how the backend reports it.
+const errorMessage = (err: unknown, fallback: string): string => {
+  const axiosLike = err as { response?: { data?: { detail?: string; error?: string } } };
+  return (
+    axiosLike?.response?.data?.detail ||
+    axiosLike?.response?.data?.error ||
+    fallback
+  );
+};
 
 const UserProfilePage: React.FC = () => {
   const [loading, setLoading] = useState(true);
@@ -20,35 +41,23 @@ const UserProfilePage: React.FC = () => {
   
   // Ticker search states
   const [tickerQuery, setTickerQuery] = useState('');
-  const [tickerSuggestions, setTickerSuggestions] = useState<any[]>([]);
+  const [tickerSuggestions, setTickerSuggestions] = useState<TickerSuggestion[]>([]);
   const [showSuggestions, setShowSuggestions] = useState(false);
   const [addingTicker, setAddingTicker] = useState(false);
   const [addMessage, setAddMessage] = useState('');
 
   const fetchPortfolioData = async () => {
+    const currentUsername = session?.username || 'admin';
     try {
-      const currentUsername = session?.username || 'admin';
-      const response = await axios.get(`http://localhost:8000/user-portfolio/${currentUsername}`);
-      
-      if (response.data && response.data.portfolio_items) {
-        const portfolioItems = response.data.portfolio_items.map((item: any) => ({
-          ticker: item.ticker,
-          shares: item.shares,
-          price: item.price,
-          market_value: item.market_value,
-          weight: (item.market_value / response.data.total_market_value) * 100,
-          sector: item.sector,
-          industry: item.industry
-        }));
-        
-        setPortfolio(portfolioItems);
-        setTotalMarketValue(response.data.total_market_value);
+      const response = await apiService.getUserPortfolio(currentUsername);
+      if (response?.portfolio_items) {
+        setPortfolio(toPortfolioItems(response));
+        setTotalMarketValue(response.total_market_value);
       }
     } catch (error) {
-      console.error('Error fetching portfolio data:', error);
-      // Fallback to default portfolios if API fails
+      // Fallback: hydrate from local default portfolios so the UI stays usable
+      // even when the backend is unreachable.
       portfolioService.initializeDefaultPortfolios();
-      const currentUsername = session?.username || 'admin';
       setPortfolio(portfolioService.getPortfolioItems(currentUsername));
       setTotalMarketValue(portfolioService.getTotalMarketValue(currentUsername));
     } finally {
@@ -84,36 +93,25 @@ const UserProfilePage: React.FC = () => {
 
   const handleRemoveTicker = async (index: number) => {
     const tickerToRemove = portfolio[index].ticker;
-    
+    const currentUsername = session?.username || 'admin';
     try {
-      const currentUsername = session?.username || 'admin';
-      const response = await axios.delete(
-        `http://localhost:8000/remove-ticker/${currentUsername}?ticker=${encodeURIComponent(tickerToRemove)}`
-      );
-
-      if (response.data.success) {
-        // Remove from local state
+      const response = await apiService.removeTickerFromPortfolio(currentUsername, tickerToRemove);
+      if (response.success) {
         const updatedPortfolio = portfolio.filter((_, i) => i !== index);
-        
-        // Recalculate weights
         const newTotal = updatedPortfolio.reduce((sum, item) => sum + item.market_value, 0);
-        updatedPortfolio.forEach(item => {
-          item.weight = (item.market_value / newTotal) * 100;
+        updatedPortfolio.forEach((item) => {
+          item.weight = newTotal ? (item.market_value / newTotal) * 100 : 0;
         });
-        
         setPortfolio(updatedPortfolio);
         setTotalMarketValue(newTotal);
-        
-        // Show success message
         setSaveMessage(`Successfully removed ${tickerToRemove} from portfolio`);
         setTimeout(() => setSaveMessage(''), 3000);
       } else {
-        setSaveMessage(response.data.error || 'Failed to remove ticker');
+        setSaveMessage(response.error || 'Failed to remove ticker');
         setTimeout(() => setSaveMessage(''), 5000);
       }
-    } catch (error: any) {
-      console.error('Error removing ticker:', error);
-      setSaveMessage(error.response?.data?.detail || 'Error removing ticker. Please try again.');
+    } catch (error) {
+      setSaveMessage(errorMessage(error, 'Error removing ticker. Please try again.'));
       setTimeout(() => setSaveMessage(''), 5000);
     }
   };
@@ -157,48 +155,33 @@ const UserProfilePage: React.FC = () => {
     }
   };
 
-    const handleSavePortfolio = async () => {
+  const handleSavePortfolio = async () => {
     setSaving(true);
     setSaveMessage('');
-
+    const currentUsername = session?.username || 'admin';
     try {
-      const currentUsername = session?.username || 'admin';
-
-      // Prepare data for API
-      const portfolioData = portfolio.map(item => ({
+      const portfolioData = portfolio.map((item) => ({
         ticker: item.ticker,
-        shares: item.shares
+        shares: item.shares,
       }));
 
-      const response = await axios.post(
-        `http://localhost:8000/user-portfolio/${currentUsername}`,
-        portfolioData
-      );
-
-      if (response.data.success) {
+      const response = await apiService.savePortfolio(currentUsername, portfolioData);
+      if (response.success) {
         setSaveMessage('Portfolio saved successfully!');
         setTimeout(() => setSaveMessage(''), 3000);
-        
-        // Clear backend cache for this user using new endpoint
-        try {
-          await axios.post(`http://localhost:8000/invalidate-user/${currentUsername}`);
-          console.log('Backend cache invalidated for user:', currentUsername);
-        } catch (cacheError) {
-          console.error('Error invalidating cache:', cacheError);
-        }
-        
-        // Refresh portfolio data in this component
+
+        // Best-effort cache invalidation; analytics pages use stale data
+        // for ~5 min if this fails, but the save itself succeeded.
+        try { await apiService.invalidateUser(currentUsername); } catch { /* non-fatal */ }
+
         await fetchPortfolioData();
-        
-        // Notify other components about portfolio update
-        console.log('🔄 Dispatching portfolio-updated event...');
-        window.dispatchEvent(new CustomEvent('portfolio-updated', {
-          detail: { timestamp: Date.now() }
-        }));
-        console.log('✅ Portfolio update event dispatched');
+
+        // Broadcast so other tabs/listeners refetch their slices.
+        window.dispatchEvent(
+          new CustomEvent('portfolio-updated', { detail: { timestamp: Date.now() } }),
+        );
       }
     } catch (error) {
-      console.error('Error saving portfolio:', error);
       setSaveMessage('Error saving portfolio. Please try again.');
       setTimeout(() => setSaveMessage(''), 5000);
     } finally {
@@ -206,20 +189,17 @@ const UserProfilePage: React.FC = () => {
     }
   };
 
-  // Ticker search functions
   const searchTickers = async (query: string) => {
     if (query.length < 2) {
       setTickerSuggestions([]);
       setShowSuggestions(false);
       return;
     }
-
     try {
-      const response = await axios.get(`http://localhost:8000/ticker-search?query=${encodeURIComponent(query)}`);
-      setTickerSuggestions(response.data.suggestions || []);
+      const response = await apiService.searchTickers(query);
+      setTickerSuggestions(response.suggestions || []);
       setShowSuggestions(true);
-    } catch (error) {
-      console.error('Error searching tickers:', error);
+    } catch {
       setTickerSuggestions([]);
       setShowSuggestions(false);
     }
@@ -231,7 +211,7 @@ const UserProfilePage: React.FC = () => {
     searchTickers(query);
   };
 
-  const handleTickerSelect = (suggestion: any) => {
+  const handleTickerSelect = (suggestion: TickerSuggestion) => {
     setTickerQuery(suggestion.symbol);
     setShowSuggestions(false);
   };
@@ -250,8 +230,7 @@ const UserProfilePage: React.FC = () => {
       return;
     }
 
-    // Check if ticker already exists
-    if (portfolio.find(item => item.ticker === tickerQuery.toUpperCase())) {
+    if (portfolio.find((item) => item.ticker === tickerQuery.toUpperCase())) {
       setAddMessage('Ticker already exists in portfolio');
       setTimeout(() => setAddMessage(''), 3000);
       return;
@@ -259,44 +238,30 @@ const UserProfilePage: React.FC = () => {
 
     setAddingTicker(true);
     setAddMessage('');
-
+    const currentUsername = session?.username || 'admin';
     try {
-      const currentUsername = session?.username || 'admin';
-      const response = await axios.post(
-        `http://localhost:8000/add-ticker/${currentUsername}?ticker=${encodeURIComponent(tickerQuery)}&shares=${shares}`
-      );
-
-      if (response.data.success) {
-        setAddMessage(`Successfully added ${tickerQuery} with ${shares} shares (${response.data.data_source})`);
+      const response = await apiService.addTickerToPortfolio(currentUsername, tickerQuery, shares);
+      if (response.success) {
+        setAddMessage(
+          `Successfully added ${tickerQuery} with ${shares} shares (${response.data_source ?? 'ok'})`,
+        );
         setTickerQuery('');
         setNewShares('');
         setShowSuggestions(false);
-        
-        // Refresh portfolio data
-        const portfolioResponse = await axios.get(`http://localhost:8000/user-portfolio/${currentUsername}`);
-        if (portfolioResponse.data && portfolioResponse.data.portfolio_items) {
-          const portfolioItems = portfolioResponse.data.portfolio_items.map((item: any) => ({
-            ticker: item.ticker,
-            shares: item.shares,
-            price: item.price,
-            market_value: item.market_value,
-            weight: (item.market_value / portfolioResponse.data.total_market_value) * 100,
-            sector: item.sector,
-            industry: item.industry
-          }));
-          
-          setPortfolio(portfolioItems);
-          setTotalMarketValue(portfolioResponse.data.total_market_value);
+
+        const portfolioResponse = await apiService.getUserPortfolio(currentUsername);
+        if (portfolioResponse?.portfolio_items) {
+          setPortfolio(toPortfolioItems(portfolioResponse));
+          setTotalMarketValue(portfolioResponse.total_market_value);
         }
-        
+
         setTimeout(() => setAddMessage(''), 5000);
       } else {
-        setAddMessage(response.data.error || 'Failed to add ticker');
+        setAddMessage(response.error || 'Failed to add ticker');
         setTimeout(() => setAddMessage(''), 5000);
       }
-    } catch (error: any) {
-      console.error('Error adding ticker:', error);
-      setAddMessage(error.response?.data?.detail || 'Error adding ticker. Please try again.');
+    } catch (error) {
+      setAddMessage(errorMessage(error, 'Error adding ticker. Please try again.'));
       setTimeout(() => setAddMessage(''), 5000);
     } finally {
       setAddingTicker(false);

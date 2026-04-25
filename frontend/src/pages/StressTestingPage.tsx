@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useMemo, useState } from 'react';
 import { Bar, Radar } from 'react-chartjs-2';
 import {
   Chart as ChartJS,
@@ -14,6 +14,7 @@ import {
   Filler,
 } from 'chart.js';
 import apiService, { StressTestingResponse } from '../services/api';
+import { useApiData } from '../hooks/useApiData';
 import { useSession } from '../contexts/SessionContext';
 import './StressTestingPage.css';
 
@@ -27,175 +28,131 @@ ChartJS.register(
   RadialLinearScale,
   PointElement,
   LineElement,
-  Filler
+  Filler,
 );
 
+const drawdownColor = (dd: number) => {
+  if (dd > -10) return '#FFA500';
+  if (dd > -20) return '#FF6347';
+  if (dd > -30) return '#DC143C';
+  return '#8B0000';
+};
+
+const RADAR_OPTIONS = {
+  responsive: true,
+  maintainAspectRatio: false,
+  plugins: {
+    legend: { display: false, position: 'top' as const, labels: { color: '#ffffff' } },
+    tooltip: {
+      backgroundColor: 'rgba(0, 0, 0, 0.9)',
+      titleColor: '#ffffff',
+      bodyColor: '#ffffff',
+      borderColor: '#333',
+      borderWidth: 1,
+      cornerRadius: 6,
+    },
+  },
+  scales: {
+    r: {
+      beginAtZero: true,
+      max: 1,
+      grid: { color: '#333' },
+      angleLines: { color: '#333' },
+      pointLabels: { color: '#ffffff', font: { size: 12 } },
+      ticks: { color: '#ffffff', font: { size: 10 }, stepSize: 0.2 },
+    },
+  },
+};
+
+const BAR_OPTIONS = {
+  responsive: true,
+  maintainAspectRatio: false,
+  indexAxis: 'y' as const,
+  plugins: {
+    legend: { display: false, position: 'top' as const, labels: { color: '#ffffff' } },
+    tooltip: {
+      backgroundColor: 'rgba(0, 0, 0, 0.9)',
+      titleColor: '#ffffff',
+      bodyColor: '#ffffff',
+      borderColor: '#333',
+      borderWidth: 1,
+      cornerRadius: 6,
+      callbacks: {
+        label(context: { parsed: { x: number } }) {
+          return `Max Drawdown: ${context.parsed.x.toFixed(1)}%`;
+        },
+      },
+    },
+  },
+  scales: {
+    x: {
+      grid: { color: '#333', drawBorder: false },
+      ticks: {
+        color: '#ffffff',
+        font: { size: 11 },
+        callback(value: number | string) { return `${value}%`; },
+      },
+      title: { display: true, text: 'Max Drawdown (%)', color: '#ffffff', font: { size: 12 } },
+    },
+    y: {
+      grid: { color: '#333', drawBorder: false },
+      ticks: { color: '#ffffff', font: { size: 11 } },
+    },
+  },
+};
+
+const buildRadarData = (data: StressTestingResponse) => ({
+  labels: ['Correlation', 'Volatility', 'Momentum'],
+  datasets: [
+    {
+      label: 'Market Regime Indicators',
+      data: [
+        data.market_regime.radar?.correlation || 0,
+        data.market_regime.radar?.volatility || 0,
+        data.market_regime.radar?.momentum || 0,
+      ],
+      backgroundColor: 'rgba(54, 162, 235, 0.2)',
+      borderColor: 'rgba(54, 162, 235, 1)',
+      borderWidth: 2,
+      pointBackgroundColor: 'rgba(54, 162, 235, 1)',
+      pointBorderColor: '#fff',
+      pointHoverBackgroundColor: '#fff',
+      pointHoverBorderColor: 'rgba(54, 162, 235, 1)',
+    },
+  ],
+});
+
+const buildScenariosData = (data: StressTestingResponse) => {
+  const labels = data.scenarios.results?.map((r) => r.name) || [];
+  const drawdowns = data.scenarios.results?.map((r) => r.max_drawdown_pct) || [];
+  const colors = drawdowns.map(drawdownColor);
+  return {
+    labels,
+    datasets: [
+      {
+        label: 'Max Drawdown (%)',
+        data: drawdowns,
+        backgroundColor: colors,
+        borderColor: colors,
+        borderWidth: 1,
+      },
+    ],
+  };
+};
+
 const StressTestingPage: React.FC = () => {
-  const [data, setData] = useState<StressTestingResponse | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-  const [showExcluded, setShowExcluded] = useState(false);
   const { getCurrentUsername } = useSession();
+  const username = getCurrentUsername();
+  const [showExcluded, setShowExcluded] = useState(false);
 
-  useEffect(() => {
-    fetchStressTestingData();
-  }, []);
+  const { data, loading, error, refetch } = useApiData<StressTestingResponse>(
+    () => apiService.getStressTestingData(username),
+    [username],
+    'Failed to load stress testing data',
+  );
 
-  const fetchStressTestingData = async () => {
-    try {
-      setLoading(true);
-      const username = getCurrentUsername();
-      const response = await apiService.getStressTestingData(username);
-      setData(response);
-      setError(null);
-    } catch (err) {
-      setError('Failed to load stress testing data');
-      console.error('Error fetching stress testing data:', err);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const createRadarChartData = () => {
-    if (!data) return null;
-
-    return {
-      labels: ['Correlation', 'Volatility', 'Momentum'],
-      datasets: [
-        {
-          label: 'Market Regime Indicators',
-          data: [
-            data.market_regime.radar?.correlation || 0,
-            data.market_regime.radar?.volatility || 0,
-            data.market_regime.radar?.momentum || 0
-          ],
-          backgroundColor: 'rgba(54, 162, 235, 0.2)',
-          borderColor: 'rgba(54, 162, 235, 1)',
-          borderWidth: 2,
-          pointBackgroundColor: 'rgba(54, 162, 235, 1)',
-          pointBorderColor: '#fff',
-          pointHoverBackgroundColor: '#fff',
-          pointHoverBorderColor: 'rgba(54, 162, 235, 1)',
-        },
-      ],
-    };
-  };
-
-  const createScenariosChartData = () => {
-    if (!data) return null;
-
-    const labels = data.scenarios.results?.map(r => r.name) || [];
-    const drawdowns = data.scenarios.results?.map(r => r.max_drawdown_pct) || [];
-
-    // Create color scale based on drawdown severity
-    const colors = drawdowns.map(dd => {
-      if (dd > -10) return '#FFA500'; // Light orange
-      if (dd > -20) return '#FF6347'; // Orange
-      if (dd > -30) return '#DC143C'; // Red
-      return '#8B0000'; // Dark red
-    });
-
-    return {
-      labels,
-      datasets: [
-        {
-          label: 'Max Drawdown (%)',
-          data: drawdowns,
-          backgroundColor: colors,
-          borderColor: colors.map(c => c.replace('0.8', '1')),
-          borderWidth: 1,
-        },
-      ],
-    };
-  };
-
-  const radarOptions = {
-    responsive: true,
-    maintainAspectRatio: false,
-    plugins: {
-      legend: { 
-        display: false,
-        position: 'top' as const,
-        labels: { color: '#ffffff' }
-      },
-      tooltip: {
-        backgroundColor: 'rgba(0, 0, 0, 0.9)',
-        titleColor: '#ffffff',
-        bodyColor: '#ffffff',
-        borderColor: '#333',
-        borderWidth: 1,
-        cornerRadius: 6,
-      }
-    },
-    scales: {
-      r: {
-        beginAtZero: true,
-        max: 1,
-        grid: { color: '#333' },
-        angleLines: { color: '#333' },
-        pointLabels: { 
-          color: '#ffffff',
-          font: { size: 12 }
-        },
-        ticks: { 
-          color: '#ffffff',
-          font: { size: 10 },
-          stepSize: 0.2
-        }
-      }
-    }
-  };
-
-  const barOptions = {
-    responsive: true,
-    maintainAspectRatio: false,
-    indexAxis: 'y' as const,
-    plugins: {
-      legend: { 
-        display: false,
-        position: 'top' as const,
-        labels: { color: '#ffffff' }
-      },
-      tooltip: {
-        backgroundColor: 'rgba(0, 0, 0, 0.9)',
-        titleColor: '#ffffff',
-        bodyColor: '#ffffff',
-        borderColor: '#333',
-        borderWidth: 1,
-        cornerRadius: 6,
-        callbacks: {
-          label: function(context: any) {
-            return `Max Drawdown: ${context.parsed.x.toFixed(1)}%`;
-          }
-        }
-      }
-    },
-    scales: {
-      x: { 
-        grid: { color: '#333', drawBorder: false }, 
-        ticks: { 
-          color: '#ffffff', 
-          font: { size: 11 },
-          callback: function(value: any) { 
-            return value + '%'; 
-          }
-        },
-        title: {
-          display: true,
-          text: 'Max Drawdown (%)',
-          color: '#ffffff',
-          font: { size: 12 }
-        }
-      },
-      y: {
-        grid: { color: '#333', drawBorder: false },
-        ticks: { 
-          color: '#ffffff', 
-          font: { size: 11 }
-        }
-      }
-    }
-  };
+  const radarData = useMemo(() => (data ? buildRadarData(data) : null), [data]);
+  const scenariosData = useMemo(() => (data ? buildScenariosData(data) : null), [data]);
 
   if (loading) {
     return (
@@ -210,9 +167,7 @@ const StressTestingPage: React.FC = () => {
       <div className="stress-testing-page">
         <div className="error">
           <p>{error}</p>
-          <button onClick={fetchStressTestingData} className="retry-button">
-            Retry
-          </button>
+          <button onClick={refetch} className="retry-button">Retry</button>
         </div>
       </div>
     );
@@ -261,9 +216,7 @@ const StressTestingPage: React.FC = () => {
           <div className="radar-chart-container">
             <h4>Market Regime Indicators</h4>
             <div className="chart-container">
-              {createRadarChartData() && (
-                <Radar data={createRadarChartData()!} options={radarOptions} />
-              )}
+              {radarData && <Radar data={radarData} options={RADAR_OPTIONS} />}
             </div>
           </div>
         </div>
@@ -282,10 +235,10 @@ const StressTestingPage: React.FC = () => {
             <span className="summary-value">{data.scenarios.scenarios_excluded || 0}</span>
           </div>
         </div>
-        
+
         {data.scenarios.excluded?.length > 0 && (
           <div className="excluded-scenarios">
-            <button 
+            <button
               className="excluded-toggle"
               onClick={() => setShowExcluded(!showExcluded)}
             >
@@ -309,13 +262,11 @@ const StressTestingPage: React.FC = () => {
       <div className="historical-scenarios-section">
         <h3>Historical Scenarios</h3>
         <div className="chart-container">
-          {createScenariosChartData() && (
-            <Bar data={createScenariosChartData()!} options={barOptions} />
-          )}
+          {scenariosData && <Bar data={scenariosData} options={BAR_OPTIONS} />}
         </div>
       </div>
     </div>
   );
 };
 
-export default StressTestingPage; 
+export default StressTestingPage;

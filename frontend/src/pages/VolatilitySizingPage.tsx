@@ -1,64 +1,35 @@
-import React, { useState, useEffect, useCallback } from 'react';
-import apiService, { PortfolioData } from '../services/api';
+import React, { useState } from 'react';
+import apiService, { VolatilityData } from '../services/api';
 import VolatilityDonutChart from '../components/VolatilityDonutChart';
+import { useApiData } from '../hooks/useApiData';
 import { useSession } from '../contexts/SessionContext';
 import './VolatilitySizingPage.css';
 
+const formatCurrency = (value: number) =>
+  new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(value);
+
+const formatPercentage = (value: number) => `${value.toFixed(2)}%`;
+
+const formatNumber = (value: number) => new Intl.NumberFormat('en-US').format(value);
+
 const VolatilitySizingPage: React.FC = () => {
-  const [portfolioData, setPortfolioData] = useState<PortfolioData[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
   const { getCurrentUsername } = useSession();
-
   const [selectedModel, setSelectedModel] = useState<string>('EWMA (5D)');
+  const username = getCurrentUsername();
 
-  const fetchVolatilityData = useCallback(async () => {
-    try {
-      setLoading(true);
-      const username = getCurrentUsername();
-      const data = await apiService.getVolatilityData(selectedModel, username);
-      setPortfolioData(data.portfolio_data);
-      setError(null);
-    } catch (err) {
-      setError('Failed to fetch volatility data');
-      console.error('Error fetching data:', err);
-    } finally {
-      setLoading(false);
-    }
-  }, [selectedModel, getCurrentUsername]);
-
-  useEffect(() => {
-    fetchVolatilityData();
-  }, [fetchVolatilityData]);
-
-
+  const { data, loading, error, refetch } = useApiData<VolatilityData>(
+    () => apiService.getVolatilityData(selectedModel, username),
+    [selectedModel, username],
+    'Failed to fetch volatility data',
+  );
 
   const initializePortfolio = async () => {
     try {
-      setLoading(true);
       await apiService.initializePortfolio();
-      await fetchVolatilityData();
-    } catch (err) {
-      setError('Failed to initialize portfolio');
-      console.error('Error initializing portfolio:', err);
-    } finally {
-      setLoading(false);
+      await refetch();
+    } catch {
+      // refetch already surfaces the error state
     }
-  };
-
-  const formatCurrency = (value: number) => {
-    return new Intl.NumberFormat('en-US', {
-      style: 'currency',
-      currency: 'USD',
-    }).format(value);
-  };
-
-  const formatPercentage = (value: number) => {
-    return `${value.toFixed(2)}%`;
-  };
-
-  const formatNumber = (value: number) => {
-    return new Intl.NumberFormat('en-US').format(value);
   };
 
   if (loading) {
@@ -82,6 +53,8 @@ const VolatilitySizingPage: React.FC = () => {
     );
   }
 
+  const portfolioData = data?.portfolio_data ?? [];
+
   return (
     <div className="volatility-sizing-page">
       <div className="section">
@@ -89,7 +62,7 @@ const VolatilitySizingPage: React.FC = () => {
           <h2>Volatility-Based Sizing</h2>
           <div className="dropdown-container">
             <label>Select Volatility Forecast Model:</label>
-            <select 
+            <select
               className="model-dropdown"
               value={selectedModel}
               onChange={(e) => setSelectedModel(e.target.value)}
@@ -102,7 +75,7 @@ const VolatilitySizingPage: React.FC = () => {
             </select>
           </div>
         </div>
-        
+
         <div className="table-container">
           <table className="volatility-table">
             <thead>
@@ -139,7 +112,7 @@ const VolatilitySizingPage: React.FC = () => {
             </tbody>
           </table>
         </div>
-        
+
         <div className="volatility-chart-container">
           <VolatilityDonutChart data={portfolioData} />
         </div>
@@ -148,4 +121,4 @@ const VolatilitySizingPage: React.FC = () => {
   );
 };
 
-export default VolatilitySizingPage; 
+export default VolatilitySizingPage;

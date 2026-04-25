@@ -1,0 +1,523 @@
+<!DOCTYPE html>
+<html lang="pl">
+<head>
+<meta charset="UTF-8" />
+<title>Z-Alpha — diagram architektury</title>
+<style>
+  :root {
+    --bg: #ffffff;
+    --surface: #fafafa;
+    --text: #111827;
+    --text-muted: #6b7280;
+    --border: #d1d5db;
+    --border-strong: #9ca3af;
+    --accent: #1e3a8a;
+    --accent-soft: #eff6ff;
+    --layer-host: #f3f4f6;
+    --layer-docker: #eef4fb;
+    --layer-k8s: #e8f0fa;
+    --code-bg: #f1f5f9;
+    --code-text: #1e293b;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  html, body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    line-height: 1.55;
+    font-size: 14px;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  body { padding: 32px 24px 64px; }
+
+  .container { max-width: 1200px; margin: 0 auto; }
+
+  /* Header */
+  .doc-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-end;
+    margin-bottom: 32px;
+    padding-bottom: 16px;
+    border-bottom: 1px solid var(--border);
+  }
+  .doc-header h1 {
+    font-size: 22px;
+    font-weight: 600;
+    color: var(--text);
+    letter-spacing: -0.01em;
+  }
+  .doc-header .subtitle {
+    color: var(--text-muted);
+    font-size: 13px;
+    margin-top: 4px;
+  }
+
+  /* Export buttons */
+  .export-bar {
+    display: flex;
+    gap: 8px;
+  }
+  .export-bar button {
+    background: var(--bg);
+    border: 1px solid var(--border-strong);
+    color: var(--text);
+    padding: 6px 14px;
+    font-size: 12px;
+    font-family: inherit;
+    border-radius: 4px;
+    cursor: pointer;
+    transition: background 0.15s;
+  }
+  .export-bar button:hover {
+    background: var(--accent-soft);
+    border-color: var(--accent);
+  }
+
+  /* Diagram area -- rendered to image */
+  #diagram {
+    background: var(--bg);
+    padding: 8px;
+  }
+
+  /* Boundary boxes */
+  .boundary {
+    border: 1px solid var(--border-strong);
+    border-radius: 6px;
+    padding: 28px 20px 20px;
+    margin: 18px 0;
+    position: relative;
+  }
+  .boundary > .label {
+    position: absolute;
+    top: -10px;
+    left: 16px;
+    background: var(--bg);
+    padding: 0 8px;
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--text-muted);
+  }
+
+  .layer-host    { background: var(--layer-host); }
+  .layer-docker  { background: var(--layer-docker); }
+  .layer-k8s     { background: var(--layer-k8s); }
+
+  /* Component grid */
+  .row {
+    display: grid;
+    gap: 14px;
+    margin-bottom: 14px;
+  }
+  .row.cols-3 { grid-template-columns: repeat(3, 1fr); }
+  .row.cols-2 { grid-template-columns: repeat(2, 1fr); }
+  .row.cols-1 { grid-template-columns: 1fr; }
+  .row:last-child { margin-bottom: 0; }
+
+  /* Component card */
+  .card {
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    padding: 14px 16px;
+  }
+  .card .name {
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--text);
+    margin-bottom: 2px;
+  }
+  .card .port {
+    font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+    font-size: 11px;
+    color: var(--accent);
+    margin-bottom: 8px;
+  }
+  .card ul {
+    list-style: none;
+    font-size: 12px;
+    color: var(--text);
+  }
+  .card ul li {
+    padding-left: 12px;
+    position: relative;
+    margin-bottom: 3px;
+  }
+  .card ul li::before {
+    content: "—";
+    position: absolute;
+    left: 0;
+    color: var(--text-muted);
+  }
+
+  code {
+    background: var(--code-bg);
+    color: var(--code-text);
+    padding: 1px 5px;
+    border-radius: 3px;
+    font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+    font-size: 11px;
+  }
+
+  /* Connector arrows between layers */
+  .connector {
+    text-align: center;
+    color: var(--text-muted);
+    font-family: ui-monospace, monospace;
+    font-size: 11px;
+    margin: 4px 0;
+  }
+  .connector .arrows {
+    color: var(--accent);
+    font-size: 16px;
+    line-height: 1;
+    margin-bottom: 2px;
+  }
+
+  /* External services */
+  .external-row {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 14px;
+    margin-top: 18px;
+  }
+
+  /* Flows table */
+  .flows {
+    margin-top: 40px;
+  }
+  .flows h2 {
+    font-size: 15px;
+    font-weight: 600;
+    margin-bottom: 12px;
+    color: var(--text);
+  }
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    overflow: hidden;
+  }
+  th, td {
+    text-align: left;
+    padding: 8px 12px;
+    font-size: 12px;
+    border-bottom: 1px solid var(--border);
+  }
+  tr:last-child td { border-bottom: none; }
+  th {
+    background: var(--layer-host);
+    color: var(--text-muted);
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    font-weight: 600;
+  }
+  td.idx {
+    font-family: ui-monospace, monospace;
+    color: var(--accent);
+    font-weight: 600;
+    width: 32px;
+  }
+  td.proto {
+    font-family: ui-monospace, monospace;
+    color: var(--text-muted);
+    font-size: 11px;
+  }
+
+  /* Notes */
+  .notes {
+    margin-top: 32px;
+    padding: 18px 22px;
+    background: var(--accent-soft);
+    border-left: 3px solid var(--accent);
+    border-radius: 0 4px 4px 0;
+  }
+  .notes h2 {
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--accent);
+    margin-bottom: 10px;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+  }
+  .notes ul {
+    list-style: none;
+    font-size: 12.5px;
+    color: var(--text);
+  }
+  .notes ul li {
+    margin-bottom: 7px;
+    padding-left: 14px;
+    position: relative;
+  }
+  .notes ul li::before {
+    content: "·";
+    position: absolute;
+    left: 0;
+    color: var(--accent);
+    font-weight: 700;
+  }
+
+  @media print {
+    .export-bar { display: none; }
+    body { padding: 0; }
+  }
+</style>
+</head>
+<body>
+<div class="container">
+
+  <div class="doc-header">
+    <div>
+      <h1>Z-Alpha Risk Management — architektura wdrożenia</h1>
+      <div class="subtitle">Trzy zagnieżdżone warstwy środowiska: Windows host, Docker Desktop VM, Kubernetes namespace.</div>
+    </div>
+    <div class="export-bar" data-html2canvas-ignore="true">
+      <button onclick="exportAs('png')">Zapisz PNG</button>
+      <button onclick="exportAs('jpeg')">Zapisz JPG</button>
+      <button onclick="window.print()">Drukuj / PDF</button>
+    </div>
+  </div>
+
+  <div id="diagram">
+
+    <!-- LAYER 1: Windows host -->
+    <div class="boundary layer-host">
+      <div class="label">Windows host</div>
+
+      <div class="row cols-3">
+        <div class="card">
+          <div class="name">Browser</div>
+          <div class="port">localhost:3000 / :8000 / :8001</div>
+          <ul>
+            <li>React 19 + TypeScript</li>
+            <li>Vite (build tool)</li>
+            <li>chart.js + recharts</li>
+            <li>JWT w localStorage</li>
+          </ul>
+        </div>
+
+        <div class="card">
+          <div class="name">TWS — IBKR Workstation</div>
+          <div class="port">127.0.0.1:7496 (live) / 7497 (paper)</div>
+          <ul>
+            <li>Wymaga ręcznego logowania + 2FA</li>
+            <li>Brak konteneryzacji (ograniczenie 2FA)</li>
+            <li>Protokół ibapi (TCP socket)</li>
+          </ul>
+        </div>
+
+        <div class="card">
+          <div class="name">CLI tooling</div>
+          <div class="port">PowerShell / Git Bash</div>
+          <ul>
+            <li><code>python start_all.py</code> — orchestrator</li>
+            <li><code>docker</code>, <code>kubectl</code></li>
+            <li>Kontekst: <code>docker-desktop</code></li>
+          </ul>
+        </div>
+      </div>
+
+      <div class="connector">
+        <div class="arrows">▼ &nbsp; ▲ &nbsp; ▼</div>
+        HTTP (3000/8000/8001) &nbsp;·&nbsp; TCP 7496 (z backend pod) &nbsp;·&nbsp; kubectl apply / docker build
+      </div>
+
+      <!-- LAYER 2: Docker Desktop VM -->
+      <div class="boundary layer-docker">
+        <div class="label">Docker Desktop (Linux VM)</div>
+
+        <!-- LAYER 3: Kubernetes -->
+        <div class="boundary layer-k8s">
+          <div class="label">Kubernetes — namespace z-alpha</div>
+
+          <div class="row cols-3">
+            <div class="card">
+              <div class="name">frontend pod</div>
+              <div class="port">LoadBalancer :3000</div>
+              <ul>
+                <li>nginx 1.27 (multi-stage build)</li>
+                <li>Serwuje statyczny bundle Vite</li>
+                <li>SPA fallback dla react-router</li>
+              </ul>
+            </div>
+
+            <div class="card">
+              <div class="name">user-api pod</div>
+              <div class="port">LoadBalancer :8001</div>
+              <ul>
+                <li>FastAPI: <code>POST /auth/login</code>, <code>GET /auth/me</code></li>
+                <li>bcrypt z SHA-256 prehash</li>
+                <li>JWT HS256, TTL 24h</li>
+              </ul>
+            </div>
+
+            <div class="card">
+              <div class="name">backend pod</div>
+              <div class="port">LoadBalancer :8000</div>
+              <ul>
+                <li>FastAPI, 30+ endpointów analitycznych</li>
+                <li>Modules: portfolio_summary, factor_exposure, forecast_risk itd.</li>
+                <li>EWMA / GARCH / EGARCH (lib <code>arch</code>)</li>
+                <li>VaR / CVaR / HHI / MaxDD / factor betas</li>
+              </ul>
+            </div>
+          </div>
+
+          <div class="row cols-1">
+            <div class="card">
+              <div class="name">Secret &middot; <code>z-alpha-secrets</code></div>
+              <div class="port">tworzony przy starcie z .env (base64, kubectl apply przez stdin)</div>
+              <ul>
+                <li><code>AUTH_SECRET</code> — wspólny klucz HS256 (user-api wystawia, backend weryfikuje)</li>
+                <li><code>POSTGRES_PASSWORD</code> — backend, user-api, postgres</li>
+                <li><code>ADMIN_PASSWORD</code> / <code>USER_PASSWORD</code> — seed users</li>
+              </ul>
+            </div>
+          </div>
+
+          <div class="connector">
+            <div class="arrows">▼</div>
+            SQL (DATABASE_URL) — wspólne połączenie z user-api i backend
+          </div>
+
+          <div class="row cols-1">
+            <div class="card">
+              <div class="name">postgres pod</div>
+              <div class="port">ClusterIP :5432 &middot; postgres:16-alpine</div>
+              <ul>
+                <li>Tabele: <code>users</code>, <code>portfolios</code>, <code>ticker_data</code>, <code>ticker_info</code></li>
+                <li>Schema przez <code>Base.metadata.create_all</code> (SQLAlchemy)</li>
+              </ul>
+            </div>
+          </div>
+
+        </div> <!-- /K8s -->
+      </div> <!-- /Docker -->
+    </div> <!-- /Host -->
+
+    <!-- External services -->
+    <div class="external-row">
+      <div class="card">
+        <div class="name">Yahoo Finance API</div>
+        <div class="port">HTTPS &middot; biblioteka yfinance</div>
+        <ul>
+          <li>Fallback dla fundamentali (sector, industry, market cap)</li>
+          <li>Backend pod &rarr; outgoing HTTPS</li>
+        </ul>
+      </div>
+
+      <div class="card">
+        <div class="name">IBKR (mostowanie do TWS na hoście)</div>
+        <div class="port">backend pod &rarr; host.docker.internal:7496</div>
+        <ul>
+          <li>Pobranie historical data, kontraktów, cen</li>
+          <li>DNS rewrite Docker Desktop &mdash; bez <code>hostNetwork</code></li>
+        </ul>
+      </div>
+    </div>
+
+  </div> <!-- /#diagram -->
+
+  <!-- Flows table -->
+  <div class="flows">
+    <h2>Przepływy danych</h2>
+    <table>
+      <thead>
+        <tr>
+          <th>#</th>
+          <th>Co</th>
+          <th>Skąd → Dokąd</th>
+          <th>Protokół / port</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr><td class="idx">1</td><td>UI bundle (HTML / JS / CSS)</td><td>Browser ↔ frontend pod</td><td class="proto">HTTP :3000</td></tr>
+        <tr><td class="idx">2</td><td>Login / session</td><td>Browser ↔ user-api pod</td><td class="proto">HTTP :8001</td></tr>
+        <tr><td class="idx">3</td><td>Analytics (30+ endpointów)</td><td>Browser ↔ backend pod</td><td class="proto">HTTP :8000</td></tr>
+        <tr><td class="idx">4</td><td>Pobranie market data</td><td>backend pod → TWS na hoście</td><td class="proto">TCP :7496 (ibapi)</td></tr>
+        <tr><td class="idx">5</td><td>Fundamentale fallback</td><td>backend pod → Yahoo Finance</td><td class="proto">HTTPS</td></tr>
+        <tr><td class="idx">6</td><td>DB queries</td><td>user-api / backend → postgres</td><td class="proto">TCP :5432</td></tr>
+        <tr><td class="idx">7</td><td>Współdzielony klucz JWT</td><td>user-api ↔ backend (Secret mount)</td><td class="proto">env var AUTH_SECRET</td></tr>
+        <tr><td class="idx">8</td><td>Deploy / orchestration</td><td>start_all.py → kube-apiserver</td><td class="proto">kubectl apply</td></tr>
+        <tr><td class="idx">9</td><td>Cache prefetch</td><td>Browser → backend (10 endpointów)</td><td class="proto">HTTP :8000</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <!-- Notes -->
+  <div class="notes">
+    <h2>Decyzje warte odnotowania</h2>
+    <ul>
+      <li><strong>Ten sam obraz, dwie role.</strong> <code>z-alpha-backend</code> uruchamiany w pod-zie <em>user-api</em> jako <code>uvicorn user_api.main:app</code> oraz w pod-zie <em>backend</em> jako <code>uvicorn api.main:app</code>. Wspólny kod auth, modeli i walidacji bez duplikacji.</li>
+      <li><strong>host.docker.internal w pod-ach.</strong> Docker Desktop wstrzykuje DNS rewrite w CoreDNS, dzięki czemu backend pod woła TWS na hoście bez <code>hostNetwork</code>.</li>
+      <li><strong>LoadBalancer = localhost.</strong> Docker Desktop auto-mapuje LB Services na host. Na innym K8s wymagałby MetalLB albo cloud provider.</li>
+      <li><strong>Per-run image tag.</strong> <code>start_all.py</code> generuje <code>r{timestamp}</code> i robi <code>kubectl set image</code> &mdash; stały tag <code>:local</code> jest pułapką, kubelet nie wie że content się zmienił.</li>
+      <li><strong>Cache prefetch po loginie.</strong> Frontend strzela do 10 endpointów analitycznych przy mount-cie dashboardu &mdash; backend TTLCache (5 min) napełnia się w tle, użytkownik nie czeka na pierwsze przejście między widokami.</li>
+    </ul>
+  </div>
+
+</div>
+
+<!-- html2canvas for image export -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+<script>
+  function exportAs(format) {
+    // Eksport obejmuje wyłącznie zagnieżdżony diagram (Windows host →
+    // Docker Desktop → Kubernetes). Tabela przepływów, sekcja "decyzje"
+    // i serwisy zewnętrzne celowo poza obrazem -- to materiał do tekstu
+    // pracy, nie do schematu.
+    const target = document.querySelector('.layer-host');
+    if (typeof html2canvas === 'undefined') {
+      alert('Biblioteka eksportu (html2canvas) nie załadowała się — sprawdź połączenie internetowe lub użyj „Drukuj / PDF".');
+      return;
+    }
+
+    // PNG -> przezroczyste tło (włada w LaTeX/PDF na dowolnym papierze).
+    // JPG nie wspiera kanału alfa, więc tam zostawiamy białe tło.
+    const transparent = (format === 'png');
+
+    // Etykiety boundary (np. "WINDOWS HOST") siedzą na top: -10px (absolute),
+    // więc wychodzą poza bounding-box capturowanego elementu i są przycinane.
+    // Owijamy target w tymczasowy kontener z paddingiem -- po renderze rozpinamy.
+    const wrapper = document.createElement('div');
+    wrapper.style.cssText = `background:${transparent ? 'transparent' : '#ffffff'};padding:24px 16px 16px;display:inline-block;`;
+    const placeholder = document.createComment('export-placeholder');
+    target.parentNode.insertBefore(placeholder, target);
+    wrapper.appendChild(target);
+    document.body.appendChild(wrapper);
+
+    const restore = () => {
+      placeholder.parentNode.insertBefore(target, placeholder);
+      placeholder.remove();
+      wrapper.remove();
+    };
+
+    html2canvas(wrapper, {
+      backgroundColor: transparent ? null : '#ffffff',
+      scale: 2,                   // 2x dla retina / wydruku
+      logging: false,
+      useCORS: true,
+    }).then(canvas => {
+      restore();
+      const link = document.createElement('a');
+      link.download = `z-alpha-architecture.${format === 'jpeg' ? 'jpg' : 'png'}`;
+      link.href = canvas.toDataURL(`image/${format}`, format === 'jpeg' ? 0.95 : undefined);
+      link.click();
+    }).catch((err) => {
+      restore();
+      console.error('Export failed:', err);
+    });
+  }
+</script>
+
+</body>
+</html>

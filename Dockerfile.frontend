@@ -1,16 +1,38 @@
-FROM node:18-alpine
+# --- Build stage: produce static assets via Vite ---
+FROM node:22-alpine AS builder
 
 WORKDIR /app
 
-COPY frontend/package*.json ./
-RUN npm ci
+# Install deps from a clean lockfile snapshot first (separate layer = better caching).
+COPY frontend/package.json frontend/package-lock.json* ./
+RUN npm install --no-audit --no-fund
 
-# Source is bind-mounted in dev via compose; copy only to make the image self-contained
+# Copy source and build.
+# VITE_* env vars are baked into the bundle at build time -- they need to be
+# passed as build args so the K8s manifest can override them per environment.
+ARG VITE_API_BASE
+ARG VITE_USER_API_BASE
+ENV VITE_API_BASE=$VITE_API_BASE
+ENV VITE_USER_API_BASE=$VITE_USER_API_BASE
+
 COPY frontend/ ./
+RUN npm run build
 
-ENV CHOKIDAR_USEPOLLING=true \
-    WATCHPACK_POLLING=true \
-    BROWSER=none
+# --- Runtime stage: serve via nginx ---
+FROM nginx:1.27-alpine AS runtime
+
+# SPA routing: any path falls back to index.html so react-router handles it.
+RUN printf 'server {\n\
+  listen 3000;\n\
+  root /usr/share/nginx/html;\n\
+  index index.html;\n\
+  location / {\n\
+    try_files $uri $uri/ /index.html;\n\
+  }\n\
+}\n' > /etc/nginx/conf.d/default.conf \
+ && rm -f /etc/nginx/conf.d/default.conf.bak
+
+COPY --from=builder /app/dist /usr/share/nginx/html
 
 EXPOSE 3000
-CMD ["npm", "start"]
+CMD ["nginx", "-g", "daemon off;"]

@@ -9,6 +9,7 @@ import slide2 from '../images/image_3_stock.avif';
 import slide3 from '../images/image_2_nyc.jpg';
 import slide4 from '../images/image_4_stock.jpg';
 import { ChevronRight, ArrowRight, TrendingUp, Shield, Users, Award } from 'lucide-react';
+import { newsItems } from '../data/newsItems';
 
 const LandingPage: React.FC = () => {
   const navigate = useNavigate();
@@ -33,17 +34,18 @@ const LandingPage: React.FC = () => {
     { title: 'Research & Strategy', desc: 'Contribute to investment strategy and market research' }
   ];
 
-  // Helper: load images by fuzzy hints (filenames are added later)
-  const imagesCtx = (require as any).context('../images', false, /\.(png|jpe?g|webp|avif)$/);
+  // Helper: load images by fuzzy hints. Vite's import.meta.glob is the
+  // ESM-native equivalent of webpack's require.context.
+  const imageModules = import.meta.glob('../images/*.{png,jpg,jpeg,webp,avif}', {
+    eager: true,
+    import: 'default',
+  }) as Record<string, string>;
   const findImage = (hints: string[]): string | null => {
-    const keys: string[] = imagesCtx.keys();
+    const keys = Object.keys(imageModules);
     const lower = keys.map((k) => k.toLowerCase());
     for (const hint of hints.map((h) => h.toLowerCase())) {
       const idx = lower.findIndex((k) => k.includes(hint));
-      if (idx !== -1) {
-        const mod = imagesCtx(keys[idx]);
-        return (mod && mod.default) ? mod.default : mod;
-      }
+      if (idx !== -1) return imageModules[keys[idx]];
     }
     return null;
   };
@@ -787,9 +789,8 @@ const LandingPage: React.FC = () => {
             </header>
 
             {(() => {
-              const allNews = require('../data/newsItems').newsItems as any[];
-              if (!allNews || allNews.length === 0) return null;
-              const [featured, ...others] = allNews;
+              if (!newsItems || newsItems.length === 0) return null;
+              const [featured, ...others] = newsItems;
               return (
                 <>
                   {/* Featured article */}

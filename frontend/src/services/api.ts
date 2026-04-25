@@ -1,13 +1,13 @@
-import axios from 'axios';
+import axios, { AxiosRequestConfig } from 'axios';
 
-const API_BASE_URL = 'http://localhost:8000';
+const API_BASE_URL = import.meta.env.VITE_API_BASE || 'http://localhost:8000';
 
 const api = axios.create({
   baseURL: API_BASE_URL,
-  headers: {
-    'Content-Type': 'application/json',
-  },
+  headers: { 'Content-Type': 'application/json' },
 });
+
+// ---------- Type definitions ----------
 
 export interface PortfolioData {
   symbol: string;
@@ -69,19 +69,19 @@ export interface SectorConcentration {
   effective_sectors: number;
 }
 
+export interface MarketCapBucketEntry {
+  ticker: string;
+  market_cap: number;
+  weight: number;
+  market_value: number;
+}
+
 export interface MarketCapConcentration {
   categories: string[];
   weights: number[];
+  details: { [category: string]: MarketCapBucketEntry[] };
   hhi: number;
   effective_categories: number;
-  details: {
-    [category: string]: Array<{
-      ticker: string;
-      market_cap: number;
-      weight: number;
-      market_value: number;
-    }>;
-  };
 }
 
 export interface ConcentrationRiskResponse {
@@ -108,6 +108,7 @@ export interface RiskScoringResponse {
     pairs_high_corr: number;
     max_drawdown_pct: number;
   };
+  username?: string;
 }
 
 export interface StressTestingResponse {
@@ -223,8 +224,8 @@ export interface LiquidityOverviewResponse {
     estimated_liquidation_time: string;
   };
   distribution: {
-    "High Liquidity (8-10)": number;
-    "Medium Liquidity (5-8)": number;
+    'High Liquidity (8-10)': number;
+    'Medium Liquidity (5-8)': number;
   };
   volume_analysis: {
     avg_volume_global: number;
@@ -316,314 +317,275 @@ export interface PortfolioSummaryResponse {
   };
 }
 
+// User profile / portfolio CRUD
+
+export interface UserPortfolioItem {
+  ticker: string;
+  shares: number;
+  price: number;
+  market_value: number;
+  sector?: string;
+  industry?: string;
+}
+
+export interface UserPortfolioResponse {
+  username: string;
+  portfolio_items: UserPortfolioItem[];
+  total_market_value: number;
+  total_positions: number;
+}
+
+export interface TickerSuggestion {
+  symbol: string;
+  name?: string;
+  exchange?: string;
+}
+
+export interface TickerSearchResponse {
+  suggestions: TickerSuggestion[];
+}
+
+export interface PortfolioMutationResponse {
+  success: boolean;
+  message?: string;
+  data_source?: string;
+  updated_items?: number;
+  new_items?: number;
+  total_items?: number;
+  error?: string;
+}
+
+export interface InvalidateUserResponse {
+  ok: boolean;
+  message: string;
+}
+
+export interface HealthResponse {
+  status: string;
+}
+
+// ---------- Request helper ----------
+
+interface RequestOptions {
+  params?: Record<string, unknown>;
+  data?: unknown;
+}
+
+// All GETs get a `_t=<now>` cache buster to avoid stale browser caches.
+// Mutations don't need it; backend cache invalidation handles those.
+async function request<T>(
+  method: 'get' | 'post' | 'delete' | 'put',
+  url: string,
+  { params, data }: RequestOptions = {},
+): Promise<T> {
+  const config: AxiosRequestConfig = {
+    method,
+    url,
+    data,
+    params: method === 'get' ? { ...(params || {}), _t: Date.now() } : params,
+  };
+  try {
+    const res = await api.request<T>(config);
+    return res.data;
+  } catch (err) {
+    console.error(`[api] ${method.toUpperCase()} ${url} failed:`, err);
+    throw err;
+  }
+}
+
+// ---------- ApiService ----------
+
 class ApiService {
-  async getVolatilityData(forecastModel: string = 'EWMA (5D)', username: string = "admin"): Promise<VolatilityData> {
-    try {
-      const response = await api.get('/volatility-data', {
-        params: { 
-          forecast_model: forecastModel, 
-          username,
-          _t: Date.now() // Add timestamp to prevent caching
-        }
-      });
-      return response.data;
-    } catch (error) {
-      console.error('Error fetching volatility data:', error);
-      throw error;
-    }
+  // Analytics endpoints
+  getVolatilityData(forecastModel = 'EWMA (5D)', username = 'admin') {
+    return request<VolatilityData>('get', '/volatility-data', {
+      params: { forecast_model: forecastModel, username },
+    });
   }
 
-  async getFactorExposureData(username: string = "admin"): Promise<FactorExposureResponse> {
-    try {
-      const response = await api.get('/factor-exposure-data', {
-        params: { 
-          username,
-          _t: Date.now() // Add timestamp to prevent caching
-        }
-      });
-      return response.data;
-    } catch (error) {
-      console.error('Error fetching factor exposure data:', error);
-      throw error;
-    }
+  getFactorExposureData(username = 'admin') {
+    return request<FactorExposureResponse>('get', '/factor-exposure-data', {
+      params: { username },
+    });
   }
 
-  async getConcentrationRiskData(username: string = "admin"): Promise<ConcentrationRiskResponse> {
-    try {
-      const response = await api.get('/concentration-risk-data', {
-        params: { 
-          username,
-          _t: Date.now() // Add timestamp to prevent caching
-        }
-      });
-      return response.data;
-    } catch (error) {
-      console.error('Error fetching concentration risk data:', error);
-      throw error;
-    }
+  getLatestFactorExposures(username = 'admin') {
+    return request<LatestFactorExposuresResponse>('get', '/latest-factor-exposures', {
+      params: { username },
+    });
   }
 
-  async getRiskScoringData(username: string = "admin"): Promise<RiskScoringResponse> {
-    try {
-      const response = await api.get('/risk-scoring', {
-        params: { 
-          username,
-          _t: Date.now() // Add timestamp to prevent caching
-        }
-      });
-      return response.data;
-    } catch (error) {
-      console.error('Error fetching risk scoring data:', error);
-      throw error;
-    }
+  getConcentrationRiskData(username = 'admin') {
+    return request<ConcentrationRiskResponse>('get', '/concentration-risk-data', {
+      params: { username },
+    });
   }
 
-  async getStressTestingData(username: string = "admin"): Promise<StressTestingResponse> {
-    try {
-      const response = await api.get('/stress-testing', {
-        params: { 
-          username,
-          _t: Date.now() // Add timestamp to prevent caching
-        }
-      });
-      return response.data;
-    } catch (error) {
-      console.error('Error fetching stress testing data:', error);
-      throw error;
-    }
+  getRiskScoringData(username = 'admin') {
+    return request<RiskScoringResponse>('get', '/risk-scoring', {
+      params: { username },
+    });
   }
 
-  async getForecastRiskContributionData(volModel: string = 'EWMA (5D)', tickers: string[] = [], includePortfolioBar: boolean = true, username: string = "admin"): Promise<ForecastRiskContributionResponse> {
-    try {
-      console.log('[API] getForecastRiskContributionData called with:', { volModel, tickers, includePortfolioBar, username });
-      
-      const params = { 
-        vol_model: volModel, 
+  getStressTestingData(username = 'admin') {
+    return request<StressTestingResponse>('get', '/stress-testing', {
+      params: { username },
+    });
+  }
+
+  getForecastRiskContributionData(
+    volModel = 'EWMA (5D)',
+    tickers: string[] = [],
+    includePortfolioBar = true,
+    username = 'admin',
+  ) {
+    return request<ForecastRiskContributionResponse>('get', '/forecast-risk-contribution', {
+      params: {
+        vol_model: volModel,
         tickers: tickers.length > 0 ? tickers.join(',') : '',
         include_portfolio_bar: includePortfolioBar,
         username,
-        _t: Date.now() // Add timestamp to prevent caching
-      };
-      
-      console.log('[API] Request params:', params);
-      
-      const response = await api.get('/forecast-risk-contribution', { params });
-      
-      console.log('[API] Response data:', response.data);
-      
-      return response.data;
-    } catch (error) {
-      console.error('Error fetching forecast risk contribution data:', error);
-      throw error;
-    }
+      },
+    });
   }
 
-  async getForecastMetrics(username: string = "admin"): Promise<ForecastMetricsResponse> {
-    try {
-      const response = await api.get('/forecast-metrics', {
-        params: { 
-          username,
-          _t: Date.now() // Add timestamp to prevent caching
-        }
-      });
-      return response.data;
-    } catch (error) {
-      console.error('Error fetching forecast metrics data:', error);
-      throw error;
-    }
+  getForecastMetrics(username = 'admin') {
+    return request<ForecastMetricsResponse>('get', '/forecast-metrics', {
+      params: { username },
+    });
   }
 
-  async getRollingForecast(model: string, window: number, tickers: string[], username: string = "admin"): Promise<RollingForecastResponse> {
-    try {
-      const response = await api.get('/rolling-forecast', {
-        params: { 
-          model, 
-          window, 
-          tickers: tickers.join(','), 
-          username,
-          _t: Date.now() // Add timestamp to prevent caching
-        }
-      });
-      return response.data;
-    } catch (error) {
-      console.error('Error fetching rolling forecast data:', error);
-      throw error;
-    }
+  getRollingForecast(model: string, window: number, tickers: string[], username = 'admin') {
+    return request<RollingForecastResponse>('get', '/rolling-forecast', {
+      params: { model, window, tickers: tickers.join(','), username },
+    });
   }
 
-  async getLatestFactorExposures(username: string = "admin"): Promise<LatestFactorExposuresResponse> {
-    try {
-      const response = await api.get('/latest-factor-exposures', {
-        params: { 
-          username,
-          _t: Date.now() // Add timestamp to prevent caching
-        }
-      });
-      return response.data;
-    } catch (error) {
-      console.error('Error fetching latest factor exposures data:', error);
-      throw error;
-    }
+  getPortfolioSummary(username = 'admin') {
+    return request<PortfolioSummaryResponse>('get', '/portfolio-summary', {
+      params: { username },
+    });
   }
 
-  async getPortfolioSummary(username: string = "admin"): Promise<PortfolioSummaryResponse> {
-    try {
-      const response = await api.get('/portfolio-summary', {
-        params: { 
-          username,
-          _t: Date.now() // Add timestamp to prevent caching
-        }
-      });
-      return response.data;
-    } catch (error) {
-      console.error('Error fetching portfolio summary data:', error);
-      throw error;
-    }
+  getRealizedMetrics(username = 'admin') {
+    return request<RealizedMetricsResponse>('get', '/realized-metrics', {
+      params: { username },
+    });
   }
 
-  async getRealizedMetrics(username: string = "admin"): Promise<RealizedMetricsResponse> {
-    try {
-      const response = await api.get('/realized-metrics', {
-        params: { 
-          username,
-          _t: Date.now() // Add timestamp to prevent caching
-        }
-      });
-      return response.data;
-    } catch (error) {
-      console.error('Error fetching realized metrics data:', error);
-      throw error;
-    }
+  getRollingMetrics(
+    metric = 'vol',
+    window = 21,
+    tickers: string[] = ['PORTFOLIO'],
+    username = 'admin',
+  ) {
+    return request<RollingMetricsResponse>('get', '/rolling-metric', {
+      params: { metric, window, tickers: tickers.join(','), username },
+    });
   }
 
-  async getRollingMetrics(
-    metric: string = "vol",
-    window: number = 21,
-    tickers: string[] = ["PORTFOLIO"],
-    username: string = "admin"
-  ): Promise<RollingMetricsResponse> {
-    try {
-      const response = await api.get('/rolling-metric', {
-        params: { 
-          metric, 
-          window, 
-          tickers: tickers.join(','), 
-          username,
-          _t: Date.now() // Add timestamp to prevent caching
-        }
-      });
-      return response.data;
-    } catch (error) {
-      console.error('Error fetching rolling metrics data:', error);
-      throw error;
-    }
+  getLiquidityOverview(username = 'admin') {
+    return request<LiquidityOverviewResponse>('get', '/liquidity-overview', {
+      params: { username },
+    });
   }
 
-  async getLiquidityOverview(username: string = "admin"): Promise<LiquidityOverviewResponse> {
-    try {
-      const response = await api.get('/liquidity-overview', {
-        params: { 
-          username,
-          _t: Date.now() // Add timestamp to prevent caching
-        }
-      });
-      return response.data;
-    } catch (error) {
-      console.error('Error fetching liquidity overview data:', error);
-      throw error;
-    }
+  getLiquidityVolumeAnalysis(username = 'admin') {
+    return request<LiquidityVolumeAnalysisResponse>('get', '/liquidity-volume-analysis', {
+      params: { username },
+    });
   }
 
-  async getLiquidityVolumeAnalysis(username: string = "admin"): Promise<LiquidityVolumeAnalysisResponse> {
-    try {
-      const response = await api.get('/liquidity-volume-analysis', {
-        params: { 
-          username,
-          _t: Date.now() // Add timestamp to prevent caching
-        }
-      });
-      return response.data;
-    } catch (error) {
-      console.error('Error fetching liquidity volume analysis data:', error);
-      throw error;
-    }
+  getLiquidityAlerts(username = 'admin') {
+    return request<LiquidityAlertsResponse>('get', '/liquidity-alerts', {
+      params: { username },
+    });
   }
 
-  async getLiquidityAlerts(username: string = "admin"): Promise<LiquidityAlertsResponse> {
-    try {
-      const response = await api.get('/liquidity-alerts', {
-        params: { 
-          username,
-          _t: Date.now() // Add timestamp to prevent caching
-        }
-      });
-      return response.data;
-    } catch (error) {
-      console.error('Error fetching liquidity alerts data:', error);
-      throw error;
-    }
+  // Auth + session
+  getSession(username = 'admin') {
+    return request<SessionResponse>('get', '/session', { params: { username } });
   }
 
-  async initializePortfolio(): Promise<any> {
-    try {
-      const response = await api.post('/initialize-portfolio');
-      return response.data;
-    } catch (error) {
-      console.error('Error initializing portfolio:', error);
-      throw error;
-    }
+  login(credentials: LoginRequest) {
+    return request<LoginResponse>('post', '/login', { data: credentials });
   }
 
-  async fetchHistoricalData(symbol: string): Promise<any> {
-    try {
-      const response = await api.post(`/fetch-data/${symbol}`);
-      return response.data;
-    } catch (error) {
-      console.error(`Error fetching data for ${symbol}:`, error);
-      throw error;
-    }
+  // User profile / portfolio CRUD
+  getUserPortfolio(username = 'admin') {
+    return request<UserPortfolioResponse>('get', `/user-portfolio/${username}`);
   }
 
-  async getSession(username: string = 'admin'): Promise<SessionResponse> {
-    try {
-      const response = await api.get(`/session?username=${username}`);
-      return response.data;
-    } catch (error) {
-      console.error('Session error:', error);
-      throw error;
-    }
+  savePortfolio(username: string, items: Array<{ ticker: string; shares: number }>) {
+    return request<PortfolioMutationResponse>('post', `/user-portfolio/${username}`, {
+      data: items,
+    });
   }
 
-  async login(credentials: LoginRequest): Promise<LoginResponse> {
-    try {
-      const response = await api.post('/login', credentials);
-      return response.data;
-    } catch (error) {
-      console.error('Login error:', error);
-      throw error;
-    }
+  addTickerToPortfolio(username: string, ticker: string, shares: number) {
+    return request<PortfolioMutationResponse>('post', `/add-ticker/${username}`, {
+      params: { ticker, shares },
+    });
   }
 
-  async getUserPortfolio(username: string = "admin"): Promise<any> {
-    try {
-      const response = await api.get(`/user-portfolio/${username}`);
-      return response.data;
-    } catch (error) {
-      console.error('Error fetching user portfolio:', error);
-      throw error;
-    }
+  removeTickerFromPortfolio(username: string, ticker: string) {
+    return request<PortfolioMutationResponse>('delete', `/remove-ticker/${username}`, {
+      params: { ticker },
+    });
   }
 
-  async healthCheck(): Promise<any> {
+  searchTickers(query: string) {
+    return request<TickerSearchResponse>('get', '/ticker-search', { params: { query } });
+  }
+
+  invalidateUser(username: string) {
+    return request<InvalidateUserResponse>('post', `/invalidate-user/${username}`);
+  }
+
+  // Misc
+  initializePortfolio() {
+    return request<{ success: boolean; message?: string }>('post', '/initialize-portfolio');
+  }
+
+  fetchHistoricalData(symbol: string) {
+    return request<{ success: boolean; symbol: string }>('post', `/fetch-data/${symbol}`);
+  }
+
+  healthCheck() {
+    return request<HealthResponse>('get', '/health');
+  }
+
+  /**
+   * Pre-warm the backend's TTL cache for the heavy dashboard endpoints so the
+   * user doesn't pay computation latency on first navigation. Fired in the
+   * background by DashboardLayout after login -- failures are swallowed (the
+   * pages will still trigger their own fetch on mount).
+   *
+   * Concentration is awaited first because almost every other endpoint reads
+   * portfolio weights from it (via the facade shim); warming it sequentially
+   * lets the parallel fan-out hit the cache instead of recomputing N times.
+   */
+  async warmDashboardCache(username = 'admin'): Promise<void> {
     try {
-      const response = await api.get('/health');
-      return response.data;
-    } catch (error) {
-      console.error('Health check failed:', error);
-      throw error;
-    }
+      await this.getConcentrationRiskData(username);
+    } catch { /* downstream calls will retry */ }
+
+    await Promise.allSettled([
+      this.getRiskScoringData(username),
+      this.getFactorExposureData(username),
+      this.getLatestFactorExposures(username),
+      this.getForecastRiskContributionData('EWMA (5D)', [], true, username),
+      this.getForecastMetrics(username),
+      this.getRealizedMetrics(username),
+      this.getStressTestingData(username),
+      this.getLiquidityOverview(username),
+      this.getVolatilityData('EWMA (5D)', username),
+      // Aggregator -- depends on the above; placed last so its sub-fetches
+      // hit the freshly-populated cache.
+      this.getPortfolioSummary(username),
+    ]);
   }
 }
 
 const apiService = new ApiService();
-export default apiService; 
+export default apiService;

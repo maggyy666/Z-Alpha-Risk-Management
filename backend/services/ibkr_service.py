@@ -1,4 +1,3 @@
-import os
 import threading
 import time
 import random
@@ -150,12 +149,13 @@ class IBKRService:
         
     def connect(self, host: str = None, port: int = None,
                 client_id: int = None, timeout: int = 20) -> bool:
-        """Connect to IBKR API. Host/port default to env vars IBKR_HOST/IBKR_PORT
+        """Connect to IBKR API. Host/port default to settings.ibkr_host/_port
         so the backend container can reach TWS on the host (host.docker.internal)."""
+        from config import settings
         if host is None:
-            host = os.environ.get("IBKR_HOST", "127.0.0.1")
+            host = settings.ibkr_host
         if port is None:
-            port = int(os.environ.get("IBKR_PORT", "7496"))
+            port = settings.ibkr_port
         try:
             # Use provided client_id or generate unique one
             if client_id is None:

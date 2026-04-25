@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useMemo, useState } from 'react';
 import { Bar, Doughnut } from 'react-chartjs-2';
 import {
   Chart as ChartJS,
@@ -10,299 +10,211 @@ import {
   Legend,
   ArcElement,
 } from 'chart.js';
-import apiService, { ConcentrationRiskResponse } from '../services/api';
+import apiService, {
+  ConcentrationRiskResponse,
+  PortfolioItem,
+  MarketCapBucketEntry,
+} from '../services/api';
+import { useApiData } from '../hooks/useApiData';
 import { useSession } from '../contexts/SessionContext';
 import RiskScoring from '../components/RiskScoring';
 import './ConcentrationRiskPage.css';
 
-ChartJS.register(
-  CategoryScale,
-  LinearScale,
-  BarElement,
-  Title,
-  Tooltip,
-  Legend,
-  ArcElement
-);
+ChartJS.register(CategoryScale, LinearScale, BarElement, Title, Tooltip, Legend, ArcElement);
 
 type TabType = 'position' | 'sector' | 'market-cap' | 'risk-scoring';
 
+const PIE_PALETTE = [
+  'rgba(255, 107, 107, 0.8)',
+  'rgba(255, 99, 132, 0.8)',
+  'rgba(255, 159, 64, 0.8)',
+  'rgba(255, 99, 71, 0.8)',
+  'rgba(220, 20, 60, 0.8)',
+  'rgba(255, 140, 0, 0.8)',
+];
+
+const BAR_OPTIONS = {
+  responsive: true,
+  maintainAspectRatio: false,
+  plugins: {
+    legend: { display: false },
+    tooltip: {
+      enabled: true,
+      backgroundColor: 'rgba(0, 0, 0, 0.9)',
+      titleColor: '#ffffff',
+      bodyColor: '#ffffff',
+      borderColor: '#333',
+      borderWidth: 1,
+      cornerRadius: 6,
+      callbacks: {
+        label(context: { label: string; parsed: { y: number } }) {
+          return `${context.label}: ${context.parsed.y.toFixed(1)}%`;
+        },
+      },
+    },
+  },
+  scales: {
+    x: {
+      grid: { color: '#333', drawBorder: false },
+      ticks: { color: '#ffffff', font: { size: 11 } },
+    },
+    y: {
+      grid: { color: '#333', drawBorder: false },
+      ticks: {
+        color: '#ffffff',
+        font: { size: 11 },
+        callback(value: number | string) { return `${value}%`; },
+      },
+    },
+  },
+};
+
+const PIE_OPTIONS = {
+  responsive: true,
+  maintainAspectRatio: false,
+  plugins: {
+    legend: {
+      display: true,
+      position: 'right' as const,
+      labels: { color: '#ffffff', padding: 20, usePointStyle: true, pointStyle: 'circle' },
+    },
+    tooltip: {
+      enabled: true,
+      backgroundColor: 'rgba(0, 0, 0, 0.9)',
+      titleColor: '#ffffff',
+      bodyColor: '#ffffff',
+      borderColor: '#333',
+      borderWidth: 1,
+      callbacks: {
+        label(context: { label: string; parsed: number }) {
+          return `${context.label}: ${context.parsed.toFixed(1)}%`;
+        },
+      },
+    },
+  },
+};
+
+const buildBarChart = (labels: string[], values: number[], label: string) => ({
+  labels,
+  datasets: [
+    {
+      label,
+      data: values,
+      backgroundColor: 'rgba(255, 107, 107, 0.8)',
+      borderColor: 'rgba(255, 107, 107, 1)',
+      borderWidth: 2,
+    },
+  ],
+});
+
+const buildPieChart = (labels: string[], values: number[]) => {
+  const colors = PIE_PALETTE.slice(0, labels.length);
+  return {
+    labels,
+    datasets: [
+      {
+        data: values,
+        backgroundColor: colors,
+        borderColor: colors,
+        borderWidth: 2,
+      },
+    ],
+  };
+};
+
+interface SectorBreakdown {
+  name: string;
+  weight: number;
+  positions: number;
+  positionList: string;
+}
+
+interface MarketCapBreakdown extends SectorBreakdown {
+  avgMarketCap: number;
+}
+
+const buildSectorBreakdown = (items: PortfolioItem[]): SectorBreakdown[] => {
+  const groups: Record<string, PortfolioItem[]> = {};
+  items.forEach((item) => {
+    if (!groups[item.sector]) groups[item.sector] = [];
+    groups[item.sector].push(item);
+  });
+  return Object.entries(groups)
+    .map(([name, group]) => ({
+      name,
+      weight: group.reduce((sum, it) => sum + it.weight, 0),
+      positions: group.length,
+      positionList: group.map((it) => it.ticker).join(', '),
+    }))
+    .sort((a, b) => b.weight - a.weight);
+};
+
+const buildMarketCapBreakdown = (
+  details: { [category: string]: MarketCapBucketEntry[] },
+): MarketCapBreakdown[] =>
+  Object.entries(details)
+    .map(([name, items]) => ({
+      name,
+      weight: items.reduce((sum, it) => sum + it.weight, 0),
+      positions: items.length,
+      positionList: items.map((it) => it.ticker).join(', '),
+      avgMarketCap: items.reduce((sum, it) => sum + it.market_cap, 0) / items.length,
+    }))
+    .sort((a, b) => b.weight - a.weight);
+
+const argMax = (arr: number[]) => arr.indexOf(Math.max(...arr));
+
 const ConcentrationRiskPage: React.FC = () => {
-  const [data, setData] = useState<ConcentrationRiskResponse | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-  const [activeTab, setActiveTab] = useState<TabType>('position');
   const { getCurrentUsername } = useSession();
+  const username = getCurrentUsername();
+  const [activeTab, setActiveTab] = useState<TabType>('position');
 
-  const fetchConcentrationData = async () => {
-    try {
-      setLoading(true);
-      const username = getCurrentUsername();
-      const response = await apiService.getConcentrationRiskData(username);
-      setData(response);
-      setError(null);
-    } catch (err) {
-      setError('Failed to load concentration risk data');
-      console.error('Error fetching concentration data:', err);
-    } finally {
-      setLoading(false);
-    }
-  };
+  const { data, loading, error } = useApiData<ConcentrationRiskResponse>(
+    () => apiService.getConcentrationRiskData(username),
+    [username],
+    'Failed to load concentration risk data',
+  );
 
-  useEffect(() => {
-    fetchConcentrationData();
-  }, [getCurrentUsername]);
-
-  const createPositionWeightChartData = () => {
+  const positionWeightChart = useMemo(() => {
     if (!data) return null;
+    const top10 = data.portfolio_data.slice(0, 10);
+    return buildBarChart(top10.map((i) => i.ticker), top10.map((i) => i.weight), 'Position Weight (%)');
+  }, [data]);
 
-    const top10Data = data.portfolio_data.slice(0, 10);
-    
-    return {
-      labels: top10Data.map(item => item.ticker),
-      datasets: [
-        {
-          label: 'Position Weight (%)',
-          data: top10Data.map(item => item.weight),
-          backgroundColor: 'rgba(255, 107, 107, 0.8)',
-          borderColor: 'rgba(255, 107, 107, 1)',
-          borderWidth: 2,
-        },
-      ],
-    };
-  };
-
-  const createSectorChartData = () => {
+  const sectorPieChart = useMemo(() => {
     if (!data) return null;
+    return buildPieChart(data.sector_concentration.sectors, data.sector_concentration.weights);
+  }, [data]);
 
-    return {
-      labels: data.sector_concentration.sectors,
-      datasets: [
-        {
-          label: 'Sector Weight (%)',
-          data: data.sector_concentration.weights,
-          backgroundColor: 'rgba(255, 107, 107, 0.8)',
-          borderColor: 'rgba(255, 107, 107, 1)',
-          borderWidth: 2,
-        },
-      ],
-    };
-  };
+  const marketCapPieChart = useMemo(() => {
+    if (!data) return null;
+    return buildPieChart(data.market_cap_concentration.categories, data.market_cap_concentration.weights);
+  }, [data]);
 
-  const getLargestSector = () => {
+  const sectorBreakdown = useMemo(
+    () => (data ? buildSectorBreakdown(data.portfolio_data) : []),
+    [data],
+  );
+
+  const marketCapBreakdown = useMemo(
+    () => (data ? buildMarketCapBreakdown(data.market_cap_concentration.details) : []),
+    [data],
+  );
+
+  const largestSector = useMemo(() => {
     if (!data) return '';
-    const maxIndex = data.sector_concentration.weights.indexOf(Math.max(...data.sector_concentration.weights));
-    return data.sector_concentration.sectors[maxIndex];
-  };
+    return data.sector_concentration.sectors[argMax(data.sector_concentration.weights)];
+  }, [data]);
 
-  const createSectorPieChartData = () => {
-    if (!data) return null;
-
-    const colors = [
-      'rgba(255, 107, 107, 0.8)',   // Red
-      'rgba(255, 99, 132, 0.8)',    // Pink
-      'rgba(255, 159, 64, 0.8)',    // Orange
-      'rgba(255, 99, 71, 0.8)',     // Tomato
-      'rgba(220, 20, 60, 0.8)',     // Crimson
-    ];
-
-    return {
-      labels: data.sector_concentration.sectors,
-      datasets: [
-        {
-          data: data.sector_concentration.weights,
-          backgroundColor: colors.slice(0, data.sector_concentration.sectors.length),
-          borderColor: colors.slice(0, data.sector_concentration.sectors.length).map(color => color.replace('0.8', '1')),
-          borderWidth: 2,
-        },
-      ],
-    };
-  };
-
-  const createSectorBreakdownData = () => {
-    if (!data) return [];
-
-    // Group portfolio data by sector
-    const sectorGroups: { [key: string]: any[] } = {};
-    data.portfolio_data.forEach(item => {
-      const sector = item.sector;
-      if (!sectorGroups[sector]) {
-        sectorGroups[sector] = [];
-      }
-      sectorGroups[sector].push(item);
-    });
-
-    // Create breakdown data
-    return Object.keys(sectorGroups).map(sector => {
-      const items = sectorGroups[sector];
-      const totalWeight = items.reduce((sum, item) => sum + item.weight, 0);
-      const tickers = items.map(item => item.ticker).join(', ');
-      
-      return {
-        name: sector,
-        weight: totalWeight,
-        positions: items.length,
-        positionList: tickers
-      };
-    }).sort((a, b) => b.weight - a.weight); // Sort by weight descending
-  };
-
-  const createMarketCapChartData = () => {
-    if (!data) return null;
-
-    return {
-      labels: data.market_cap_concentration.categories,
-      datasets: [
-        {
-          label: 'Market Cap Weight (%)',
-          data: data.market_cap_concentration.weights,
-          backgroundColor: 'rgba(255, 107, 107, 0.8)',
-          borderColor: 'rgba(255, 107, 107, 1)',
-          borderWidth: 2,
-        },
-      ],
-    };
-  };
-
-  const createMarketCapPieChartData = () => {
-    if (!data) return null;
-
-    const colors = [
-      'rgba(255, 107, 107, 0.8)',   // Red
-      'rgba(255, 99, 132, 0.8)',    // Pink
-      'rgba(255, 159, 64, 0.8)',    // Orange
-      'rgba(255, 99, 71, 0.8)',     // Tomato
-      'rgba(220, 20, 60, 0.8)',     // Crimson
-      'rgba(255, 140, 0, 0.8)',     // Dark Orange
-    ];
-
-    return {
-      labels: data.market_cap_concentration.categories,
-      datasets: [
-        {
-          data: data.market_cap_concentration.weights,
-          backgroundColor: colors.slice(0, data.market_cap_concentration.categories.length),
-          borderColor: colors.slice(0, data.market_cap_concentration.categories.length).map(color => color.replace('0.8', '1')),
-          borderWidth: 2,
-        },
-      ],
-    };
-  };
-
-  const createMarketCapBreakdownData = () => {
-    if (!data) return [];
-
-    return Object.keys(data.market_cap_concentration.details).map(category => {
-      const items = data.market_cap_concentration.details[category];
-      const totalWeight = items.reduce((sum, item) => sum + item.weight, 0);
-      const tickers = items.map(item => item.ticker).join(', ');
-      const avgMarketCap = items.reduce((sum, item) => sum + item.market_cap, 0) / items.length;
-      
-      return {
-        name: category,
-        weight: totalWeight,
-        positions: items.length,
-        positionList: tickers,
-        avgMarketCap: avgMarketCap
-      };
-    }).sort((a, b) => b.weight - a.weight); // Sort by weight descending
-  };
-
-  const getLargestMarketCapCategory = () => {
+  const largestMarketCapCategory = useMemo(() => {
     if (!data) return '';
-    const maxIndex = data.market_cap_concentration.weights.indexOf(Math.max(...data.market_cap_concentration.weights));
-    return data.market_cap_concentration.categories[maxIndex];
-  };
-
-  const chartOptions = {
-    responsive: true,
-    maintainAspectRatio: false,
-    plugins: {
-      legend: {
-        display: false,
-      },
-      tooltip: {
-        enabled: true,
-        backgroundColor: 'rgba(0, 0, 0, 0.9)',
-        titleColor: '#ffffff',
-        bodyColor: '#ffffff',
-        borderColor: '#333',
-        borderWidth: 1,
-        cornerRadius: 6,
-        callbacks: {
-          label: function(context: any) {
-            return `${context.label}: ${context.parsed.y.toFixed(1)}%`;
-          }
-        }
-      }
-    },
-    scales: {
-      x: {
-        grid: {
-          color: '#333',
-          drawBorder: false
-        },
-        ticks: {
-          color: '#ffffff',
-          font: {
-            size: 11
-          }
-        }
-      },
-      y: {
-        grid: {
-          color: '#333',
-          drawBorder: false
-        },
-        ticks: {
-          color: '#ffffff',
-          font: {
-            size: 11
-          },
-          callback: function(value: any) {
-            return value + '%';
-          }
-        }
-      }
-    }
-  };
-
-  const sectorPieChartOptions = {
-    responsive: true,
-    maintainAspectRatio: false,
-    plugins: {
-      legend: {
-        display: true,
-        position: 'right' as const,
-        labels: {
-          color: '#ffffff',
-          padding: 20,
-          usePointStyle: true,
-          pointStyle: 'circle',
-        },
-      },
-      tooltip: {
-        enabled: true,
-        backgroundColor: 'rgba(0, 0, 0, 0.9)',
-        titleColor: '#ffffff',
-        bodyColor: '#ffffff',
-        borderColor: '#333',
-        borderWidth: 1,
-        callbacks: {
-          label: function(context: any) {
-            return `${context.label}: ${context.parsed.toFixed(1)}%`;
-          }
-        }
-      },
-    },
-  };
+    return data.market_cap_concentration.categories[argMax(data.market_cap_concentration.weights)];
+  }, [data]);
 
   if (loading) {
     return (
       <div className="concentration-risk-page">
-        <div className="loading">
-          Loading concentration risk data...
-        </div>
+        <div className="loading">Loading concentration risk data...</div>
       </div>
     );
   }
@@ -325,27 +237,26 @@ const ConcentrationRiskPage: React.FC = () => {
 
   return (
     <div className="concentration-risk-page">
-      {/* Sub-navigation */}
       <div className="sub-nav">
-        <button 
+        <button
           className={`sub-nav-item ${activeTab === 'position' ? 'active' : ''}`}
           onClick={() => setActiveTab('position')}
         >
           Position Concentration
         </button>
-        <button 
+        <button
           className={`sub-nav-item ${activeTab === 'sector' ? 'active' : ''}`}
           onClick={() => setActiveTab('sector')}
         >
           Sector Concentration
         </button>
-        <button 
+        <button
           className={`sub-nav-item ${activeTab === 'market-cap' ? 'active' : ''}`}
           onClick={() => setActiveTab('market-cap')}
         >
           Market Cap Concentration
         </button>
-        <button 
+        <button
           className={`sub-nav-item ${activeTab === 'risk-scoring' ? 'active' : ''}`}
           onClick={() => setActiveTab('risk-scoring')}
         >
@@ -355,7 +266,6 @@ const ConcentrationRiskPage: React.FC = () => {
 
       {activeTab === 'position' && (
         <>
-          {/* Concentration Metrics - Free floating between sub-navbar and chart */}
           <div className="position-metrics-grid">
             <div className="position-metric-card">
               <div className="position-metric-label">Largest Position</div>
@@ -384,17 +294,13 @@ const ConcentrationRiskPage: React.FC = () => {
           </div>
 
           <div className="position-concentration">
-            {/* Position Weight Distribution Chart */}
             <div className="chart-section">
               <h3>Top 10 Position Weights</h3>
               <div className="chart-container">
-                {createPositionWeightChartData() && (
-                  <Bar data={createPositionWeightChartData()!} options={chartOptions} />
-                )}
+                {positionWeightChart && <Bar data={positionWeightChart} options={BAR_OPTIONS} />}
               </div>
             </div>
 
-            {/* Position Concentration Details Table */}
             <div className="table-section">
               <h3>Position Concentration Details</h3>
               <div className="table-container">
@@ -430,15 +336,12 @@ const ConcentrationRiskPage: React.FC = () => {
 
       {activeTab === 'sector' && (
         <div className="sector-concentration">
-          {/* Sector Concentration Analysis */}
           <div className="sector-analysis-section">
             <h3>Sector Concentration Analysis</h3>
-            
-            {/* KPI Cards */}
             <div className="metrics-grid">
               <div className="metric-card">
                 <div className="metric-label">Largest Sector</div>
-                <div className="metric-value">{getLargestSector()}</div>
+                <div className="metric-value">{largestSector}</div>
               </div>
               <div className="metric-card">
                 <div className="metric-label">Number of Sectors</div>
@@ -447,17 +350,13 @@ const ConcentrationRiskPage: React.FC = () => {
             </div>
           </div>
 
-          {/* Portfolio Sector Allocation */}
           <div className="chart-section">
             <h3>Portfolio Sector Allocation</h3>
             <div className="chart-container">
-              {createSectorPieChartData() && (
-                <Doughnut data={createSectorPieChartData()!} options={sectorPieChartOptions} />
-              )}
+              {sectorPieChart && <Doughnut data={sectorPieChart} options={PIE_OPTIONS} />}
             </div>
           </div>
 
-          {/* Sector Breakdown Table */}
           <div className="table-section">
             <h3>Sector Breakdown</h3>
             <div className="table-container">
@@ -471,7 +370,7 @@ const ConcentrationRiskPage: React.FC = () => {
                   </tr>
                 </thead>
                 <tbody>
-                  {createSectorBreakdownData().map((sector, index) => (
+                  {sectorBreakdown.map((sector, index) => (
                     <tr key={index}>
                       <td>{sector.name}</td>
                       <td>{sector.weight.toFixed(1)}%</td>
@@ -488,15 +387,12 @@ const ConcentrationRiskPage: React.FC = () => {
 
       {activeTab === 'market-cap' && (
         <div className="market-cap-concentration">
-          {/* Market Cap Concentration Analysis */}
           <div className="market-cap-analysis-section">
             <h3>Market Cap Concentration Analysis</h3>
-            
-            {/* KPI Cards */}
             <div className="metrics-grid">
               <div className="metric-card">
                 <div className="metric-label">Largest Market Cap Category</div>
-                <div className="metric-value">{getLargestMarketCapCategory()}</div>
+                <div className="metric-value">{largestMarketCapCategory}</div>
               </div>
               <div className="metric-card">
                 <div className="metric-label">Number of Market Cap Categories</div>
@@ -505,17 +401,13 @@ const ConcentrationRiskPage: React.FC = () => {
             </div>
           </div>
 
-          {/* Market Cap Allocation */}
           <div className="chart-section">
             <h3>Portfolio Market Cap Allocation</h3>
             <div className="chart-container">
-              {createMarketCapPieChartData() && (
-                <Doughnut data={createMarketCapPieChartData()!} options={sectorPieChartOptions} />
-              )}
+              {marketCapPieChart && <Doughnut data={marketCapPieChart} options={PIE_OPTIONS} />}
             </div>
           </div>
 
-          {/* Market Cap Breakdown Table */}
           <div className="table-section">
             <h3>Market Cap Breakdown</h3>
             <div className="table-container">
@@ -530,7 +422,7 @@ const ConcentrationRiskPage: React.FC = () => {
                   </tr>
                 </thead>
                 <tbody>
-                  {createMarketCapBreakdownData().map((category, index) => (
+                  {marketCapBreakdown.map((category, index) => (
                     <tr key={index}>
                       <td>{category.name}</td>
                       <td>{category.weight.toFixed(1)}%</td>
@@ -551,4 +443,4 @@ const ConcentrationRiskPage: React.FC = () => {
   );
 };
 
-export default ConcentrationRiskPage; 
+export default ConcentrationRiskPage;

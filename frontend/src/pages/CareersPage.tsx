@@ -10,17 +10,17 @@ const CareersPage: React.FC = () => {
   const [activeSection, setActiveSection] = useState<'internship' | 'careers'>('internship');
   const [currentUniversity, setCurrentUniversity] = useState<number>(0);
 
-  // Helper to locate images by fuzzy name in /images
-  const imagesCtx = (require as any).context('../images', false, /\.(png|jpe?g|webp|avif)$/);
+  // Helper to locate images by fuzzy name in /images. Vite ESM equivalent of webpack's require.context.
+  const imageModules = import.meta.glob('../images/*.{png,jpg,jpeg,webp,avif}', {
+    eager: true,
+    import: 'default',
+  }) as Record<string, string>;
   const findImage = (hints: string[]): string | null => {
-    const keys: string[] = imagesCtx.keys();
+    const keys = Object.keys(imageModules);
     const lower = keys.map((k) => k.toLowerCase());
     for (const hint of hints.map((h) => h.toLowerCase())) {
       const idx = lower.findIndex((k) => k.includes(hint));
-      if (idx !== -1) {
-        const mod = imagesCtx(keys[idx]);
-        return (mod && mod.default) ? mod.default : mod;
-      }
+      if (idx !== -1) return imageModules[keys[idx]];
     }
     return null;
   };

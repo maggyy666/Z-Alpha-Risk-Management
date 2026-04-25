@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { Doughnut } from 'react-chartjs-2';
 import {
   Chart as ChartJS,
@@ -10,123 +10,75 @@ import {
   Legend,
 } from 'chart.js';
 import apiService, { LiquidityOverviewResponse } from '../services/api';
+import { useApiData } from '../hooks/useApiData';
 import { useSession } from '../contexts/SessionContext';
 import './LiquidityRiskPage.css';
 
-ChartJS.register(
-  CategoryScale,
-  LinearScale,
-  ArcElement,
-  Title,
-  Tooltip,
-  Legend
-);
+ChartJS.register(CategoryScale, LinearScale, ArcElement, Title, Tooltip, Legend);
+
+const RISK_LEVEL_COLORS: Record<string, string> = {
+  LOW: '#4caf50',
+  MEDIUM: '#ff9800',
+  HIGH: '#f44336',
+};
+
+const DISTRIBUTION_COLORS = ['#2196F3', '#64B5F6', '#FF9800'];
+
+const CHART_OPTIONS = {
+  responsive: true,
+  maintainAspectRatio: false,
+  plugins: {
+    legend: { position: 'right' as const, labels: { color: '#ffffff', font: { size: 12 } } },
+    tooltip: {
+      backgroundColor: '#2a2a2a',
+      titleColor: '#ffffff',
+      bodyColor: '#cccccc',
+      borderColor: '#333',
+      borderWidth: 1,
+    },
+  },
+};
+
+const buildDistributionData = (data: LiquidityOverviewResponse) => {
+  const labels = Object.keys(data.distribution);
+  const values = Object.values(data.distribution);
+  return {
+    labels,
+    datasets: [
+      {
+        data: values,
+        backgroundColor: DISTRIBUTION_COLORS,
+        borderColor: DISTRIBUTION_COLORS,
+        borderWidth: 2,
+      },
+    ],
+  };
+};
+
+type LiquidityTab = 'overview' | 'spread' | 'volume' | 'alerts';
 
 const LiquidityRiskPage: React.FC = () => {
-  const [data, setData] = useState<LiquidityOverviewResponse | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-  const [activeTab, setActiveTab] = useState('overview');
-
   const { getCurrentUsername } = useSession();
+  const username = getCurrentUsername();
+  const [activeTab, setActiveTab] = useState<LiquidityTab>('overview');
 
-  const fetchLiquidityData = useCallback(async () => {
-    try {
-      setLoading(true);
-      const username = getCurrentUsername();
-      const response = await apiService.getLiquidityOverview(username);
-      setData(response);
-      setError(null);
-    } catch (err) {
-      setError('Failed to load liquidity data');
-      console.error('Error fetching liquidity data:', err);
-    } finally {
-      setLoading(false);
-    }
-  }, [getCurrentUsername]);
+  const { data, loading, error, refetch } = useApiData<LiquidityOverviewResponse>(
+    () => apiService.getLiquidityOverview(username),
+    [username],
+    'Failed to load liquidity data',
+  );
 
+  // Refetch when the user saves portfolio edits.
   useEffect(() => {
-    fetchLiquidityData();
-  }, [fetchLiquidityData]);
+    const handler = () => { refetch(); };
+    window.addEventListener('portfolio-updated', handler);
+    return () => window.removeEventListener('portfolio-updated', handler);
+  }, [refetch]);
 
-  // Listen for portfolio changes
-  useEffect(() => {
-    const handlePortfolioChange = () => {
-      console.log('Portfolio changed, refreshing liquidity data...');
-      fetchLiquidityData();
-    };
-
-    // Listen for custom event
-    window.addEventListener('portfolio-updated', handlePortfolioChange);
-
-    return () => {
-      window.removeEventListener('portfolio-updated', handlePortfolioChange);
-    };
-  }, [fetchLiquidityData]);
-
-  const getRiskLevelColor = (level: string) => {
-    switch (level) {
-      case 'LOW': return '#4caf50';
-      case 'MEDIUM': return '#ff9800';
-      case 'HIGH': return '#f44336';
-      default: return '#666';
-    }
-  };
-
-  const getRiskLevelDescription = (level: string) => {
-    switch (level) {
-      case 'LOW': return 'Portfolio has good liquidity';
-      case 'MEDIUM': return 'Portfolio has moderate liquidity';
-      case 'HIGH': return 'Portfolio has poor liquidity requiring attention';
-      default: return 'Liquidity assessment unavailable';
-    }
-  };
-
-  const createLiquidityDistributionChartData = () => {
-    if (!data) return null;
-
-    const distribution = data.distribution;
-    const labels = Object.keys(distribution);
-    const values = Object.values(distribution);
-
-    // Color scale for liquidity distribution - updated for 3 buckets
-    const colors = ['#2196F3', '#64B5F6', '#FF9800']; // Dark blue, light blue, orange
-
-    return {
-      labels,
-      datasets: [
-        {
-          data: values,
-          backgroundColor: colors,
-          borderColor: colors.map(color => color.replace('0.8', '1')),
-          borderWidth: 2,
-        },
-      ],
-    };
-  };
-
-  const chartOptions = {
-    responsive: true,
-    maintainAspectRatio: false,
-    plugins: {
-      legend: {
-        position: 'right' as const,
-        labels: {
-          color: '#ffffff',
-          font: {
-            size: 12,
-          },
-        },
-      },
-      tooltip: {
-        backgroundColor: '#2a2a2a',
-        titleColor: '#ffffff',
-        bodyColor: '#cccccc',
-        borderColor: '#333',
-        borderWidth: 1,
-      },
-    },
-  };
+  const distributionData = useMemo(
+    () => (data ? buildDistributionData(data) : null),
+    [data],
+  );
 
   if (loading) {
     return (
@@ -145,9 +97,7 @@ const LiquidityRiskPage: React.FC = () => {
         <div className="error-container">
           <h2>Error</h2>
           <p>{error}</p>
-          <button onClick={fetchLiquidityData} className="retry-button">
-            Retry
-          </button>
+          <button onClick={refetch} className="retry-button">Retry</button>
         </div>
       </div>
     );
@@ -164,9 +114,10 @@ const LiquidityRiskPage: React.FC = () => {
     );
   }
 
+  const riskColor = RISK_LEVEL_COLORS[data.overview.risk_level] ?? '#666';
+
   return (
     <div className="liquidity-risk-page">
-      {/* Sub-navigation */}
       <div className="sub-nav-tabs">
         <button
           className={`sub-nav-tab ${activeTab === 'overview' ? 'active' : ''}`}
@@ -194,11 +145,9 @@ const LiquidityRiskPage: React.FC = () => {
         </button>
       </div>
 
-      {/* Main Content */}
       <div className="liquidity-content">
         {activeTab === 'overview' && (
           <>
-            {/* Portfolio Liquidity Overview */}
             <div className="liquidity-section">
               <h2 className="section-title">Portfolio Liquidity Overview</h2>
               <div className="overview-metrics">
@@ -212,27 +161,22 @@ const LiquidityRiskPage: React.FC = () => {
                 </div>
                 <div className="metric-card">
                   <h3>Risk Assessment</h3>
-                  <div 
-                    className="metric-value risk-level"
-                    style={{ color: getRiskLevelColor(data.overview.risk_level) }}
-                  >
+                  <div className="metric-value risk-level" style={{ color: riskColor }}>
                     {data.overview.risk_level} Liquidity
                   </div>
                 </div>
               </div>
             </div>
 
-            {/* Liquidity Score Distribution */}
             <div className="liquidity-section">
               <h2 className="section-title">Liquidity Score Distribution</h2>
               <div className="distribution-container">
                 <div className="chart-container">
-                  <Doughnut data={createLiquidityDistributionChartData()!} options={chartOptions} />
+                  {distributionData && <Doughnut data={distributionData} options={CHART_OPTIONS} />}
                 </div>
               </div>
             </div>
 
-            {/* Position Liquidity Details */}
             <div className="liquidity-section">
               <h2 className="section-title">Position Liquidity Details</h2>
               <div className="table-container">
